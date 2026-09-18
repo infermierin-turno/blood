@@ -8,14 +8,14 @@ if (isset($_GET['data'])) {
     $utente = json_decode($json_decoded, true);
 
     if ($utente && is_array($utente)) {
-        // Imposta la sessione utente direttamente sull'app in esecuzione su Render
+        // Imposta la sessione utente esattamente come faceva prima su Tophost
         $_SESSION['utente'] = $utente;
         
-        // Reindirizza alla bacheca dei ritiri
+        // Reindirizza alla bacheca dei ritiri (che leggerà il ruolo 'viewer' e nasconderà i tasti)
         header("Location: bacheca_ritiri.php");
         exit;
     }
 }
 
-// Se il token è mancante o non valido, blocca l'accesso
-die("Accesso non autorizzato o sessione scaduta.");
+// Se il token manca o non è valido, mostra l'errore
+die("Accesso non autorizzato o token mancante.");
