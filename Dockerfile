@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y \
     pgsql \
     zip \
     intl \
-    opcache
+    opcache \
+    calendar
 
 # Configura la cartella di lavoro del server web
 WORKDIR /var/www/html
