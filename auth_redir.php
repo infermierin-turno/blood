@@ -1,25 +1,27 @@
 <?php
 session_start();
+require_once __DIR__ . '/config_sangue.php'; // Assicurati che punti al file di connessione di Supabase
+require_once __DIR__ . '/api_helper_sangue.php'; // Assicurati che includa la funzione di chiamata API
 
-// Controllo diagnostico: verifica se il parametro 'data' arriva da Tophost
-if (!isset($_GET['data'])) {
-    die("DIAGNOSTICA: Il parametro 'data' non è arrivato su Render. L'URL ricevuto è incompleto o il redirect da Tophost non ha passato il token.");
+// Se arriva la richiesta automatica dal QR code
+if (isset($_GET['auto']) && $_GET['auto'] === 'bacheca') {
+    
+    // Interroga direttamente Supabase per l'utente viewer
+    $risultato = esegui_get_api("utenti?email=eq.vedo@emoteca.it");
+
+    if ($risultato && is_array($risultato) && count($risultato) > 0) {
+        // Imposta la sessione utente con i dati reali trovati nel database
+        $_SESSION['utente'] = $risultato[0];
+        session_write_close();
+        
+        // Reindirizza alla bacheca in sola lettura
+        header("Location: bacheca_ritiri.php");
+        exit;
+    } else {
+        die("Errore: Utente vedo@bacheca.it non trovato su Supabase.");
+    }
 }
 
-$decoded_data = urldecode($_GET['data']);
-$json_decoded = base64_decode($decoded_data);
-$utente = json_decode($json_decoded, true);
-
-if (!$utente || !is_array($utente)) {
-    echo "Dati ricevuti grezzi: " . htmlspecialchars($_GET['data']) . "<br>";
-    echo "Dati decodificati: " . htmlspecialchars($json_decoded) . "<br>";
-    die("DIAGNOSTICA: Impossibile decodificare il payload JSON dell'utente.");
-}
-
-// Se arriviamo qui, l'utente è stato letto correttamente
-$_SESSION['utente'] = $utente;
-session_write_close();
-
-// Reindirizza alla bacheca dei ritiri
-header("Location: bacheca_ritiri.php");
+// Se qualcuno arriva qui senza parametri, rimandalo al login normale
+header("Location: index.php");
 exit;
