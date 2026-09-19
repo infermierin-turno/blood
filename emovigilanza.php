@@ -17,19 +17,25 @@ $nome_utente = is_array($_SESSION['utente'])
 $messaggio_esito = "";
 $errore_esito = "";
 
-// 1. GESTIONE AGGIORNAMENTO EMOVIGILANZA TRAMITE POST (alla spunta della checkbox)
+// 1. GESTIONE AGGIORNAMENTI TRAMITE POST (Checkbox emovigilanza o Modifica Codice a Barre)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
     $id_ritiro = $_POST['id_ritiro'];
-    $emovigilanza_ricevuta = isset($_POST['emovigilanza_ricevuta']) ? true : false;
-
-    // Chiamata PATCH a Supabase tramite le costanti o funzioni definite in config.php
     $url_patch = SUPABASE_URL . "/rest/v1/ritiri_sangue?id=eq." . urlencode($id_ritiro);
-    $dati_update = json_encode(['emovigilanza_ricevuta' => $emovigilanza_ricevuta]);
+    $dati_update = [];
+
+    // Controlliamo se stiamo salvando il codice a barre o la spunta emovigilanza
+    if (isset($_POST['azione']) && $_POST['azione'] === 'salva_codice') {
+        $dati_update['codice_a_barre'] = trim($_POST['codice_a_barre'] ?? '');
+        $messaggio_successo_testo = "Codice a barre aggiornato con successo.";
+    } else {
+        $dati_update['emovigilanza_ricevuta'] = isset($_POST['emovigilanza_ricevuta']) ? true : false;
+        $messaggio_successo_testo = "Stato emovigilanza aggiornato con successo. Richiesta rimossa dall'elenco.";
+    }
 
     $ch = curl_init($url_patch);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $dati_update);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($dati_update));
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         "apikey: " . SUPABASE_KEY,
         "Authorization: Bearer " . SUPABASE_KEY,
@@ -42,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
     curl_close($ch);
 
     if ($http_code >= 200 && $http_code < 300) {
-        $messaggio_esito = "Stato emovigilanza aggiornato con successo. Richiesta rimossa dall'elenco.";
+        $messaggio_esito = $messaggio_successo_testo;
     } else {
         $errore_esito = "Errore durante l'aggiornamento su Supabase (Codice: $http_code).";
     }
@@ -218,7 +224,17 @@ if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
                                     <tr>
                                         <td><?php echo htmlspecialchars($r['created_at'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($r['reparto'] ?? ''); ?></td>
-                                        <td><code><?php echo htmlspecialchars($r['codice_a_barre'] ?? ''); ?></code></td>
+                                        <td>
+                                            <!-- Form per aggiornare il codice a barre inline -->
+                                            <form method="POST" class="d-flex align-items-center gap-1 no-print">
+                                                <input type="hidden" name="id_ritiro" value="<?php echo htmlspecialchars($r['id']); ?>">
+                                                <input type="hidden" name="azione" value="salva_codice">
+                                                <input type="text" name="codice_a_barre" class="form-control form-control-sm" value="<?php echo htmlspecialchars($r['codice_a_barre'] ?? ''); ?>" placeholder="Inserisci codice..." style="width: 130px;">
+                                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Salva codice">💾</button>
+                                            </form>
+                                            <!-- Valore statico visibile in fase di stampa -->
+                                            <span class="d-none d-print-inline"><code><?php echo htmlspecialchars($r['codice_a_barre'] ?? ''); ?></code></span>
+                                        </td>
                                         <td><?php echo htmlspecialchars($r['turno_successivo'] ?? ''); ?></td>
                                         <td>
                                             <?php 
