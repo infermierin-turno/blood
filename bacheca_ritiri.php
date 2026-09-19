@@ -505,6 +505,7 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             <a href="carico_scarico.php" class="btn-action">Gestione Carico/Scarico</a>
             <a href="storico_completo.php" class="btn-action secondary">Registro Movimenti</a>
             <a href="non_assegnate.php" class="btn-action warning">Richieste non assegnate</a>
+            <a href="emovigilanza.php" class="btn-action warning">Emovigilanze da ritirare</a>
             <a href="emoteca.php" class="btn-action primary" style="grid-column: span 2;">📦 Emoteca / Scorta</a>
             <a href="emoteca_turni.php" class="btn-action turni">Turni pomeridiani personale Blocco Operatorio</a>
         </div>
