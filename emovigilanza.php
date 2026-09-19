@@ -72,7 +72,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
     $errore_esito = "Impossibile recuperare i dati da Supabase (Codice: $http_code_get). Verifica configurazione in config.php.";
 }
 
-// 3. GESTIONE FILTRI DI RICERCA (Reparto e Paziente/Note)
+// 3. GESTIONE FILTRI DI RICERCA (Reparto e Paziente/Note/Codice a barre)
 $filtro_reparto = trim($_GET['reparto'] ?? '');
 $filtro_paziente = trim($_GET['paziente'] ?? '');
 
@@ -86,8 +86,8 @@ if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
             }
         }
         if (!empty($filtro_paziente)) {
-            // Verifica nel campo note o eventuale campo paziente se presente
-            $testo_ricerca = ($r['paziente'] ?? '') . ' ' . ($r['note'] ?? '');
+            // Verifica nel campo paziente, note o codice a barre
+            $testo_ricerca = ($r['paziente'] ?? '') . ' ' . ($r['note'] ?? '') . ' ' . ($r['codice_a_barre'] ?? '');
             if (stripos($testo_ricerca, $filtro_paziente) === false) {
                 $match = false;
             }
@@ -168,8 +168,8 @@ if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
                         <input type="text" class="form-control" id="reparto" name="reparto" value="<?php echo htmlspecialchars($filtro_reparto); ?>" placeholder="Es. Chirurgia, Medicina...">
                     </div>
                     <div class="col-md-5">
-                        <label for="paziente" class="form-label fw-bold">Filtra per Paziente / Note</label>
-                        <input type="text" class="form-control" id="paziente" name="paziente" value="<?php echo htmlspecialchars($filtro_paziente); ?>" placeholder="Nome paziente o parole chiave...">
+                        <label for="paziente" class="form-label fw-bold">Filtra per Paziente / Note / Codice</label>
+                        <input type="text" class="form-control" id="paziente" name="paziente" value="<?php echo htmlspecialchars($filtro_paziente); ?>" placeholder="Nome paziente, codice a barre o parole chiave...">
                     </div>
                     <div class="col-md-2 d-grid">
                         <button type="submit" class="btn btn-primary mb-1">Cerca</button>
@@ -201,6 +201,7 @@ if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
                             <tr>
                                 <th>Data / Ora</th>
                                 <th>Reparto</th>
+                                <th>Codice a Barre</th>
                                 <th>Turno</th>
                                 <th>Note / Paziente</th>
                                 <th>Stato Ritiro</th>
@@ -210,13 +211,14 @@ if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
                         <tbody>
                             <?php if (empty($richieste_effettive)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta trovata con i filtri selezionati.</td>
+                                    <td colspan="7" class="text-center text-muted py-4">Nessuna richiesta trovata con i filtri selezionati.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($richieste_effettive as $r): ?>
                                     <tr>
                                         <td><?php echo htmlspecialchars($r['created_at'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($r['reparto'] ?? ''); ?></td>
+                                        <td><code><?php echo htmlspecialchars($r['codice_a_barre'] ?? ''); ?></code></td>
                                         <td><?php echo htmlspecialchars($r['turno_successivo'] ?? ''); ?></td>
                                         <td>
                                             <?php 
