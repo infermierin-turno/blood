@@ -71,6 +71,30 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
 } else {
     $errore_esito = "Impossibile recuperare i dati da Supabase (Codice: $http_code_get). Verifica configurazione in config.php.";
 }
+
+// 3. GESTIONE FILTRI DI RICERCA (Reparto e Paziente/Note)
+$filtro_reparto = trim($_GET['reparto'] ?? '');
+$filtro_paziente = trim($_GET['paziente'] ?? '');
+
+if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
+    $richieste_effettive = array_filter($richieste_effettive, function($r) use ($filtro_reparto, $filtro_paziente) {
+        $match = true;
+        if (!empty($filtro_reparto)) {
+            $reparto_db = $r['reparto'] ?? '';
+            if (stripos($reparto_db, $filtro_reparto) === false) {
+                $match = false;
+            }
+        }
+        if (!empty($filtro_paziente)) {
+            // Verifica nel campo note o eventuale campo paziente se presente
+            $testo_ricerca = ($r['paziente'] ?? '') . ' ' . ($r['note'] ?? '');
+            if (stripos($testo_ricerca, $filtro_paziente) === false) {
+                $match = false;
+            }
+        }
+        return $match;
+    });
+}
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -79,7 +103,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Emovigilanza - Ritiri Effettuati</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Stili CSS dedicati alla stampa: nascondono menu, bottoni e pulsanti di navigazione quando si stampa -->
+    <!-- Stili CSS dedicati alla stampa: nascondono menu, bottoni e filtri quando si stampa -->
     <style>
         @media print {
             .no-print {
@@ -135,6 +159,26 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
             </div>
         </div>
 
+        <!-- Sezione Filtri di Ricerca -->
+        <div class="card shadow-sm mb-4 no-print">
+            <div class="card-body bg-white">
+                <form method="GET" class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label for="reparto" class="form-label fw-bold">Filtra per Reparto</label>
+                        <input type="text" class="form-control" id="reparto" name="reparto" value="<?php echo htmlspecialchars($filtro_reparto); ?>" placeholder="Es. Chirurgia, Medicina...">
+                    </div>
+                    <div class="col-md-5">
+                        <label for="paziente" class="form-label fw-bold">Filtra per Paziente / Note</label>
+                        <input type="text" class="form-control" id="paziente" name="paziente" value="<?php echo htmlspecialchars($filtro_paziente); ?>" placeholder="Nome paziente o parole chiave...">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button type="submit" class="btn btn-primary mb-1">Cerca</button>
+                        <a href="emovigilanza.php" class="btn btn-outline-secondary btn-sm">Resetta</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <?php if (!empty($messaggio_esito)): ?>
             <div class="alert alert-success alert-dismissible fade show no-print" role="alert">
                 <?php echo $messaggio_esito; ?>
@@ -158,7 +202,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                                 <th>Data / Ora</th>
                                 <th>Reparto</th>
                                 <th>Turno</th>
-                                <th>Note</th>
+                                <th>Note / Paziente</th>
                                 <th>Stato Ritiro</th>
                                 <th class="no-print">Modulo Emovigilanza Ricevuto</th>
                             </tr>
@@ -166,7 +210,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                         <tbody>
                             <?php if (empty($richieste_effettive)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta in attesa di modulo di emovigilanza.</td>
+                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta trovata con i filtri selezionati.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($richieste_effettive as $r): ?>
@@ -174,7 +218,15 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                                         <td><?php echo htmlspecialchars($r['created_at'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($r['reparto'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($r['turno_successivo'] ?? ''); ?></td>
-                                        <td><?php echo htmlspecialchars($r['note'] ?? ''); ?></td>
+                                        <td>
+                                            <?php 
+                                                // Mostriamo paziente se presente e note
+                                                $info_extra = [];
+                                                if (!empty($r['paziente'])) $info_extra[] = "Paziente: " . $r['paziente'];
+                                                if (!empty($r['note'])) $info_extra[] = $r['note'];
+                                                echo htmlspecialchars(implode(' - ', $info_extra)); 
+                                            ?>
+                                        </td>
                                         <td>
                                             <span class="badge bg-success">Ritirato</span>
                                         </td>
