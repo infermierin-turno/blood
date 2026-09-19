@@ -6,7 +6,8 @@ if (!isset($_SESSION['utente'])) {
 }
 
 // Inclusione del file di configurazione centralizzato (richiesto dalle regole di progetto)
-require_once 'config.php';
+require_once __DIR__ . '/config_sangue.php';
+require_once __DIR__ . '/api_helper_sangue.php';
 
 // Controllo sessione utente sicuro
 $nome_utente = is_array($_SESSION['utente']) 
