@@ -55,9 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
 }
 
 // 2. RECUPERO REALE DA SUPABASE
-// Filtriamo i record ritirati (stato = 'Ritirato' oppure consegnato_sit = true) 
-// E filtriamo emovigilanza_ricevuta=false affinché scompaiano una volta spuntati
-$url_get = SUPABASE_URL . "/rest/v1/ritiri_sangue?or=(stato.eq.Ritirato,consegnato_sit.eq.true)&emovigilanza_ricevuta=eq.false&order=created_at.desc";
+// Mostriamo solo i record con stato = 'Ritirato' e emovigilanza_ricevuta = false (escludendo 'Da ritirare')
+$url_get = SUPABASE_URL . "/rest/v1/ritiri_sangue?stato=eq.Ritirato&emovigilanza_ricevuta=eq.false&order=created_at.desc";
 
 $ch = curl_init($url_get);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -143,7 +142,7 @@ if (!empty($filtro_reparto) || !empty($filtro_paziente)) {
                 <span class="navbar-text text-white me-3">
                     Utente: <?php echo htmlspecialchars($nome_utente); ?>
                 </span>
-                <a href="bacheca_ritiri.php" class="btn btn-outline-light btn-sm">Bacheca ritiri</a>
+                <a href="logout.php" class="btn btn-outline-light btn-sm">Esci</a>
             </div>
         </div>
     </nav>
