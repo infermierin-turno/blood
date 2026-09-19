@@ -89,7 +89,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                 <span class="navbar-text text-white me-3">
                     Utente: <?php echo htmlspecialchars($nome_utente); ?>
                 </span>
-                <a href="logout.php" class="btn btn-outline-light btn-sm">Esci</a>
+                <a href="bacheca_ritiri.php" class="btn btn-outline-light btn-sm">Bacheca ritiri</a>
             </div>
         </div>
     </nav>
