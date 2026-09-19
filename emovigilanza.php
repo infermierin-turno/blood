@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
 
 // 2. RECUPERO REALE DA SUPABASE
 // Filtriamo i record ritirati (stato = 'Ritirato' oppure consegnato_sit = true) 
-// E AGGIUNGIAMO il filtro emovigilanza_ricevuta=false affinché scompaiano una volta spuntati
+// E filtriamo emovigilanza_ricevuta=false affinché scompaiano una volta spuntati
 $url_get = SUPABASE_URL . "/rest/v1/ritiri_sangue?or=(stato.eq.Ritirato,consegnato_sit.eq.true)&emovigilanza_ricevuta=eq.false&order=created_at.desc";
 
 $ch = curl_init($url_get);
@@ -79,38 +79,71 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Emovigilanza - Ritiri Effettuati</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Stili CSS dedicati alla stampa: nascondono menu, bottoni e pulsanti di navigazione quando si stampa -->
+    <style>
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background-color: #fff !important;
+                color: #000 !important;
+            }
+            .card {
+                border: none !important;
+                box-shadow: none !important;
+            }
+            .table {
+                border-collapse: collapse !important;
+                width: 100% !important;
+            }
+            .table th, .table td {
+                border: 1px solid #dee2e6 !important;
+                background-color: #fff !important;
+            }
+        }
+    </style>
 </head>
 <body class="bg-light">
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 no-print">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">App Turni & Emoteca</a>
             <div class="d-flex">
                 <span class="navbar-text text-white me-3">
                     Utente: <?php echo htmlspecialchars($nome_utente); ?>
                 </span>
-                <a href="bacheca_ritiri.php" class="btn btn-outline-light btn-sm">Bacheca ritiri</a>
+                <a href="logout.php" class="btn btn-outline-light btn-sm">Esci</a>
             </div>
         </div>
     </nav>
 
     <div class="container">
-        <div class="row mb-3">
-            <div class="col-12">
+        <div class="row mb-3 align-items-center">
+            <div class="col-md-8 col-12">
                 <h2>Verifica Modulo Emovigilanza (Ritiri Effettuati)</h2>
-                <p class="text-muted">Elenco delle richieste già ritirate prive di modulo. Spunta la casella per confermare la ricezione (la richiesta verrà archiviata dalla vista).</p>
+                <p class="text-muted no-print">Elenco delle richieste già ritirate prive di modulo. Spunta la casella per confermare la ricezione (la richiesta verrà archiviata dalla vista).</p>
+            </div>
+            <div class="col-md-4 col-12 text-md-end text-start mb-2 mb-md-0">
+                <!-- Pulsante di Stampa -->
+                <button onclick="window.print();" class="btn btn-secondary no-print">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-printer me-1" viewBox="0 0 16 16">
+                        <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+                        <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+                    </svg> Stampa Elenco
+                </button>
             </div>
         </div>
 
         <?php if (!empty($messaggio_esito)): ?>
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <div class="alert alert-success alert-dismissible fade show no-print" role="alert">
                 <?php echo $messaggio_esito; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
 
         <?php if (!empty($errore_esito)): ?>
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <div class="alert alert-danger alert-dismissible fade show no-print" role="alert">
                 <?php echo $errore_esito; ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
@@ -127,7 +160,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                                 <th>Turno</th>
                                 <th>Note</th>
                                 <th>Stato Ritiro</th>
-                                <th>Modulo Emovigilanza Ricevuto</th>
+                                <th class="no-print">Modulo Emovigilanza Ricevuto</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -145,7 +178,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                                         <td>
                                             <span class="badge bg-success">Ritirato</span>
                                         </td>
-                                        <td>
+                                        <td class="no-print">
                                             <!-- Form con checkbox: al cambio invia automaticamente il form salvando il valore e rimuovendo la riga -->
                                             <form method="POST" class="d-flex align-items-center">
                                                 <input type="hidden" name="id_ritiro" value="<?php echo htmlspecialchars($r['id']); ?>">
@@ -169,7 +202,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
         </div>
     </div>
 
-    <footer class="text-center text-muted mt-5 py-3">
+    <footer class="text-center text-muted mt-5 py-3 no-print">
         <p>&copy; 2026 Coordinamento Sanitario - Gestione Ospedaliera</p>
     </footer>
 
