@@ -42,15 +42,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
     curl_close($ch);
 
     if ($http_code >= 200 && $http_code < 300) {
-        $messaggio_esito = "Stato emovigilanza aggiornato con successo.";
+        $messaggio_esito = "Stato emovigilanza aggiornato con successo. Richiesta rimossa dall'elenco.";
     } else {
         $errore_esito = "Errore durante l'aggiornamento su Supabase (Codice: $http_code).";
     }
 }
 
 // 2. RECUPERO REALE DA SUPABASE
-// Filtriamo i record che sono stati effettivamente ritirati (es. stato = 'Ritirato' oppure consegnato_sit = true)
-$url_get = SUPABASE_URL . "/rest/v1/ritiri_sangue?or=(stato.eq.Ritirato,consegnato_sit.eq.true)&order=created_at.desc";
+// Filtriamo i record ritirati (stato = 'Ritirato' oppure consegnato_sit = true) 
+// E AGGIUNGIAMO il filtro emovigilanza_ricevuta=false affinché scompaiano una volta spuntati
+$url_get = SUPABASE_URL . "/rest/v1/ritiri_sangue?or=(stato.eq.Ritirato,consegnato_sit.eq.true)&emovigilanza_ricevuta=eq.false&order=created_at.desc";
 
 $ch = curl_init($url_get);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -97,7 +98,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
         <div class="row mb-3">
             <div class="col-12">
                 <h2>Verifica Modulo Emovigilanza (Ritiri Effettuati)</h2>
-                <p class="text-muted">Elenco delle richieste già ritirate. Spunta la casella per confermare la ricezione del modulo di emovigilanza.</p>
+                <p class="text-muted">Elenco delle richieste già ritirate prive di modulo. Spunta la casella per confermare la ricezione (la richiesta verrà archiviata dalla vista).</p>
             </div>
         </div>
 
@@ -132,7 +133,7 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                         <tbody>
                             <?php if (empty($richieste_effettive)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta ritirata trovata nel database.</td>
+                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta in attesa di modulo di emovigilanza.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($richieste_effettive as $r): ?>
@@ -145,16 +146,15 @@ if ($http_code_get >= 200 && $http_code_get < 300) {
                                             <span class="badge bg-success">Ritirato</span>
                                         </td>
                                         <td>
-                                            <!-- Form con checkbox: al cambio invia automaticamente il form salvando il valore -->
+                                            <!-- Form con checkbox: al cambio invia automaticamente il form salvando il valore e rimuovendo la riga -->
                                             <form method="POST" class="d-flex align-items-center">
                                                 <input type="hidden" name="id_ritiro" value="<?php echo htmlspecialchars($r['id']); ?>">
                                                 <div class="form-check form-switch">
                                                     <input class="form-check-input" type="checkbox" name="emovigilanza_ricevuta" value="1" 
                                                         id="emo_<?php echo $r['id']; ?>" 
-                                                        <?php echo (!empty($r['emovigilanza_ricevuta']) && $r['emovigilanza_ricevuta'] == true) ? 'checked' : ''; ?>
                                                         onchange="this.form.submit()">
-                                                    <label class="form-check-label ms-2" for="emo_<?php echo $r['id']; ?>">
-                                                        <?php echo (!empty($r['emovigilanza_ricevuta']) && $r['emovigilanza_ricevuta'] == true) ? '<span class="text-success fw-bold">Ricevuto</span>' : '<span class="text-danger">Mancante</span>'; ?>
+                                                    <label class="form-check-label ms-2 text-danger fw-bold" for="emo_<?php echo $r['id']; ?>">
+                                                        Segna come Ricevuto
                                                     </label>
                                                 </div>
                                             </form>
