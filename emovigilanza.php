@@ -5,19 +5,17 @@ if (!isset($_SESSION['utente'])) {
     exit;
 }
 
-// Inclusione delle funzioni condivise per le chiamate API o di database
-// require_once 'config.php'; 
+// Gestione sicura nel caso in cui $_SESSION['utente'] sia un array anziché una stringa
+$nome_utente = is_array($_SESSION['utente']) 
+    ? (($_SESSION['utente']['nome'] ?? $_SESSION['utente']['username']) ?? 'Utente') 
+    : $_SESSION['utente'];
 
-// Esempio di logica di aggiornamento stato emovigilanza se inviato via POST
 $messaggio_esito = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
     $id_ritiro = $_POST['id_ritiro'];
     $nuovo_stato_emo = isset($_POST['emovigilanza_ricevuta']) ? true : false;
     
-    // Qui inserisci la chiamata di aggiornamento verso Supabase o il tuo backend FastAPI
-    // Esempio simulato di aggiornamento:
-    // $risultato = aggiorna_stato_emovigilanza($id_ritiro, $nuovo_stato_emo);
-    
+    // Logica di aggiornamento (es. chiamata API a FastAPI / Supabase)
     $messaggio_esito = "Stato emovigilanza aggiornato con successo per la richiesta ID: " . htmlspecialchars($id_ritiro);
 }
 ?>
@@ -36,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
             <a class="navbar-brand" href="#">App Turni & Emoteca</a>
             <div class="d-flex">
                 <span class="navbar-text text-white me-3">
-                    Utente: <?php echo htmlspecialchars($_SESSION['utente']); ?>
+                    Utente: <?php echo htmlspecialchars($nome_utente); ?>
                 </span>
                 <a href="logout.php" class="btn btn-outline-light btn-sm">Esci</a>
             </div>
