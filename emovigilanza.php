@@ -18,6 +18,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
     // Logica di aggiornamento (es. chiamata API a FastAPI / Supabase)
     $messaggio_esito = "Stato emovigilanza aggiornato con successo per la richiesta ID: " . htmlspecialchars($id_ritiro);
 }
+
+// SIMULAZIONE DATI (Da sostituire con la tua chiamata reale al database o API Supabase)
+// Ciascun elemento rappresenta una richiesta con il suo stato di ritiro e di emovigilanza
+$richieste_ospedale = [
+    [
+        'id' => 'uuid-001',
+        'data' => '2026-06-19 23:30',
+        'reparto' => 'Chirurgia Generale',
+        'turno' => 'Notte',
+        'note' => '[Ordinaria] Richiesta sacche',
+        'stato' => 'Ritirato', // <-- Già ritirata: mostra la gestione emovigilanza
+        'emovigilanza_ricevuta' => false
+    ],
+    [
+        'id' => 'uuid-002',
+        'data' => '2026-06-20 02:15',
+        'reparto' => 'Medicina Interna',
+        'turno' => 'Notte',
+        'note' => '[Urgentissima] Controllo ematico',
+        'stato' => 'Da ritirare', // <-- Non ancora ritirata: colonna vuota/non attiva
+        'emovigilanza_ricevuta' => false
+    ],
+    [
+        'id' => 'uuid-003',
+        'data' => '2026-06-20 05:00',
+        'reparto' => 'Terapia Intensiva',
+        'turno' => 'Notte',
+        'note' => '[Ordinaria] Sanguis',
+        'stato' => 'Ritirato', // <-- Già ritirata: mostra la gestione emovigilanza
+        'emovigilanza_ricevuta' => true
+    ]
+];
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -45,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
         <div class="row mb-3">
             <div class="col-12">
                 <h2>Monitoraggio Richieste e Modulo Emovigilanza</h2>
-                <p class="text-muted">Gestione centralizzata dei ritiri di sangue, turni ospedalieri e verifica ricezione moduli di emovigilanza.</p>
+                <p class="text-muted">Gestione centralizzata dei ritiri di sangue, turni ospedalieri e verifica ricezione moduli di emovigilanza (attiva solo dopo il ritiro).</p>
             </div>
         </div>
 
@@ -72,24 +104,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
                             </tr>
                         </thead>
                         <tbody>
-                            <!-- Esempio di riga dati dinamica (da popolare con il recupero record da Supabase) -->
-                            <tr>
-                                <td>2026-06-19 23:30</td>
-                                <td>Chirurgia Generale</td>
-                                <td>Notte</td>
-                                <td>[Ordinaria] Richiesta sacche urgenti</td>
-                                <td><span class="badge bg-warning text-dark">Da ritirare</span></td>
-                                <td>
-                                    <span class="badge bg-danger">Mancante</span>
-                                </td>
-                                <td>
-                                    <form method="POST" class="d-inline">
-                                        <input type="hidden" name="id_ritiro" value="esempio-uuid-123">
-                                        <input type="hidden" name="emovigilanza_ricevuta" value="1">
-                                        <button type="submit" class="btn btn-sm btn-success">Segna Ricevuto</button>
-                                    </form>
-                                </td>
-                            </tr>
+                            <?php foreach ($richieste_ospedale as $r): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($r['data']); ?></td>
+                                    <td><?php echo htmlspecialchars($r['reparto']); ?></td>
+                                    <td><?php echo htmlspecialchars($r['turno']); ?></td>
+                                    <td><?php echo htmlspecialchars($r['note']); ?></td>
+                                    <td>
+                                        <?php if ($r['stato'] === 'Ritirato'): ?>
+                                            <span class="badge bg-success">Ritirato</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-warning text-dark">Da ritirare</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($r['stato'] === 'Ritirato'): ?>
+                                            <!-- Visibile e popolato solo se lo stato è "Ritirato" -->
+                                            <?php if ($r['emovigilanza_ricevuta']): ?>
+                                                <span class="badge bg-success">Ricevuto</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-danger">Mancante</span>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <!-- Vuoto o non applicabile finché non viene ritirato -->
+                                            <span class="text-muted fst-italic">In attesa di ritiro</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($r['stato'] === 'Ritirato' && !$r['emovigilanza_ricevuta']): ?>
+                                            <!-- Il pulsante compare solo se è ritirato e l'emovigilanza non è stata ancora segnata come ricevuta -->
+                                            <form method="POST" class="d-inline">
+                                                <input type="hidden" name="id_ritiro" value="<?php echo htmlspecialchars($r['id']); ?>">
+                                                <input type="hidden" name="emovigilanza_ricevuta" value="1">
+                                                <button type="submit" class="btn btn-sm btn-success">Segna Ricevuto</button>
+                                            </form>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
