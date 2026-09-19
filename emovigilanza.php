@@ -5,6 +5,9 @@ if (!isset($_SESSION['utente'])) {
     exit;
 }
 
+// Inclusione del file di configurazione centralizzato (richiesto dalle regole di progetto)
+require_once 'config.php';
+
 // Controllo sessione utente sicuro
 $nome_utente = is_array($_SESSION['utente']) 
     ? (($_SESSION['utente']['nome'] ?? $_SESSION['utente']['username']) ?? 'Utente') 
@@ -13,35 +16,58 @@ $nome_utente = is_array($_SESSION['utente'])
 $messaggio_esito = "";
 $errore_esito = "";
 
-// Gestione del salvataggio del check di emovigilanza tramite POST
+// 1. GESTIONE AGGIORNAMENTO EMOVIGILANZA TRAMITE POST (alla spunta della checkbox)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_ritiro'])) {
     $id_ritiro = $_POST['id_ritiro'];
     $emovigilanza_ricevuta = isset($_POST['emovigilanza_ricevuta']) ? true : false;
 
-    // Qui effettui la chiamata di aggiornamento a Supabase (tramite le tue funzioni o API)
-    // Esempio con chiamata cURL o funzione dedicata inclusa:
-    /*
-    $dati_aggiornamento = json_encode(['emovigilanza_ricevuta' => $emovigilanza_ricevuta]);
-    // Esegui la richiesta PATCH a Supabase sulla tabella ritiri_sangue dove id = $id_ritiro
-    */
-    
-    // Per adesso simuliamo il salvataggio avvenuto con successo:
-    $messaggio_esito = "Stato emovigilanza aggiornato con successo per la richiesta ID: " . htmlspecialchars($id_ritiro);
+    // Chiamata PATCH a Supabase tramite le costanti o funzioni definite in config.php
+    $url_patch = SUPABASE_URL . "/rest/v1/ritiri_sangue?id=eq." . urlencode($id_ritiro);
+    $dati_update = json_encode(['emovigilanza_ricevuta' => $emovigilanza_ricevuta]);
+
+    $ch = curl_init($url_patch);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $dati_update);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "apikey: " . SUPABASE_KEY,
+        "Authorization: Bearer " . SUPABASE_KEY,
+        "Content-Type: application/json",
+        "Prefer: return=minimal"
+    ]);
+
+    $risposta = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($http_code >= 200 && $http_code < 300) {
+        $messaggio_esito = "Stato emovigilanza aggiornato con successo.";
+    } else {
+        $errore_esito = "Errore durante l'aggiornamento su Supabase (Codice: $http_code).";
+    }
 }
 
-// RECUPERO REALE DEI DATI DA SUPABASE
-// Sostituisci questo blocco con la chiamata effettiva al tuo database o API Supabase
-// Esempio: recuperiamo solo le richieste che risultano effettivamente ritirate (es. stato = 'Ritirato' o 'Consegnato')
-$richieste_effettive = [];
+// 2. RECUPERO REALE DA SUPABASE
+// Filtriamo i record che sono stati effettivamente ritirati (es. stato = 'Ritirato' oppure consegnato_sit = true)
+$url_get = SUPABASE_URL . "/rest/v1/ritiri_sangue?or=(stato.eq.Ritirato,consegnato_sit.eq.true)&order=created_at.desc";
 
-try {
-    // Esempio di chiamata di recupero (adatta con le tue credenziali Supabase o funzione globale)
-    // $richieste_effettive = chiama_supabase_get("ritiri_sangue?select=*&or=(stato.eq.Ritirato,consegnato_sit.eq.true)&order=created_at.desc");
-    
-    // SIMULAZIONE DINAMICA DEI DATI REALI (Collega qui la tua variabile proveniente da Supabase)
-    // $richieste_effettive = ... il risultato della tua query a Supabase ...
-} catch (Exception $e) {
-    $errore_esito = "Errore durante il recupero dei dati: " . $e.getMessage();
+$ch = curl_init($url_get);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "apikey: " . SUPABASE_KEY,
+    "Authorization: Bearer " . SUPABASE_KEY,
+    "Content-Type: application/json"
+]);
+
+$response_json = curl_exec($ch);
+$http_code_get = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+$richieste_effettive = [];
+if ($http_code_get >= 200 && $http_code_get < 300) {
+    $richieste_effettive = json_decode($response_json, true);
+} else {
+    $errore_esito = "Impossibile recuperare i dati da Supabase (Codice: $http_code_get). Verifica configurazione in config.php.";
 }
 ?>
 <!DOCTYPE html>
@@ -70,7 +96,7 @@ try {
         <div class="row mb-3">
             <div class="col-12">
                 <h2>Verifica Modulo Emovigilanza (Ritiri Effettuati)</h2>
-                <p class="text-muted">In questa sezione compaiono esclusivamente le richieste che risultano già ritirate, permettendo di spuntare la ricezione del modulo di emovigilanza.</p>
+                <p class="text-muted">Elenco delle richieste già ritirate. Spunta la casella per confermare la ricezione del modulo di emovigilanza.</p>
             </div>
         </div>
 
@@ -105,7 +131,7 @@ try {
                         <tbody>
                             <?php if (empty($richieste_effettive)): ?>
                                 <tr>
-                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta ritirata trovata al momento.</td>
+                                    <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta ritirata trovata nel database.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($richieste_effettive as $r): ?>
@@ -118,7 +144,7 @@ try {
                                             <span class="badge bg-success">Ritirato</span>
                                         </td>
                                         <td>
-                                            <!-- Form con checkbox per aggiornare in tempo reale lo stato dell'emovigilanza -->
+                                            <!-- Form con checkbox: al cambio invia automaticamente il form salvando il valore -->
                                             <form method="POST" class="d-flex align-items-center">
                                                 <input type="hidden" name="id_ritiro" value="<?php echo htmlspecialchars($r['id']); ?>">
                                                 <div class="form-check form-switch">
