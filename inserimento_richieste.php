@@ -21,8 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $data_prelievo = trim($_POST['data_prelievo'] ?? date('Y-m-d'));
     $esami = trim($_POST['esami'] ?? '');
 
-    if (!empty($numero_richiesta) && !empty($paziente)) {
-        $dati = [
+    if (!empty($numero_richiesta) && !empty($paziente)) {$dati = [
             'numero_richiesta' => $numero_richiesta,
             'paziente' => $paziente,
             'codice_fiscale' => $codice_fiscale,
@@ -33,15 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         ];
 
         // Sfruttiamo l'helper centralizzato del progetto
-        $risultato = esegui_post_api('richieste_trasporto', $dati);
+        $risultato = esegui_post_api('richieste_trasporto',$dati);
 
-        // Se Supabase risponde con un array o l'inserimento va a buon fine
-        if ($risultato !== null && !isset($risultato['code'])) {
-            $messaggio = "Richiesta N. $numero_richiesta registrata con successo su Supabase!";
+        if ($risultato !== null && !isset($risultato['code'])) {$messaggio = "Richiesta N. $numero_richiesta registrata con successo su Supabase!";
             $tipo_messaggio = "success";
         } else {
-            $errore_dettaglio = $risultato['message'] ?? 'Errore sconosciuto';
-            $messaggio = "Errore durante il salvataggio: " . $errore_dettaglio;
+            $errore_dettaglio = $risultato['message'] ?? 'Errore sconosciuto';$messaggio = "Errore durante il salvataggio: " . $errore_dettaglio;
             $tipo_messaggio = "error";
         }
     } else {
@@ -86,19 +82,19 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         <!-- Sezione Scansione Automatica Foto (OCR) -->
         <div class="card border-info mb-4" style="border-radius: 8px;">
             <div class="card-header bg-info text-white" style="border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                <h5 class="mb-0 fs-6">📷 Scansione Rapida Fotocamera (Estrai da Foglio)</h5>
+                <h5 class="mb-0 fs-6">📷 Scansione Multipla da Foglio (Estrai Tutti i Record)</h5>
             </div>
             <div class="card-body p-3">
-                <p class="text-muted small mb-2">Scatta una foto al foglio delle prestazioni per compilare i campi automaticamente:</p>
+                <p class="text-muted small mb-2">Scatta una foto al foglio riepilogativo per estrarre e registrare automaticamente <strong>tutte le righe</strong> presenti:</p>
                 <div class="mb-2">
                     <input type="file" class="form-control form-control-sm" id="file_foto" accept="image/*" capture="environment">
                 </div>
                 <div id="status_ocr" class="fw-bold text-primary small mb-2"></div>
-                <button type="button" class="btn btn-outline-info btn-sm w-100" id="btn_esegui_ocr">Estrai Dati dalla Foto</button>
+                <button type="button" class="btn btn-outline-info btn-sm w-100" id="btn_esegui_ocr">Estrai e Salva Tutti i Record</button>
             </div>
         </div>
 
-        <form method="POST">
+        <form method="POST" id="form_inserimento">
             <label>Numero Richiesta *</label>
             <input type="text" name="numero_richiesta" id="numero_richiesta" placeholder="es. 2622135890" required autofocus>
 
@@ -138,7 +134,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                 </thead>
                 <tbody>
                     <?php if (!empty($richieste_recenti) && is_array($richieste_recenti)): ?>
-                        <?php foreach ($richieste_recenti as $item): ?>
+                        <?php foreach ($richieste_recenti as$item): ?>
                             <tr>
                                 <td><code><strong><?php echo htmlspecialchars($item['numero_richiesta'] ?? ''); ?></strong></code></td>
                                 <td><?php echo htmlspecialchars($item['paziente'] ?? ''); ?></td>
@@ -156,7 +152,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         </div>
     </div>
 
-    <!-- Script JavaScript per OCR automatico del foglio -->
+    <!-- Script JavaScript per OCR Multiplo e invio massivo a Supabase -->
     <script>
         document.getElementById('btn_esegui_ocr').addEventListener('click', async () => {
             const fileInput = document.getElementById('file_foto');
@@ -168,7 +164,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
             }
 
             const file = fileInput.files[0];
-            statusDiv.innerText = 'Elaborazione immagine in corso (Lettura OCR)...';
+            statusDiv.innerText = 'Elaborazione immagine in corso (OCR in corso)...';
 
             try {
                 const worker = await Tesseract.createWorker('ita+eng');
@@ -176,23 +172,112 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                 const testoRiconosciuto = ret.data.text;
                 await worker.terminate();
 
-                statusDiv.innerText = 'Scansione completata! Analisi dati...';
+                statusDiv.innerText = 'Analisi multi-riga in corso...';
 
-                const matchRichiesta = testoRiconosciuto.match(/\b\d{10}\b/);
-                if (matchRichiesta) {
-                    document.getElementById('numero_richiesta').value = matchRichiesta[0];
+                const linee = testoRiconosciuto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                
+                let recordsTrovati = [];
+                let richiestaCorrente = "";
+                let pazienteCorrente = "";
+                let cfCorrente = "";
+                let esamiCorrenti = [];
+
+                // Analisi riga per riga per individuare blocchi di richieste multiple
+                for (let i = 0; i < linee.length; i++) {
+                    let riga = linee[i];
+                    let rigaUpper = riga.toUpperCase();
+
+                    // Cerca un codice richiesta (es. sequenza di 8-12 cifre)
+                    let matchReq = riga.match(/\b\d{8,12}\b/);
+                    if (matchReq) {
+                        // Se avevamo già una richiesta aperta, la salviamo prima di iniziare la nuova
+                        if (richiestaCorrente && pazienteCorrente) {
+                            recordsTrovati.push({
+                                numero_richiesta: richiestaCorrente,
+                                paziente: pazienteCorrente,
+                                codice_fiscale: cfCorrente,
+                                reparto: document.getElementById('reparto').value || 'Reparto Gen.',
+                                data_prelievo: document.getElementById('data_prelievo').value,
+                                esami: esamiCorrenti.length > 0 ? esamiCorrenti.join(', ') : 'Esami da foglio'
+                            });
+                        }
+                        richiestaCorrente = matchReq[0];
+                        pazienteCorrente = "";
+                        cfCorrente = "";
+                        esamiCorrenti = [];
+                        continue;
+                    }
+
+                    // Cerca Codice Fiscale all'interno della riga
+                    let matchCF = riga.match(/[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/i);
+                    if (matchCF) {
+                        cfCorrente = matchCF[0].toUpperCase();
+                        // Spesso il nome del paziente precede il codice fiscale sulla stessa riga o su quella sopra
+                        let pulita = riga.replace(matchCF[0], '').trim();
+                        if (pulita.length > 3 && /^[A-Z\s]+$/.test(pulita)) {
+                            pazienteCorrente = pulita;
+                        }
+                        continue;
+                    }
+
+                    // Se la riga è composta da lettere maiuscole e spazi, potrebbe essere il nome del paziente
+                    if (!pazienteCorrente && /^[A-Z\s]{5,}$/.test(riga) && !rigaUpper.includes('REGIONE') && !rigaUpper.includes('AZIENDA') && !rigaUpper.includes('PAGINA')) {
+                        if (riga.split(' ').length >= 2) {
+                            pazienteCorrente = riga;
+                            continue;
+                        }
+                    }
+
+                    // Raccoglie eventuali descrizioni di esami
+                    if (rigaUpper.includes('RICERCA') || rigaUpper.includes('TEST') || rigaUpper.includes('ESAME') || rigaUpper.includes('DOSAGGIO')) {
+                        esamiCorrenti.push(riga);
+                    }
                 }
 
-                const matchCF = testoRiconosciuto.match(/[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/i);
-                if (matchCF) {
-                    document.getElementById('codice_fiscale').value = matchCF[0].toUpperCase();
+                // Aggiunge l'ultimo record rimasto in coda
+                if (richiestaCorrente && pazienteCorrente) {
+                    recordsTrovati.push({
+                        numero_richiesta: richiestaCorrente,
+                        paziente: pazienteCorrente,
+                        codice_fiscale: cfCorrente,
+                        reparto: document.getElementById('reparto').value || 'Reparto Gen.',
+                        data_prelievo: document.getElementById('data_prelievo').value,
+                        esami: esamiCorrenti.length > 0 ? esamiCorrenti.join(', ') : 'Esami da foglio'
+                    });
                 }
 
-                document.getElementById('esami').value = "Scansione OCR completata";
-                statusDiv.innerText = 'Dati estratti con successo! Controlla i campi.';
+                if (recordsTrovati.length === 0) {
+                    // Fallimento parsing strutturato: compila almeno la prima riga nel form classico
+                    statusDiv.innerText = 'Impossibile estrarre blocchi multipli puliti. Compilazione singolo modulo...';
+                    const matchRichiestaUnica = testoRiconosciuto.match(/\b\d{8,12}\b/);
+                    if (matchRichiestaUnica) document.getElementById('numero_richiesta').value = matchRichiestaUnica[0];
+                    document.getElementById('esami').value = "Testo OCR: " + testoRiconosciuto.substring(0, 100);
+                    return;
+                }
+
+                statusDiv.innerText = `Trovate ${recordsTrovati.length} richieste. Invio in corso a Supabase...`;
+
+                // Invio in blocco di tutte le righe trovate tramite fetch asincrona o ciclo POST
+                let salvate = 0;
+                for (let rec of recordsTrovati) {
+                    try {
+                        let response = await fetch(window.location.href, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: new URLSearchParams(rec)
+                        });
+                        if (response.ok) salvate++;
+                    } catch (e) {
+                        console.error("Errore invio record:", e);
+                    }
+                }
+
+                statusDiv.innerText = `Completato! Salvate con successo ${salvate} su ${recordsTrovati.length} richieste. Ricaricamento...`;
+                setTimeout(() => { window.location.reload(); }, 1500);
+
             } catch (err) {
                 console.error(err);
-                statusDiv.innerText = 'Errore durante la lettura dell\'immagine. Riprova.';
+                statusDiv.innerText = 'Errore durante l\'elaborazione dell\'immagine.';
             }
         });
     </script>
