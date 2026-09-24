@@ -10,7 +10,6 @@ require_once __DIR__ . '/api_helper_sangue.php';
 
 $messaggio = "";
 $tipo_messaggio = "";
-$debug_output = ""; // Variabile per il debug
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     date_default_timezone_set('Europe/Rome');
@@ -33,36 +32,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'created_at' => date('c')
         ];
 
-        // --- DEBUG PERSONALIZZATO PER TRACCIARE L'ERRORE ---
-        global $supabase_url, $supabase_key;
-        
-        $url_endpoint = rtrim($supabase_url, '/') . '/rest/v1/richieste_trasporto';
-        $payload_json = json_encode($dati);
+        // Sfruttiamo l'helper centralizzato del progetto
+        $risultato = esegui_post_api('richieste_trasporto', $dati);
 
-        $ch = curl_init($url_endpoint);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload_json);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Content-Type: application/json",
-            "apikey: $supabase_key",
-            "Authorization: Bearer $supabase_key",
-            "Prefer: return=representation" // Chiediamo a Supabase di restituire l'oggetto inserito
-        ]);
-
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_error = curl_error($ch);
-        curl_close($ch);
-
-        // Catturiamo tutto per vederlo a schermo
-        $debug_output = "HTTP Code: $http_code | cURL Error: $curl_error | Risposta Supabase: $response";
-
-        if ($http_code >= 200 && $http_code < 300) {
-            $messaggio = "Richiesta N. $numero_richiesta registrata con successo!";
+        // Se Supabase risponde con un array o l'inserimento va a buon fine
+        if ($risultato !== null && !isset($risultato['code'])) {
+            $messaggio = "Richiesta N. $numero_richiesta registrata con successo su Supabase!";
             $tipo_messaggio = "success";
         } else {
-            $messaggio = "Errore durante il salvataggio su Supabase (HTTP $http_code).";
+            $errore_dettaglio = $risultato['message'] ?? 'Errore sconosciuto';
+            $messaggio = "Errore durante il salvataggio: " . $errore_dettaglio;
             $tipo_messaggio = "error";
         }
     } else {
@@ -71,20 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Recupero ultime richieste
-global $supabase_url, $supabase_key;
-$richieste_recenti = [];
-if (!empty($supabase_url) && !empty($supabase_key)) {
-    $ch = curl_init("$supabase_url/rest/v1/richieste_trasporto?select=*&order=id.desc&limit=15");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "apikey: $supabase_key",
-        "Authorization: Bearer $supabase_key"
-    ]);
-    $response_get = curl_exec($ch);
-    curl_close($ch);
-    $richieste_recenti = json_decode($response_get, true) ?? [];
-}
+// Recupero ultime richieste tramite la funzione di get dell'helper
+$richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&limit=15') ?? [];
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -92,7 +59,9 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Inserimento Richieste Trasporto - Furgone</title>
+    <!-- Bootstrap CSS per coerenza grafica -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Tesseract.js per la scansione OCR automatica della foto -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 15px; background: #f4f4f9; margin: 0; }
@@ -103,7 +72,6 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
         button[type="submit"] { width: 100%; padding: 16px; margin-top: 25px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; }
         .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 15px; font-weight: bold; }
         .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 15px; font-weight: bold; }
-        .debug-box { background: #222; color: #0ff; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px; margin-bottom: 15px; word-break: break-all; }
         .back-link { display: block; text-align: center; margin-top: 20px; color: #007bff; text-decoration: none; font-weight: bold; }
     </style>
 </head>
@@ -112,14 +80,7 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
         <h1>Gestione Richieste Trasporto (Furgone)</h1>
         
         <?php if(!empty($messaggio)): ?>
-            <div class="<?php echo $tipo_messaggio; ?>"><?php echo $messaggio; ?></div>
-        <?php endif; ?>
-
-        <!-- BOX DI DEBUG VISIVO -->
-        <?php if(!empty($debug_output)): ?>
-            <div class="debug-box">
-                <strong>[DEBUG REST API]:</strong><br><?php echo htmlspecialchars($debug_output); ?>
-            </div>
+            <div class="<?php echo $tipo_messaggio; ?>"><?php echo htmlspecialchars($messaggio); ?></div>
         <?php endif; ?>
 
         <!-- Sezione Scansione Automatica Foto (OCR) -->
@@ -128,7 +89,7 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
                 <h5 class="mb-0 fs-6">📷 Scansione Rapida Fotocamera (Estrai da Foglio)</h5>
             </div>
             <div class="card-body p-3">
-                <p class="text-muted small mb-2">Scatta una foto al foglio delle prestazioni:</p>
+                <p class="text-muted small mb-2">Scatta una foto al foglio delle prestazioni per compilare i campi automaticamente:</p>
                 <div class="mb-2">
                     <input type="file" class="form-control form-control-sm" id="file_foto" accept="image/*" capture="environment">
                 </div>
