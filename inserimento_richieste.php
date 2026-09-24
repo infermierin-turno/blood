@@ -5,9 +5,13 @@ if (!isset($_SESSION['utente'])) {
     exit;
 }
 
-// Configurazione Supabase tramite Variabili d'Ambiente e file dedicati
+// Inclusione dei file di configurazione
 require_once __DIR__ . '/config_sangue.php';
 require_once __DIR__ . '/api_helper_sangue.php';
+
+// Assicuriamo che le variabili globali di Supabase siano definite correttamente
+$supabase_url = $supabase_url ?? getenv('SUPABASE_URL') ?: '';
+$supabase_key = $supabase_key ?? getenv('SUPABASE_KEY') ?: '';
 
 $messaggio = '';
 $tipo_messaggio = '';
