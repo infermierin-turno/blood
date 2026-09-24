@@ -95,15 +95,15 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         <!-- Sezione Scansione Automatica Foto (OCR) Multipla -->
         <div class="card border-info mb-4" style="border-radius: 8px;">
             <div class="card-header bg-info text-white" style="border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                <h5 class="mb-0 fs-6">📷 Scansione Multipla Avanzata (Tutti i Record)</h5>
+                <h5 class="mb-0 fs-6">📷 Scansione Multipla con Check di Conferma</h5>
             </div>
             <div class="card-body p-3">
-                <p class="text-muted small mb-2">Scatta la foto al foglio delle prestazioni: il sistema individuerà <strong>tutti i numeri di richiesta e i pazienti</strong> registrandoli in blocco:</p>
+                <p class="text-muted small mb-2">Scatta la foto: il sistema estrarrà i record e ti permetterà di **verificarli e correggerli** prima di inviarli.</p>
                 <div class="mb-2">
                     <input type="file" class="form-control form-control-sm" id="file_foto" accept="image/*" capture="environment">
                 </div>
                 <div id="status_ocr" class="fw-bold text-primary small mb-2"></div>
-                <button type="button" class="btn btn-outline-info btn-sm w-100" id="btn_esegui_ocr">Estrai e Salva Tutte le Righe</button>
+                <button type="button" class="btn btn-outline-info btn-sm w-100" id="btn_esegui_ocr">Estrai e Mostra Anteprima</button>
             </div>
         </div>
 
@@ -130,6 +130,40 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         </form>
 
         <a href="bacheca_ritiri.php" class="back-link">Torna alla bacheca</a>
+    </div>
+
+    <!-- Modale di Check e Conferma Post-OCR -->
+    <div class="modal fade" id="modalCheckOcr" tabindex="-1" aria-labelledby="modalCheckOcrLabel" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title" id="modalCheckOcrLabel">🔍 Verifica e Conferma Record Estratti</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Controlla i dati rilevati dalla foto. Puoi correggere i testi direttamente nelle caselle o deselezionare le righe che non desideri registrare.</p>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm align-middle" id="tabella_risultati_ocr">
+                            <thead class="table-light">
+                                <tr class="text-center">
+                                    <th style="width: 5%;">Salva</th>
+                                    <th style="width: 25%;">N. Richiesta</th>
+                                    <th style="width: 35%;">Paziente</th>
+                                    <th style="width: 35%;">Codice Fiscale</th>
+                                </tr>
+                            </thead>
+                            <tbody id="corpo_tabella_ocr">
+                                <!-- Generato dinamicamente via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="status_salvataggio_massivo" class="fw-bold text-center mt-3"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="button" class="btn btn-success fw-bold" id="btn_conferma_invio_massivo">Conferma e Salva Selezionate</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Tabella Storico Recenti -->
@@ -165,8 +199,17 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         </div>
     </div>
 
-    <!-- Script JavaScript per OCR Multiplo Avanzato -->
+    <!-- Bootstrap JS Bundle (necessario per il Modale) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Script JavaScript per OCR e Gestione Check Intermedio -->
     <script>
+        let modalCheckInstance = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            modalCheckInstance = new bootstrap.Modal(document.getElementById('modalCheckOcr'));
+        });
+
         document.getElementById('btn_esegui_ocr').addEventListener('click', async () => {
             const fileInput = document.getElementById('file_foto');
             const statusDiv = document.getElementById('status_ocr');
@@ -185,17 +228,14 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                 const testoRiconosciuto = ret.data.text;
                 await worker.terminate();
 
-                statusDiv.innerText = 'Analisi avanzata e ricerca di tutti i record...';
+                statusDiv.innerText = 'Analisi e strutturazione dei dati...';
 
                 const linee = testoRiconosciuto.split('\n').map(l => l.trim()).filter(l => l.length > 2);
                 
                 let numeriRichiestaTrovati = [];
                 let pazientiTrovati = [];
                 let codiciFiscaliTrovati = [];
-                let repartoDefault = document.getElementById('reparto').value || 'Reparto Gen.';
-                let dataDefault = document.getElementById('data_prelievo').value;
 
-                // 1. Raccoglie TUTTI i numeri di richiesta (8-12 cifre) presenti nel testo
                 linee.forEach(riga => {
                     let matchReq = riga.match(/\b\d{8,12}\b/g);
                     if (matchReq) {
@@ -206,7 +246,6 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                         });
                     }
 
-                    // Raccoglie TUTTI i codici fiscali
                     let matchCF = riga.match(/[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/gi);
                     if (matchCF) {
                         matchCF.forEach(cf => {
@@ -216,7 +255,6 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                         });
                     }
 
-                    // Raccoglie potenziali nomi di pazienti (stringhe di sole lettere maiuscole)
                     if (/^[A-Z\s]{5,}$/.test(riga) && 
                         !riga.toUpperCase().includes('REGIONE') && 
                         !riga.toUpperCase().includes('AZIENDA') && 
@@ -229,56 +267,104 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                     }
                 });
 
-                // Se non troviamo numeri multipli ma almeno il testo c'è, ripieghiamo inserendo almeno il primo nel form
                 if (numeriRichiestaTrovati.length === 0) {
-                    statusDiv.innerText = 'Nessun numero di richiesta rilevato. Riprova con una foto più nitida o ravvicinata.';
+                    statusDiv.innerText = 'Nessun numero di richiesta rilevato. Riprova con una foto più nitida.';
                     return;
                 }
 
-                // 2. Costruisce la lista finale abbinando in ordine i numeri trovati ai pazienti trovati
-                let recordsDaSalvare = [];
+                // Popoliamo la tabella del modale di check
+                let tbody = document.getElementById('corpo_tabella_ocr');
+                tbody.innerHTML = '';
+
                 for (let i = 0; i < numeriRichiestaTrovati.length; i++) {
                     let numReq = numeriRichiestaTrovati[i];
-                    let nomePaziente = pazientiTrovati[i] || ("Paziente " + (i + 1));
+                    let nomePaziente = pazientiTrovati[i] || "";
                     let codiceFisc = codiciFiscaliTrovati[i] || "";
 
-                    recordsDaSalvare.push({
-                        numero_richiesta: numReq,
-                        paziente: nomePaziente,
-                        codice_fiscale: codiceFisc,
-                        reparto: repartoDefault,
-                        data_prelievo: dataDefault,
-                        esami: "Esami da scansione multipla OCR"
-                    });
+                    let tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-center">
+                            <input class="form-check-input row-selezionata" type="checkbox" checked style="width: 22px; height: 22px;">
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm val-richiesta" value="${numReq}">
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm val-paziente" value="${nomePaziente}" placeholder="Inserisci nome paziente">
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm val-cf" value="${codiceFisc}" placeholder="Codice fiscale (opzionale)">
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
                 }
 
-                statusDiv.innerText = `Trovate ${recordsDaSalvare.length} richieste sul foglio. Salvataggio su Supabase...`;
-
-                // 3. Invio sequenziale asincrono di tutti i record trovati
-                let salvate = 0;
-                for (let rec of recordsDaSalvare) {
-                    try {
-                        let response = await fetch(window.location.href, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(rec)
-                        });
-                        let resJson = await response.json();
-                        if (resJson.success) {
-                            salvate++;
-                        }
-                    } catch (e) {
-                        console.error("Errore salvataggio riga:", e);
-                    }
-                }
-
-                statusDiv.innerText = `Completato! Registrate con successo ${salvate} su ${recordsDaSalvare.length} richieste. Aggiornamento...`;
-                setTimeout(() => { window.location.reload(); }, 1500);
+                statusDiv.innerText = '';
+                modalCheckInstance.show();
 
             } catch (err) {
                 console.error(err);
                 statusDiv.innerText = 'Errore durante l\'elaborazione dell\'immagine.';
             }
+        });
+
+        // Pulsante di conferma finale nel modale
+        document.getElementById('btn_conferma_invio_massivo').addEventListener('click', async () => {
+            const righe = document.querySelectorAll('#corpo_tabella_ocr tr');
+            let recordsDaSalvare = [];
+            let repartoDefault = document.getElementById('reparto').value || 'Reparto Gen.';
+            let dataDefault = document.getElementById('data_prelievo').value;
+
+            righe.forEach(riga => {
+                let checkbox = riga.querySelector('.row-selezionata');
+                if (checkbox && checkbox.checked) {
+                    let numReq = riga.querySelector('.val-richiesta').value.trim();
+                    let paziente = riga.querySelector('.val-paziente').value.trim();
+                    let cf = riga.querySelector('.val-cf').value.trim();
+
+                    if (numReq !== '' && paziente !== '') {
+                        recordsDaSalvare.push({
+                            numero_richiesta: numReq,
+                            paziente: paziente,
+                            codice_fiscale: cf,
+                            reparto: repartoDefault,
+                            data_prelievo: dataDefault,
+                            esami: "Esami da scansione OCR con check"
+                        });
+                    }
+                }
+            });
+
+            if (recordsDaSalvare.length === 0) {
+                alert('Seleziona almeno un record valido da salvare.');
+                return;
+            }
+
+            let statusSalvataggio = document.getElementById('status_salvataggio_massivo');
+            statusSalvataggio.innerText = `Salvataggio in corso di ${recordsDaSalvare.length} record su Supabase...`;
+            statusSalvataggio.className = "fw-bold text-center mt-3 text-primary";
+
+            let salvate = 0;
+            for (let rec of recordsDaSalvare) {
+                try {
+                    let response = await fetch(window.location.href, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(rec)
+                    });
+                    let resJson = await response.json();
+                    if (resJson.success) {
+                        salvate++;
+                    }
+                } catch (e) {
+                    console.error("Errore salvataggio riga:", e);
+                }
+            }
+
+            statusSalvataggio.innerText = `Completato! Registrate con successo ${salvate} su ${recordsDaSalvare.length} richieste. Ricaricamento...`;
+            statusSalvataggio.className = "fw-bold text-center mt-3 text-success";
+
+            setTimeout(() => { window.location.reload(); }, 1500);
         });
     </script>
 </body>
