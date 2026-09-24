@@ -24,7 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $reparto = trim($dati_post['reparto'] ?? '');
     $data_prelievo = trim($dati_post['data_prelievo'] ?? date('Y-m-d'));
     $esami = trim($dati_post['esami'] ?? '');
-    // Gestione dello stato processato in base al check (true se flaggato, false altrimenti)
+    
+    // Gestione del campo booleano reale salvato su Supabase
     $processato = isset($dati_post['processato']) ? (bool)$dati_post['processato'] : true;
 
     if (!empty($numero_richiesta) && !empty($paziente)) {$dati = [
@@ -41,12 +42,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Sfruttiamo l'helper centralizzato del progetto
         $risultato = esegui_post_api('richieste_trasporto',$dati);
 
-        if ($risultato !== null && !isset($risultato['code'])) {$risposta_ok = true;
+        // Controllo della risposta dell'API Supabase
+        if ($risultato !== null && !isset($risultato['code']) && !isset($risultato['error'])) {$risposta_ok = true;
             $messaggio = "Richiesta N. $numero_richiesta registrata con successo!";
             $tipo_messaggio = "success";
         } else {
             $risposta_ok = false;
-            $errore_dettaglio = $risultato['message'] ?? 'Errore sconosciuto';$messaggio = "Errore durante il salvataggio: " . $errore_dettaglio;
+            $errore_dettaglio =$risultato['message'] ?? $risultato['error'] ?? 'Errore sconosciuto';$messaggio = "Errore Supabase: " . $errore_dettaglio;
             $tipo_messaggio = "error";
         }
 
@@ -98,7 +100,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         <!-- Sezione Scansione Automatica Foto (OCR) Multipla -->
         <div class="card border-info mb-4" style="border-radius: 8px;">
             <div class="card-header bg-info text-white" style="border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                <h5 class="mb-0 fs-6">📷 Scansione Multipla con Stato Processato</h5>
+                <h5 class="mb-0 fs-6">📷 Scansione Multipla con Stato</h5>
             </div>
             <div class="card-body p-3">
                 <p class="text-muted small mb-2">Scatta la foto: tutte le righe individuate verranno salvate. Il check indica se contrassegnarle subito come <strong>Processate</strong> o lasciarle <strong>Da verificare</strong>.</p>
@@ -190,10 +192,14 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                                 <td><?php echo htmlspecialchars($item['paziente'] ?? ''); ?></td>
                                 <td><?php echo htmlspecialchars($item['reparto'] ?? ''); ?></td>
                                 <td>
-                                    <?php if (isset($item['processato']) &&$item['processato']): ?>
-                                        <span class="badge bg-success">Processata</span>
+                                    <?php if (isset($item['processato'])): ?>
+                                        <?php if ($item['processato']): ?>
+                                            <span class="badge bg-success">Processata</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-warning text-dark">Da verificare</span>
+                                        <?php endif; ?>
                                     <?php else: ?>
-                                        <span class="badge bg-warning text-dark">Da verificare</span>
+                                        <span class="badge bg-secondary">N.D.</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -317,7 +323,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
             }
         });
 
-        // Pulsante di conferma finale nel modale (Salva TUTTE le righe con lo stato del rispettivo checkbox)
+        // Pulsante di conferma finale nel modale
         document.getElementById('btn_conferma_invio_massivo').addEventListener('click', async () => {
             const righe = document.querySelectorAll('#corpo_tabella_ocr tr');
             let recordsDaSalvare = [];
