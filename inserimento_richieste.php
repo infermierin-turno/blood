@@ -72,11 +72,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // Gestione del filtro data per le richieste recenti (GET)
-$filtro_data = $_GET['filtro_data'] ?? '';$endpoint_storico = 'richieste_trasporto?select=*&order=id.desc&limit=30';
+date_default_timezone_set('Europe/Rome');
+$filtro_data =$_GET['filtro_data'] ?? '';
 
 if (!empty($filtro_data)) {
     // Filtro per data prelievo esatta su Supabase (formato YYYY-MM-DD)
     $endpoint_storico = "richieste_trasporto?select=*&data_prelievo=eq.$filtro_data&order=id.desc";
+} else {
+    // Default: limita agli ultimi 3 giorni (data odierna - 3 giorni)
+    $data_limite = date('Y-m-d', strtotime('-3 days'));
+    $endpoint_storico = "richieste_trasporto?select=*&data_prelievo=gte.$data_limite&order=id.desc";
 }
 
 // Recupero richieste filtrate tramite la funzione di get dell'helper
@@ -188,7 +193,7 @@ $richieste_recenti = esegui_get_api($endpoint_storico) ?? [];
 
     <!-- Tabella Storico Recenti con Filtro Data -->
     <div class="form-card" style="max-width: 800px;">
-        <h3 class="fs-5 mb-3 text-secondary text-center">Storico Richieste</h3>
+        <h3 class="fs-5 mb-3 text-secondary text-center">Storico Richieste (Ultimi 3 giorni)</h3>
         
         <!-- Form Filtro Data -->
         <form method="GET" class="row g-2 align-items-center mb-3 bg-light p-2 rounded-2 mx-0">
