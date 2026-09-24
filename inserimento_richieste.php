@@ -24,6 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $reparto = trim($dati_post['reparto'] ?? '');
     $data_prelievo = trim($dati_post['data_prelievo'] ?? date('Y-m-d'));
     $esami = trim($dati_post['esami'] ?? '');
+    // Gestione dello stato processato in base al check (true se flaggato, false altrimenti)
+    $processato = isset($dati_post['processato']) ? (bool)$dati_post['processato'] : true;
 
     if (!empty($numero_richiesta) && !empty($paziente)) {$dati = [
             'numero_richiesta' => $numero_richiesta,
@@ -32,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'reparto' => $reparto,
             'data_prelievo' => $data_prelievo,
             'esami' => $esami,
+            'processato' => $processato,
             'created_at' => date('c')
         ];
 
@@ -39,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $risultato = esegui_post_api('richieste_trasporto',$dati);
 
         if ($risultato !== null && !isset($risultato['code'])) {$risposta_ok = true;
-            $messaggio = "Richiesta N. $numero_richiesta registrata con successo su Supabase!";
+            $messaggio = "Richiesta N. $numero_richiesta registrata con successo!";
             $tipo_messaggio = "success";
         } else {
             $risposta_ok = false;
@@ -95,15 +98,15 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         <!-- Sezione Scansione Automatica Foto (OCR) Multipla -->
         <div class="card border-info mb-4" style="border-radius: 8px;">
             <div class="card-header bg-info text-white" style="border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                <h5 class="mb-0 fs-6">📷 Scansione Multipla con Check di Conferma</h5>
+                <h5 class="mb-0 fs-6">📷 Scansione Multipla con Stato Processato</h5>
             </div>
             <div class="card-body p-3">
-                <p class="text-muted small mb-2">Scatta la foto: il sistema estrarrà i record e ti permetterà di **verificarli e correggerli** prima di inviarli.</p>
+                <p class="text-muted small mb-2">Scatta la foto: tutte le righe individuate verranno salvate. Il check indica se contrassegnarle subito come <strong>Processate</strong> o lasciarle <strong>Da verificare</strong>.</p>
                 <div class="mb-2">
                     <input type="file" class="form-control form-control-sm" id="file_foto" accept="image/*" capture="environment">
                 </div>
                 <div id="status_ocr" class="fw-bold text-primary small mb-2"></div>
-                <button type="button" class="btn btn-outline-info btn-sm w-100" id="btn_esegui_ocr">Estrai e Mostra Anteprima</button>
+                <button type="button" class="btn btn-outline-info btn-sm w-100" id="btn_esegui_ocr">Estrai e Verifica Anteprima</button>
             </div>
         </div>
 
@@ -137,18 +140,18 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header bg-info text-white">
-                    <h5 class="modal-title" id="modalCheckOcrLabel">🔍 Verifica e Conferma Record Estratti</h5>
+                    <h5 class="modal-title" id="modalCheckOcrLabel">🔍 Verifica e Stato dei Record Estratti</h5>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small">Controlla i dati rilevati dalla foto. Puoi correggere i testi direttamente nelle caselle o deselezionare le righe che non desideri registrare.</p>
+                    <p class="text-muted small">Tutte le righe qui sotto verranno salvate. Il check attivo imposta lo stato su <strong>Processata</strong> (spento = <strong>Da verificare</strong>).</p>
                     <div class="table-responsive">
                         <table class="table table-bordered table-sm align-middle" id="tabella_risultati_ocr">
                             <thead class="table-light">
                                 <tr class="text-center">
-                                    <th style="width: 5%;">Salva</th>
+                                    <th style="width: 8%;">Processata</th>
                                     <th style="width: 25%;">N. Richiesta</th>
-                                    <th style="width: 35%;">Paziente</th>
-                                    <th style="width: 35%;">Codice Fiscale</th>
+                                    <th style="width: 34%;">Paziente</th>
+                                    <th style="width: 33%;">Codice Fiscale</th>
                                 </tr>
                             </thead>
                             <tbody id="corpo_tabella_ocr">
@@ -160,7 +163,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                    <button type="button" class="btn btn-success fw-bold" id="btn_conferma_invio_massivo">Conferma e Salva Selezionate</button>
+                    <button type="button" class="btn btn-success fw-bold" id="btn_conferma_invio_massivo">Salva Tutte le Righe</button>
                 </div>
             </div>
         </div>
@@ -176,7 +179,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                         <th>N. Richiesta</th>
                         <th>Paziente</th>
                         <th>Reparto</th>
-                        <th>Data</th>
+                        <th>Stato</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -186,7 +189,13 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                                 <td><code><strong><?php echo htmlspecialchars($item['numero_richiesta'] ?? ''); ?></strong></code></td>
                                 <td><?php echo htmlspecialchars($item['paziente'] ?? ''); ?></td>
                                 <td><?php echo htmlspecialchars($item['reparto'] ?? ''); ?></td>
-                                <td><?php echo htmlspecialchars($item['data_prelievo'] ?? ''); ?></td>
+                                <td>
+                                    <?php if (isset($item['processato']) &&$item['processato']): ?>
+                                        <span class="badge bg-success">Processata</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-warning text-dark">Da verificare</span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
@@ -284,7 +293,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                     let tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td class="text-center">
-                            <input class="form-check-input row-selezionata" type="checkbox" checked style="width: 22px; height: 22px;">
+                            <input class="form-check-input row-processata" type="checkbox" checked style="width: 22px; height: 22px;" title="Seleziona per segnare come Processata">
                         </td>
                         <td>
                             <input type="text" class="form-control form-control-sm val-richiesta" value="${numReq}">
@@ -308,7 +317,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
             }
         });
 
-        // Pulsante di conferma finale nel modale
+        // Pulsante di conferma finale nel modale (Salva TUTTE le righe con lo stato del rispettivo checkbox)
         document.getElementById('btn_conferma_invio_massivo').addEventListener('click', async () => {
             const righe = document.querySelectorAll('#corpo_tabella_ocr tr');
             let recordsDaSalvare = [];
@@ -316,27 +325,27 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
             let dataDefault = document.getElementById('data_prelievo').value;
 
             righe.forEach(riga => {
-                let checkbox = riga.querySelector('.row-selezionata');
-                if (checkbox && checkbox.checked) {
-                    let numReq = riga.querySelector('.val-richiesta').value.trim();
-                    let paziente = riga.querySelector('.val-paziente').value.trim();
-                    let cf = riga.querySelector('.val-cf').value.trim();
+                let checkbox = riga.querySelector('.row-processata');
+                let numReq = riga.querySelector('.val-richiesta').value.trim();
+                let paziente = riga.querySelector('.val-paziente').value.trim();
+                let cf = riga.querySelector('.val-cf').value.trim();
+                let isProcessato = checkbox ? checkbox.checked : false;
 
-                    if (numReq !== '' && paziente !== '') {
-                        recordsDaSalvare.push({
-                            numero_richiesta: numReq,
-                            paziente: paziente,
-                            codice_fiscale: cf,
-                            reparto: repartoDefault,
-                            data_prelievo: dataDefault,
-                            esami: "Esami da scansione OCR con check"
-                        });
-                    }
+                if (numReq !== '' && paziente !== '') {
+                    recordsDaSalvare.push({
+                        numero_richiesta: numReq,
+                        paziente: paziente,
+                        codice_fiscale: cf,
+                        reparto: repartoDefault,
+                        data_prelievo: dataDefault,
+                        esami: "Esami da scansione OCR",
+                        processato: isProcessato
+                    });
                 }
             });
 
             if (recordsDaSalvare.length === 0) {
-                alert('Seleziona almeno un record valido da salvare.');
+                alert('Nessun record valido da salvare.');
                 return;
             }
 
