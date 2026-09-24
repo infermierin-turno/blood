@@ -28,7 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // Gestione del campo booleano reale salvato su Supabase
     $processato = isset($dati_post['processato']) ? (bool)$dati_post['processato'] : true;
 
-    if (!empty($numero_richiesta) && !empty($paziente)) {$dati = [
+    // Se per qualche motivo il paziente è vuoto, assegnamo un progressivo di emergenza per rispettare il vincolo NOT NULL
+    if (empty($paziente)) {$paziente = "PAZIENTE DA VERIFICARE";
+    }
+
+    if (!empty($numero_richiesta)) {$dati = [
             'numero_richiesta' => $numero_richiesta,
             'paziente' => $paziente,
             'codice_fiscale' => $codice_fiscale,
@@ -59,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             exit;
         }
     } else {
-        if (!empty($input_json)) {             header('Content-Type: application/json');             echo json_encode(['success' => false, 'message' => 'Campi obbligatori mancanti.']);             exit;         }$messaggio = "Il Numero Richiesta e il nome del Paziente sono obbligatori.";
+        if (!empty($input_json)) {             header('Content-Type: application/json');             echo json_encode(['success' => false, 'message' => 'Numero richiesta obbligatorio mancante.']);             exit;         }$messaggio = "Il Numero Richiesta è obbligatorio.";
         $tipo_messaggio = "error";
     }
 }
@@ -103,7 +107,7 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                 <h5 class="mb-0 fs-6">📷 Scansione Multipla con Stato</h5>
             </div>
             <div class="card-body p-3">
-                <p class="text-muted small mb-2">Scatta la foto: tutte le righe individuate verranno salvate. Il check indica se contrassegnarle subito come <strong>Processate</strong> o lasciarle <strong>Da verificare</strong>.</p>
+                <p class="text-muted small mb-2">Scatta la foto: tutte le righe individuate verranno salvate. I nomi trovati sulla foto vengono associati automaticamente (o numerati in sequenza).</p>
                 <div class="mb-2">
                     <input type="file" class="form-control form-control-sm" id="file_foto" accept="image/*" capture="environment">
                 </div>
@@ -194,9 +198,9 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                                 <td>
                                     <?php if (isset($item['processato'])): ?>
                                         <?php if ($item['processato']): ?>
-                                            <span class="badge bg-success">Processata</span>
+                                            <span class="badge bg-success">Ceck Positivo</span>
                                         <?php else: ?>
-                                            <span class="badge bg-warning text-dark">Da verificare</span>
+                                            <span class="badge bg-warning text-dark">Non Inviato - No Ceck!</span>
                                         <?php endif; ?>
                                     <?php else: ?>
                                         <span class="badge bg-secondary">N.D.</span>
@@ -270,12 +274,16 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                         });
                     }
 
+                    // Cerca stringhe testuali in maiuscolo che sembrano nomi di persona (almeno 2 parole, escludendo termini fissi)
+                    let upperRiga = riga.toUpperCase();
                     if (/^[A-Z\s]{5,}$/.test(riga) && 
-                        !riga.toUpperCase().includes('REGIONE') && 
-                        !riga.toUpperCase().includes('AZIENDA') && 
-                        !riga.toUpperCase().includes('CODICE') && 
-                        !riga.toUpperCase().includes('FISCALE') &&
-                        !riga.toUpperCase().includes('RICHIESTA')) {
+                        !upperRiga.includes('REGIONE') && 
+                        !upperRiga.includes('AZIENDA') && 
+                        !upperRiga.includes('CODICE') && 
+                        !upperRiga.includes('FISCALE') &&
+                        !upperRiga.includes('RICHIESTA') &&
+                        !upperRiga.includes('DATA') &&
+                        !upperRiga.includes('PRELIEVO')) {
                         if (riga.split(' ').length >= 2 && !pazientiTrovati.includes(riga)) {
                             pazientiTrovati.push(riga);
                         }
@@ -293,7 +301,8 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
 
                 for (let i = 0; i < numeriRichiestaTrovati.length; i++) {
                     let numReq = numeriRichiestaTrovati[i];
-                    let nomePaziente = pazientiTrovati[i] || "";
+                    // Se l'OCR trova un nome lo usa, altrimenti assegna un progressivo che parte da 1 per questa foto
+                    let nomePaziente = pazientiTrovati[i] || `PAZIENTE ${i + 1} (DA VERIFICARE)`;
                     let codiceFisc = codiciFiscaliTrovati[i] || "";
 
                     let tr = document.createElement('tr');
@@ -337,7 +346,10 @@ $richieste_recenti = esegui_get_api('richieste_trasporto?select=*&order=id.desc&
                 let cf = riga.querySelector('.val-cf').value.trim();
                 let isProcessato = checkbox ? checkbox.checked : false;
 
-                if (numReq !== '' && paziente !== '') {
+                if (numReq !== '') {
+                    if (paziente === '') {
+                        paziente = "PAZIENTE DA VERIFICARE";
+                    }
                     recordsDaSalvare.push({
                         numero_richiesta: numReq,
                         paziente: paziente,
