@@ -5,7 +5,7 @@ if (!isset($_SESSION['utente'])) {
     exit;
 }
 
-// Configurazione Supabase tramite Variabili d'Ambiente di Render
+// Configurazione Supabase tramite Variabili d'Ambiente e file dedicati
 require_once __DIR__ . '/config_sangue.php';
 require_once __DIR__ . '/api_helper_sangue.php';
 
