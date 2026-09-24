@@ -10,6 +10,7 @@ require_once __DIR__ . '/api_helper_sangue.php';
 
 $messaggio = "";
 $tipo_messaggio = "";
+$debug_output = ""; // Variabile per il debug
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     date_default_timezone_set('Europe/Rome');
@@ -32,14 +33,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'created_at' => date('c')
         ];
 
-        // Utilizzo della funzione centralizzata del vostro helper API
-        $risultato = esegui_post_api('richieste_trasporto', $dati);
+        // --- DEBUG PERSONALIZZATO PER TRACCIARE L'ERRORE ---
+        global $supabase_url, $supabase_key;
+        
+        $url_endpoint = rtrim($supabase_url, '/') . '/rest/v1/richieste_trasporto';
+        $payload_json = json_encode($dati);
 
-        if ($risultato !== null) {
+        $ch = curl_init($url_endpoint);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload_json);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Content-Type: application/json",
+            "apikey: $supabase_key",
+            "Authorization: Bearer $supabase_key",
+            "Prefer: return=representation" // Chiediamo a Supabase di restituire l'oggetto inserito
+        ]);
+
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($ch);
+        curl_close($ch);
+
+        // Catturiamo tutto per vederlo a schermo
+        $debug_output = "HTTP Code: $http_code | cURL Error: $curl_error | Risposta Supabase: $response";
+
+        if ($http_code >= 200 && $http_code < 300) {
             $messaggio = "Richiesta N. $numero_richiesta registrata con successo!";
             $tipo_messaggio = "success";
         } else {
-            $messaggio = "Errore durante il salvataggio su Supabase. Verifica la connessione.";
+            $messaggio = "Errore durante il salvataggio su Supabase (HTTP $http_code).";
             $tipo_messaggio = "error";
         }
     } else {
@@ -48,11 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Recupero ultime richieste registrate tramite helper o chiamata GET gestita
-// Se nel vostro helper avete una funzione di GET potete usarla, altrimenti usiamo il recupero standard via API
-$richieste_recenti = [];
-// Tentativo di recupero tramite funzione get se esiste nell'helper, oppure query diretta via cURL con le costanti dell'helper
+// Recupero ultime richieste
 global $supabase_url, $supabase_key;
+$richieste_recenti = [];
 if (!empty($supabase_url) && !empty($supabase_key)) {
     $ch = curl_init("$supabase_url/rest/v1/richieste_trasporto?select=*&order=id.desc&limit=15");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -71,9 +92,7 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Inserimento Richieste Trasporto - Furgone</title>
-    <!-- Bootstrap CSS per coerenza e rapidità -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Tesseract.js per la scansione OCR automatica della foto del foglio -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 15px; background: #f4f4f9; margin: 0; }
@@ -84,6 +103,7 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
         button[type="submit"] { width: 100%; padding: 16px; margin-top: 25px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; }
         .success { color: #155724; background: #d4edda; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 15px; font-weight: bold; }
         .error { color: #721c24; background: #f8d7da; padding: 12px; border-radius: 6px; text-align: center; margin-bottom: 15px; font-weight: bold; }
+        .debug-box { background: #222; color: #0ff; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px; margin-bottom: 15px; word-break: break-all; }
         .back-link { display: block; text-align: center; margin-top: 20px; color: #007bff; text-decoration: none; font-weight: bold; }
     </style>
 </head>
@@ -95,13 +115,20 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
             <div class="<?php echo $tipo_messaggio; ?>"><?php echo $messaggio; ?></div>
         <?php endif; ?>
 
+        <!-- BOX DI DEBUG VISIVO -->
+        <?php if(!empty($debug_output)): ?>
+            <div class="debug-box">
+                <strong>[DEBUG REST API]:</strong><br><?php echo htmlspecialchars($debug_output); ?>
+            </div>
+        <?php endif; ?>
+
         <!-- Sezione Scansione Automatica Foto (OCR) -->
         <div class="card border-info mb-4" style="border-radius: 8px;">
             <div class="card-header bg-info text-white" style="border-top-left-radius: 8px; border-top-right-radius: 8px;">
                 <h5 class="mb-0 fs-6">📷 Scansione Rapida Fotocamera (Estrai da Foglio)</h5>
             </div>
             <div class="card-body p-3">
-                <p class="text-muted small mb-2">Scatta una foto al foglio delle prestazioni: il sistema compilerà in automatico i campi principali.</p>
+                <p class="text-muted small mb-2">Scatta una foto al foglio delle prestazioni:</p>
                 <div class="mb-2">
                     <input type="file" class="form-control form-control-sm" id="file_foto" accept="image/*" capture="environment">
                 </div>
@@ -111,7 +138,7 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
         </div>
 
         <form method="POST">
-            <label>Numero Richiesta * <span class="text-danger small">(Il codice chiave sul foglio)</span></label>
+            <label>Numero Richiesta *</label>
             <input type="text" name="numero_richiesta" id="numero_richiesta" placeholder="es. 2622135890" required autofocus>
 
             <label>Cognome e Nome Paziente *</label>
@@ -190,13 +217,11 @@ if (!empty($supabase_url) && !empty($supabase_key)) {
 
                 statusDiv.innerText = 'Scansione completata! Analisi dati...';
 
-                // Cerca numero richiesta (es. sequenza di 10 cifre)
                 const matchRichiesta = testoRiconosciuto.match(/\b\d{10}\b/);
                 if (matchRichiesta) {
                     document.getElementById('numero_richiesta').value = matchRichiesta[0];
                 }
 
-                // Cerca Codice Fiscale
                 const matchCF = testoRiconosciuto.match(/[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]/i);
                 if (matchCF) {
                     document.getElementById('codice_fiscale').value = matchCF[0].toUpperCase();
