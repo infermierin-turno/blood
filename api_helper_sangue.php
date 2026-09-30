@@ -98,4 +98,57 @@ if (!function_exists('verifica_login_locale')) {
         return false;
     }
 }
+
+/**
+ * Invia una notifica push tramite Firebase Cloud Messaging (FCM)
+ * 
+ * @param string $fcm_token Il token del dispositivo mobile dell'operatore
+ * @param string $titolo Titolo della notifica
+ * @param string $messaggio Corpo del messaggio
+ * @return array Risultato dell'invio
+ */
+if (!function_exists('invia_notifica_push_fcm')) {
+    function invia_notifica_push_fcm($fcm_token, $titolo, $messaggio) {
+        // La chiave Server FCM (la trovi nelle impostazioni del progetto Firebase -> Cloud Messaging)
+        $server_key = defined('FCM_SERVER_KEY') ? FCM_SERVER_KEY : '';
+        
+        if (empty($fcm_token) || empty($server_key)) {
+            return ["error" => true, "message" => "Token FCM o Chiave Server mancanti."];
+        }
+
+        $url = 'https://fcm.googleapis.com/fcm/send';
+        
+        $fields = [
+            'to' => $fcm_token,
+            'notification' => [
+                'title' => $titolo,
+                'body' => $messaggio,
+                'sound' => 'default'
+            ]
+        ];
+
+        $headers = [
+            'Authorization: key=' . $server_key,
+            'Content-Type: application/json'
+        ];
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($fields));
+        
+        $result = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($http_code >= 400) {
+            return ["error" => true, "status_code" => $http_code, "message" => $result];
+        }
+
+        return ["error" => false, "response" => json_decode($result, true)];
+    }
+}
 ?>
