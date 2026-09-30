@@ -1,0 +1,13 @@
+# File di configurazione con chiavi e dati sensibili (non tracciati)
+config.php
+blood/config_sangue.php
+
+# Cartelle di sistema e dipendenze comuni
+.DS_Store
+Thumbs.db
+vendor/
+node_modules/
+
+# File di log ed errori
+*.log
+error_log
