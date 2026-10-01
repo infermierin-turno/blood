@@ -1,79 +1,11 @@
 <?php
+// File: /blood/nuovo_ritiro.php
 session_start();
-if (!isset($_SESSION['utente'])) {
-    header("Location: index.php");
-    exit;
-}
-
-if (!defined('SUPABASE_URL')) {
-    define('SUPABASE_URL', getenv('SUPABASE_URL'));
-}
-if (!defined('SUPABASE_KEY')) {
-    define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
-}
+if (!isset($_SESSION['utente'])) { header("Location: index.php"); exit; }
 
 require_once __DIR__ . '/api_helper_sangue.php';
 
-$messaggio_esito = "";
-$debug_fcm_output = "";
-
-// Gestione dell'invio del form per un nuovo ritiro basato sulla tabella ritiri_sangue
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $operatore_nome = '';
-    if (is_array($_SESSION['utente'])) {
-        $operatore_nome = $_SESSION['utente']['email'] ?? $_SESSION['utente']['nome'] ?? 'Operatore';
-    } else {
-        $operatore_nome = $_SESSION['utente'];
-    }
-
-    $dati_ritiro = [
-        'id_richiesta' => $_POST['id_richiesta'] ?? '',
-        'cognome_paziente' => $_POST['cognome_paziente'] ?? '',
-        'nome_paziente' => $_POST['nome_paziente'] ?? '',
-        'reparto' => $_POST['reparto'] ?? '',
-        'tipo_emocomponente' => $_POST['tipo_emocomponente'] ?? 'Emazie concentrate',
-        'turno_successivo' => $_POST['turno_successivo'] ?? '',
-        'stato' => 'In attesa',
-        'data_ritiro' => $_POST['data_ritiro'] ?? date('Y-m-d'),
-        'note' => $_POST['note'] ?? '',
-        'inserito_da' => $operatore_nome,
-        'codice_a_barre' => $_POST['codice_a_barre'] ?? '',
-        'notifica_inviata' => false,
-        'created_at' => date('c')
-    ];
-
-    // Inserimento nella tabella ritiri_sangue su Supabase
-    $url_inserimento = SUPABASE_URL . '/rest/v1/ritiri_sangue';
-    $ch = curl_init($url_inserimento);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($dati_ritiro));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'apikey: ' . SUPABASE_KEY,
-        'Authorization: Bearer ' . SUPABASE_KEY,
-        'Content-Type: application/json',
-        'Prefer: return=representation'
-    ]);
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($http_code >= 200 && $http_code < 300) {
-        $messaggio_esito = "<div style='background:#d4edda; color:#155724; padding:10px; border:1px solid #c3e6cb; margin-bottom:15px;'>Ritiro registrato con successo! Invio notifica push in corso...</div>";
-        
-        ob_start();
-        $titolo_notifica = "Nuovo Ritiro - " . ($_POST['tipo_emocomponente'] ?? 'Sangue');
-        $testo_notifica = "Paziente: " . ($_POST['cognome_paziente'] ?? '') . " " . ($_POST['nome_paziente'] ?? '') . " | Reparto: " . ($_POST['reparto'] ?? 'N/D');
-        invia_notifica_push_fcm($titolo_notifica, $testo_notifica);
-        $debug_fcm_output = ob_get_clean();
-    } else {
-        $messaggio_esito = "<div style='background:#f8d7da; color:#721c24; padding:10px; border:1px solid #f5c6cb; margin-bottom:15px;'>Errore inserimento Supabase: $response</div>";
-    }
-}
-
-/**
- * Funzione per l'invio delle notifiche push FCM
- */
+// Funzione helper inclusa inline per l'invio delle notifiche push FCM tramite i token in Supabase
 function invia_notifica_push_fcm($titolo, $messaggio) {
     if (!defined('SUPABASE_URL')) {
         define('SUPABASE_URL', getenv('SUPABASE_URL'));
@@ -82,6 +14,7 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
         define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
     }
 
+    // 1. Recupera tutti i token FCM registrati da Supabase
     $url_tokens = SUPABASE_URL . '/rest/v1/fcm_tokens?select=fcm_token';
     $ch = curl_init($url_tokens);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -95,13 +28,12 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
 
     $tokens_data = json_decode($response_tokens, true);
     if (empty($tokens_data) || !is_array($tokens_data)) {
-        echo "<div style='background:#fff3cd; padding:10px; margin:10px 0; border:1px solid #ffeeba;'><strong>DEBUG FCM:</strong> Nessun token trovato in Supabase.</div>";
-        return;
+        return false;
     }
 
+    // Chiave Server FCM (può essere impostata come variabile d'ambiente o inserita qui)
     $fcm_server_key = getenv('FCM_SERVER_KEY') ?? 'BKhRHAH4cctir9Lo0B_KJsfYbv1YZ9FpmMWoXO7V13FL1aEgwNLy_SsG3AgnOu273Y2GphPWiXKZzZ9rVIBznZ8';
 
-    $risultati_invio = [];
     foreach ($tokens_data as $row) {
         $token = $row['fcm_token'] ?? null;
         if (!$token) continue;
@@ -111,7 +43,8 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
             'notification' => [
                 'title' => $titolo,
                 'body' => $messaggio,
-                'icon' => '/favicon.ico'
+                'icon' => '/favicon.ico',
+                'click_action' => 'https://emotecaapp.firebaseapp.com/bacheca_ritiri.php'
             ]
         ];
 
@@ -124,97 +57,134 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
             'Content-Type: application/json'
         ]);
 
-        $result = curl_exec($ch_fcm);
-        $http_code = curl_getinfo($ch_fcm, CURLINFO_HTTP_CODE);
+        curl_exec($ch_fcm);
         curl_close($ch_fcm);
-
-        $risultati_invio[] = "Token: " . substr($token, 0, 10) . "... | HTTP Code: $http_code - Risposta: $result";
     }
+    return true;
+}
+
+$messaggio = "";
+$tipo_messaggio = "";
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    date_default_timezone_set('Europe/Rome');
     
-    echo "<div style='background:#fff3cd; padding:10px; margin:10px 0; border:1px solid #ffeeba;'><strong>DEBUG FCM:</strong><br>" . implode("<br>", $risultati_invio) . "</div>";
+    // Recupero nome utente corretto dalla sessione
+    $nome_operatore = $_SESSION['utente']['nome'] . ' ' . $_SESSION['utente']['cognome'];
+
+    $id_richiesta = trim($_POST['id_richiesta'] ?? '');
+    $paziente = trim($_POST['paziente'] ?? '');
+    $reparto = trim($_POST['reparto'] ?? '');
+    $emocomponente = trim($_POST['emocomponente'] ?? '');
+    $emoglobina = trim($_POST['emoglobina'] ?? '');
+    $note_inserite = trim($_POST['note'] ?? '');
+    
+    // Formattiamo le note includendo ID richiesta, paziente, tipo emocomponente, emoglobina e note aggiuntive
+    $dettagli_aggiuntivi = [];
+    if (!empty($id_richiesta)) {
+        $dettagli_aggiuntivi[] = "ID Richiesta: " . $id_richiesta;
+    }
+    if (!empty($paziente)) {
+        $dettagli_aggiuntivi[] = "Paziente: " . $paziente;
+    }
+    if (!empty($emocomponente)) {
+        $dettagli_aggiuntivi[] = "Tipo: " . $emocomponente;
+    }
+    if (!empty($emoglobina)) {
+        $dettagli_aggiuntivi[] = "Emoglobina: " . $emoglobina;
+    }
+    if (!empty($note_inserite)) {
+        $dettagli_aggiuntivi[] = $note_inserite;
+    }
+
+    $corpo_note = !empty($dettagli_aggiuntivi) ? implode(" - ", $dettagli_aggiuntivi) : "";
+
+    if (!empty($corpo_note)) {
+        $note_finali = "Inserito da " . $nome_operatore . ": " . $corpo_note;
+    } else {
+        $note_finali = "Inserito da " . $nome_operatore;
+    }
+
+    $dati = [
+        'reparto' => $reparto,
+        'turno_successivo' => $_POST['turno'],
+        'note' => $note_finali,
+        'stato' => 'Da ritirare',
+        'inserito_da' => $nome_operatore,
+        'notifica_inviata' => false
+    ];
+
+    $risultato = esegui_post_api('ritiri_sangue', $dati);
+
+    if ($risultato !== null) {
+        $messaggio = "Ritiro inserito con successo!";
+        $tipo_messaggio = "success";
+
+        // Invio automatico della notifica push a tutti i dispositivi registrati
+        $titolo_push = "🩸 Nuovo Ritiro: " . $reparto;
+        $testo_push = "Richiesta inserita da " . $nome_operatore . " (" . ($emocomponente ?: 'Emocomponente') . ")";
+        invia_notifica_push_fcm($titolo_push, $testo_push);
+
+    } else {
+        $messaggio = "Errore durante l'inserimento. Verifica la connessione al database.";
+        $tipo_messaggio = "error";
+    }
 }
 ?>
 <!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Nuovo Ritiro - Emoteca</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nuovo Ritiro</title>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }
-        .container { max-width: 650px; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: auto; }
-        h2 { color: #333; margin-top: 0; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        textarea { resize: vertical; height: 80px; }
-        button { background: #007bff; color: white; border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; }
-        button:hover { background: #0056b3; }
-        .back-link { display: block; margin-top: 15px; text-align: center; color: #007bff; text-decoration: none; }
-        .back-link:hover { text-decoration: underline; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 15px; background: #f4f4f9; margin: 0; }
+        .form-card { background: white; padding: 20px; border-radius: 12px; max-width: 500px; margin: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.5rem; text-align: center; color: #333; margin-bottom: 20px; }
+        label { display: block; margin-top: 15px; font-weight: 600; color: #555; }
+        input, select, textarea { width: 100%; padding: 14px; margin-top: 5px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 16px; margin-top: 25px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; }
+        .success { color: #155724; background: #d4edda; padding: 10px; border-radius: 6px; text-align: center; margin-bottom: 15px; }
+        .error { color: #721c24; background: #f8d7da; padding: 10px; border-radius: 6px; text-align: center; margin-bottom: 15px; }
+        .back-link { display: block; text-align: center; margin-top: 20px; color: #007bff; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Registra Nuovo Ritiro Sangue</h2>
-        
-        <?php echo $messaggio_esito; ?>
-        <?php echo $debug_fcm_output; ?>
+    <div class="form-card">
+        <h1>Inserisci Ritiro</h1>
+        <?php if(!empty($messaggio)): ?>
+            <div class="<?php echo $tipo_messaggio; ?>"><?php echo $messaggio; ?></div>
+        <?php endif; ?>
+        <form method="POST">
+            <label>ID Richiesta</label>
+            <input type="text" name="id_richiesta" placeholder="es. 12345" required>
 
-        <form method="POST" action="">
-            <div class="form-group">
-                <label for="id_richiesta">ID Richiesta:</label>
-                <input type="text" id="id_richiesta" name="id_richiesta" required placeholder="Es. 26637172">
-            </div>
+            <label>Cognome e Nome Paziente</label>
+            <input type="text" name="paziente" placeholder="es. Rossi Mario" required>
 
-            <div class="form-group">
-                <label for="cognome_paziente">Cognome Paziente:</label>
-                <input type="text" id="cognome_paziente" name="cognome_paziente" required placeholder="Es. Rossi">
-            </div>
+            <label>Tipo Emocomponente</label>
+            <select name="emocomponente" required>
+                <option value="">-- Seleziona tipo --</option>
+                <option value="Emazie concentrate">Emazie concentrate</option>
+                <option value="Plasma">Plasma</option>
+                <option value="Concentrato piastrinico">Concentrato piastrinico</option>
+            </select>
 
-            <div class="form-group">
-                <label for="nome_paziente">Nome Paziente:</label>
-                <input type="text" id="nome_paziente" name="nome_paziente" required placeholder="Es. Mario">
-            </div>
+            <label>Reparto</label>
+            <input type="text" name="reparto" required>
 
-            <div class="form-group">
-                <label for="reparto">Reparto di Destinazione:</label>
-                <input type="text" id="reparto" name="reparto" required placeholder="Es. Chirurgia, Medicina d'Urgenza">
-            </div>
+            <label>Turno a cui è demandato il ritiro</label>
+            <input type="text" name="turno" required>
 
-            <div class="form-group">
-                <label for="tipo_emocomponente">Tipo Emocomponente:</label>
-                <select id="tipo_emocomponente" name="tipo_emocomponente" required>
-                    <option value="Emazie concentrate">Emazie concentrate</option>
-                    <option value="Plasma">Plasma</option>
-                    <option value="Concentrato piastrinico">Concentrato piastrinico</option>
-                </select>
-            </div>
+            <label>Valore Emoglobina (g/dL)</label>
+            <input type="text" name="emoglobina" placeholder="es. 10.5">
 
-            <div class="form-group">
-                <label for="turno_successivo">Turno Successivo:</label>
-                <input type="text" id="turno_successivo" name="turno_successivo" placeholder="Es. Mattina / Pomeriggio / Notte">
-            </div>
+            <label>Note aggiuntive</label>
+            <textarea name="note" rows="3"></textarea>
 
-            <div class="form-group">
-                <label for="data_ritiro">Data Ritiro:</label>
-                <input type="date" id="data_ritiro" name="data_ritiro" value="<?php echo date('Y-m-d'); ?>" required>
-            </div>
-
-            <div class="form-group">
-                <label for="codice_a_barre">Codice a Barre:</label>
-                <input type="text" id="codice_a_barre" name="codice_a_barre" placeholder="Scansiona o inserisci codice a barre">
-            </div>
-
-            <div class="form-group">
-                <label for="note">Note:</label>
-                <textarea id="note" name="note" placeholder="Eventuali note cliniche o logistiche..."></textarea>
-            </div>
-
-            <button type="submit">Salva Ritiro e Invia Notifica Push</button>
+            <button type="submit">Salva Ritiro</button>
         </form>
-
-        <a href="bacheca_ritiri.php" class="back-link">← Torna alla Bacheca</a>
+        <a href="bacheca_ritiri.php" class="back-link">Torna alla bacheca</a>
     </div>
 </body>
 </html>
