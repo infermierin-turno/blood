@@ -1,5 +1,18 @@
-<?php session_start(); if (!isset($_SESSION['utente'])) { header("Location: index.php"); exit; }
-require_once __DIR__ . '/config_sangue.php';
+<?php 
+session_start(); 
+if (!isset($_SESSION['utente'])) { 
+    header("Location: index.php"); 
+    exit; 
+}
+
+// Configurazione diretta tramite le variabili d'ambiente di Render (senza bisogno di file fisici)
+if (!defined('SUPABASE_URL')) {
+    define('SUPABASE_URL', getenv('SUPABASE_URL'));
+}
+if (!defined('SUPABASE_KEY')) {
+    define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
+}
+
 require_once __DIR__ . '/api_helper_sangue.php';
 
 // Recupero l'intero registro dei movimenti, ordinato per data
