@@ -14,6 +14,7 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
         define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
     }
 
+    // 1. Recupera tutti i token FCM registrati da Supabase
     $url_tokens = SUPABASE_URL . '/rest/v1/fcm_tokens?select=fcm_token';
     $ch = curl_init($url_tokens);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -30,6 +31,7 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
         return false;
     }
 
+    // Chiave Server FCM (può essere impostata come variabile d'ambiente o inserita qui)
     $fcm_server_key = getenv('FCM_SERVER_KEY') ?? 'BKhRHAH4cctir9Lo0B_KJsfYbv1YZ9FpmMWoXO7V13FL1aEgwNLy_SsG3AgnOu273Y2GphPWiXKZzZ9rVIBznZ8';
 
     foreach ($tokens_data as $row) {
@@ -68,25 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     date_default_timezone_set('Europe/Rome');
     
     // Recupero nome utente corretto dalla sessione
-    $nome_operatore = '';
-    if (is_array($_SESSION['utente'])) {
-        $nome_operatore = trim(($_SESSION['utente']['nome'] ?? '') . ' ' . ($_SESSION['utente']['cognome'] ?? ''));
-        if (empty($nome_operatore)) {
-            $nome_operatore = $_SESSION['utente']['email'] ?? 'Operatore';
-        }
-    } else {
-        $nome_operatore = $_SESSION['utente'];
-    }
+    $nome_operatore = $_SESSION['utente']['nome'] . ' ' . $_SESSION['utente']['cognome'];
 
     $id_richiesta = trim($_POST['id_richiesta'] ?? '');
     $paziente = trim($_POST['paziente'] ?? '');
     $reparto = trim($_POST['reparto'] ?? '');
-    $turno = trim($_POST['turno'] ?? '');
     $emocomponente = trim($_POST['emocomponente'] ?? '');
     $emoglobina = trim($_POST['emoglobina'] ?? '');
     $note_inserite = trim($_POST['note'] ?? '');
     
-    // Costruzione delle note finali
+    // Formattiamo le note includendo ID richiesta, paziente, tipo emocomponente, emoglobina e note aggiuntive
     $dettagli_aggiuntivi = [];
     if (!empty($id_richiesta)) {
         $dettagli_aggiuntivi[] = "ID Richiesta: " . $id_richiesta;
@@ -105,15 +98,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     $corpo_note = !empty($dettagli_aggiuntivi) ? implode(" - ", $dettagli_aggiuntivi) : "";
-    $note_finali = !empty($corpo_note) ? "Inserito da " . $nome_operatore . ": " . $corpo_note : "Inserito da " . $nome_operatore;
 
-    // Payload completo per Supabase
+    if (!empty($corpo_note)) {
+        $note_finali = "Inserito da " . $nome_operatore . ": " . $corpo_note;
+    } else {
+        $note_finali = "Inserito da " . $nome_operatore;
+    }
+
     $dati = [
-        'id_richiesta' => $id_richiesta,
-        'cognome_paziente' => $paziente, // Adattabile se la colonna è unica o divisa
         'reparto' => $reparto,
-        'turno_successivo' => $turno,
-        'tipo_emocomponente' => $emocomponente,
+        'turno_successivo' => $_POST['turno'],
         'note' => $note_finali,
         'stato' => 'Da ritirare',
         'inserito_da' => $nome_operatore,
@@ -126,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $messaggio = "Ritiro inserito con successo!";
         $tipo_messaggio = "success";
 
-        // Invio automatico della notifica push
+        // Invio automatico della notifica push a tutti i dispositivi registrati
         $titolo_push = "🩸 Nuovo Ritiro: " . $reparto;
         $testo_push = "Richiesta inserita da " . $nome_operatore . " (" . ($emocomponente ?: 'Emocomponente') . ")";
         invia_notifica_push_fcm($titolo_push, $testo_push);
