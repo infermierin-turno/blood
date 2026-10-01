@@ -8,6 +8,9 @@ if (!defined('SUPABASE_KEY')) {
     define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
 }
 
+// Inclusione dell'helper delle API (config_sangue.php è stato rimosso per sicurezza)
+require_once __DIR__ . '/api_helper_sangue.php';
+
 // Se arriva la richiesta automatica dal QR code
 if (isset($_GET['auto']) && $_GET['auto'] === 'bacheca') {
     
