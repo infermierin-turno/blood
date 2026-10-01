@@ -111,16 +111,16 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             --surface: #ffffff;
             --text-main: #0f172a;     /* Testo scuro ad alto contrasto per leggibilità rapida */
             --text-muted: #475569;
-            --border: #cbd5e1;        /* Bordi definiti ma non aggressivi */
+            --border: #cbd5e1;         /* Bordi definiti ma non aggressivi */
             
             /* Codici Colore Semidatori Sanitari */
-            --danger: #dc2626;        /* Rosso clinico allerta (In attesa / Critico) */
+            --danger: #dc2626;         /* Rosso clinico allerta (In attesa / Critico) */
             --danger-bg: #fef2f2;
-            --success: #059669;       /* Verde ospedaliero sicurezza (Completato / Validato) */
+            --success: #059669;        /* Verde ospedaliero sicurezza (Completato / Validato) */
             --success-bg: #ecfdf5;
             --warning-bg: #fef3c7;    /* Giallo ambra / Ocra (In transito / Consegnato SIT) */
             --warning-text: #78350f;
-            --info-bg: #e0f2fe;       /* Azzurro diagnostico (Piastrine / Info) */
+            --info-bg: #e0f2fe;        /* Azzurro diagnostico (Piastrine / Info) */
             --info-text: #0369a1;
         }
 
@@ -180,11 +180,14 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             align-items: center;
             justify-content: center;
             transition: background 0.2s;
+            cursor: pointer;
+            border: none;
         }
 
         .btn-logout { background: #e2e8f0; color: var(--text-muted); border: 1px solid #cbd5e1; }
         .btn-logout:hover { background: #cbd5e1; }
         .btn-pw { background: var(--info-bg); color: var(--info-text); border: 1px solid #bae6fd; }
+        .btn-notif { background: var(--warning-bg); color: var(--warning-text); border: 1px solid #fcd34d; }
 
         .actions-grid {
             display: grid;
@@ -485,6 +488,7 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
         <div class="header-container">
             <h1>Richieste emocomponenti</h1>
             <div class="nav-links">
+                <button onclick="richiediPermessoNotifiche()" class="btn-nav btn-notif" title="Attiva notifiche push">🔔 Notifiche</button>
                 <?php if (!$is_read_only): ?>
                     <a href="cambia_password.php" class="btn-nav btn-pw">🔑 Password</a>
                 <?php endif; ?>
@@ -677,9 +681,73 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
         </div>
     <?php endif; ?>
 
+    <!-- SDK di Firebase per le notifiche push -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+
     <script>
+        // Configurazione Firebase del client
+        const firebaseConfig = {
+            apiKey: "AIzaSyD0RidVKjyRvYFd4ootXi5VWM28qVezwpo",
+            authDomain: "emotecaapp.firebaseapp.com",
+            projectId: "emotecaapp",
+            storageBucket: "emotecaapp.firebasestorage.app",
+            messagingSenderId: "955424631104",
+            appId: "1:955424631104:web:d43214d2cd055b426eb2a5"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const messaging = firebase.messaging();
+
+        // Registrazione automatica del service worker e richiesta token al click del pulsante o all'avvio
+        function richiediPermessoNotifiche() {
+            if (!('Notification' in window)) {
+                alert('Questo browser non supporta le notifiche desktop.');
+                return;
+            }
+
+            Notification.requestPermission().then((permission) => {
+                if (permission === 'granted') {
+                    console.log('Permesso notifiche concesso.');
+                    messaging.getToken({ 
+                        vapidKey: 'BKhRHAH4cctir9Lo0B_KJsfYbv1YZ9FpmMWoXO7V13FL1aEgwNLy_SsG3AgnOu273Y2GphPWiXKZzZ9rVIBznZ8' 
+                    }).then((currentToken) => {
+                        if (currentToken) {
+                            console.log('FCM Token:', currentToken);
+                            salvaTokenNelDatabase(currentToken);
+                        } else {
+                            console.log('Nessun token di registrazione disponibile.');
+                        }
+                    }).catch((err) => {
+                        console.error('Errore durante il recupero del token:', err);
+                    });
+                } else {
+                    alert('Permesso per le notifiche negato.');
+                }
+            });
+        }
+
+        function salvaTokenNelDatabase(token) {
+            fetch('salva_token.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ fcm_token: token }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Token salvato con successo:', data);
+                alert('Notifiche push attivate con successo su questo dispositivo!');
+            })
+            .catch((error) => {
+                console.error('Errore nel salvataggio del token:', error);
+            });
+        }
+
         // Ricaricamento soft basato su visibilitychange:
-        // Ricarica la pagina appena l'utente riprende in mano il dispositivo/tablet e riapre la scheda del browser.
         document.addEventListener('visibilitychange', function() {
             if (document.visibilityState === 'visible') {
                 window.location.reload(true);
