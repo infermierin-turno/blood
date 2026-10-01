@@ -1,7 +1,12 @@
 <?php
 session_start();
-require_once __DIR__ . '/config_sangue.php'; // Assicurati che punti al file di connessione di Supabase
-require_once __DIR__ . '/api_helper_sangue.php'; // Assicurati che includa la funzione di chiamata API
+
+if (!defined('SUPABASE_URL')) {
+    define('SUPABASE_URL', getenv('SUPABASE_URL'));
+}
+if (!defined('SUPABASE_KEY')) {
+    define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
+}
 
 // Se arriva la richiesta automatica dal QR code
 if (isset($_GET['auto']) && $_GET['auto'] === 'bacheca') {
@@ -18,7 +23,7 @@ if (isset($_GET['auto']) && $_GET['auto'] === 'bacheca') {
         header("Location: bacheca_ritiri.php");
         exit;
     } else {
-        die("Errore: Utente vedo@bacheca.it non trovato su Supabase.");
+        die("Errore: Utente vedo@emoteca.it non trovato su Supabase.");
     }
 }
 
