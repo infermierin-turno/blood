@@ -5,6 +5,64 @@ if (!isset($_SESSION['utente'])) { header("Location: index.php"); exit; }
 
 require_once __DIR__ . '/api_helper_sangue.php';
 
+// Funzione helper inclusa inline per l'invio delle notifiche push FCM tramite i token in Supabase
+function invia_notifica_push_fcm($titolo, $messaggio) {
+    if (!defined('SUPABASE_URL')) {
+        define('SUPABASE_URL', getenv('SUPABASE_URL'));
+    }
+    if (!defined('SUPABASE_KEY')) {
+        define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
+    }
+
+    // 1. Recupera tutti i token FCM registrati da Supabase
+    $url_tokens = SUPABASE_URL . '/rest/v1/fcm_tokens?select=fcm_token';
+    $ch = curl_init($url_tokens);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'apikey: ' . SUPABASE_KEY,
+        'Authorization: Bearer ' . SUPABASE_KEY,
+        'Content-Type: application/json'
+    ]);
+    $response_tokens = curl_exec($ch);
+    curl_close($ch);
+
+    $tokens_data = json_decode($response_tokens, true);
+    if (empty($tokens_data) || !is_array($tokens_data)) {
+        return false;
+    }
+
+    // Chiave Server FCM (può essere impostata come variabile d'ambiente o inserita qui)
+    $fcm_server_key = getenv('FCM_SERVER_KEY') ?? 'BKhRHAH4cctir9Lo0B_KJsfYbv1YZ9FpmMWoXO7V13FL1aEgwNLy_SsG3AgnOu273Y2GphPWiXKZzZ9rVIBznZ8';
+
+    foreach ($tokens_data as $row) {
+        $token = $row['fcm_token'] ?? null;
+        if (!$token) continue;
+
+        $payload = [
+            'to' => $token,
+            'notification' => [
+                'title' => $titolo,
+                'body' => $messaggio,
+                'icon' => '/favicon.ico',
+                'click_action' => 'https://emotecaapp.firebaseapp.com/bacheca_ritiri.php'
+            ]
+        ];
+
+        $ch_fcm = curl_init('https://fcm.googleapis.com/fcm/send');
+        curl_setopt($ch_fcm, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_fcm, CURLOPT_CUSTOMREQUEST, "POST");
+        curl_setopt($ch_fcm, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch_fcm, CURLOPT_HTTPHEADER, [
+            'Authorization: key=' . $fcm_server_key,
+            'Content-Type: application/json'
+        ]);
+
+        curl_exec($ch_fcm);
+        curl_close($ch_fcm);
+    }
+    return true;
+}
+
 $messaggio = "";
 $tipo_messaggio = "";
 
@@ -19,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $note_inserite = trim($_POST['note'] ?? '');
     $emoglobina = trim($_POST['emoglobina'] ?? '');
     $emocomponente = trim($_POST['emocomponente'] ?? '');
+    $reparto = trim($_POST['reparto'] ?? '');
     
     // Formattiamo le note includendo ID richiesta, paziente, tipo emocomponente, emoglobina e note aggiuntive
     $dettagli_aggiuntivi = [];
@@ -47,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     $dati = [
-        'reparto' => $_POST['reparto'],
+        'reparto' => $reparto,
         'turno_successivo' => $_POST['turno'],
         'note' => $note_finali,
         'stato' => 'Da ritirare',
@@ -60,6 +119,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($risultato !== null) {
         $messaggio = "Ritiro inserito con successo!";
         $tipo_messaggio = "success";
+
+        // Invio automatico della notifica push a tutti i dispositivi registrati
+        $titolo_push = "🩸 Nuovo Ritiro: " . $reparto;
+        $testo_push = "Richiesta inserita da " . $nome_operatore . " (" . ($emocomponente ?: 'Emocomponente') . ")";
+        invia_notifica_push_fcm($titolo_push, $testo_push);
+
     } else {
         $messaggio = "Errore durante l'inserimento. Verifica la connessione al database.";
         $tipo_messaggio = "error";
