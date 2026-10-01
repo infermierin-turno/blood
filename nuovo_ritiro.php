@@ -28,6 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $dati_ritiro = [
         'id_richiesta' => $_POST['id_richiesta'] ?? '',
+        'cognome_paziente' => $_POST['cognome_paziente'] ?? '',
+        'nome_paziente' => $_POST['nome_paziente'] ?? '',
         'reparto' => $_POST['reparto'] ?? '',
         'tipo_emocomponente' => $_POST['tipo_emocomponente'] ?? 'Emazie concentrate',
         'turno_successivo' => $_POST['turno_successivo'] ?? '',
@@ -60,8 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messaggio_esito = "<div style='background:#d4edda; color:#155724; padding:10px; border:1px solid #c3e6cb; margin-bottom:15px;'>Ritiro registrato con successo! Invio notifica push in corso...</div>";
         
         ob_start();
-        $titolo_notifica = "Nuovo Ritiro - Richiesta ID: " . ($_POST['id_richiesta'] ?? 'N/D');
-        $testo_notifica = "Reparto: " . ($_POST['reparto'] ?? 'N/D') . " | Tipo: " . ($_POST['tipo_emocomponente'] ?? 'N/D');
+        $titolo_notifica = "Nuovo Ritiro - " . ($_POST['tipo_emocomponente'] ?? 'Sangue');
+        $testo_notifica = "Paziente: " . ($_POST['cognome_paziente'] ?? '') . " " . ($_POST['nome_paziente'] ?? '') . " | Reparto: " . ($_POST['reparto'] ?? 'N/D');
         invia_notifica_push_fcm($titolo_notifica, $testo_notifica);
         $debug_fcm_output = ob_get_clean();
     } else {
@@ -163,6 +165,16 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
             <div class="form-group">
                 <label for="id_richiesta">ID Richiesta:</label>
                 <input type="text" id="id_richiesta" name="id_richiesta" required placeholder="Es. 26637172">
+            </div>
+
+            <div class="form-group">
+                <label for="cognome_paziente">Cognome Paziente:</label>
+                <input type="text" id="cognome_paziente" name="cognome_paziente" required placeholder="Es. Rossi">
+            </div>
+
+            <div class="form-group">
+                <label for="nome_paziente">Nome Paziente:</label>
+                <input type="text" id="nome_paziente" name="nome_paziente" required placeholder="Es. Mario">
             </div>
 
             <div class="form-group">
