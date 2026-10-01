@@ -1,6 +1,13 @@
 <?php
 // /blood/api_helper_sangue.php
-require_once 'config_sangue.php';
+
+// Configurazione diretta tramite le variabili d'ambiente di Render (senza bisogno di file fisici)
+if (!defined('SUPABASE_URL')) {
+    define('SUPABASE_URL', getenv('SUPABASE_URL'));
+}
+if (!defined('SUPABASE_KEY')) {
+    define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
+}
 
 if (!function_exists('ottieni_header_api')) {
     function ottieni_header_api() {
