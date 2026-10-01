@@ -17,19 +17,30 @@ require_once __DIR__ . '/api_helper_sangue.php';
 $messaggio_esito = "";
 $debug_fcm_output = "";
 
-// Gestione dell'invio del form per un nuovo ritiro
+// Gestione dell'invio del form per un nuovo ritiro basato sulla tabella ritiri_sangue
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Ricaviamo il nome o l'email dell'operatore loggato per il campo inserito_da
+    $operatore_nome = '';
+    if (is_array($_SESSION['utente'])) {
+        $operatore_nome = $_SESSION['utente']['email'] ?? $_SESSION['utente']['nome'] ?? 'Operatore';
+    } else {
+        $operatore_nome = $_SESSION['utente'];
+    }
+
     $dati_ritiro = [
-        'operatore_id' => $_SESSION['utente']['id'] ?? null,
         'reparto' => $_POST['reparto'] ?? '',
-        'tipo_sangue' => $_POST['tipo_sangue'] ?? '',
-        'unita' => $_POST['unita'] ?? 1,
+        'turno_successivo' => $_POST['turno_successivo'] ?? '',
         'stato' => 'In attesa',
+        'data_ritiro' => $_POST['data_ritiro'] ?? date('Y-m-d'),
+        'note' => $_POST['note'] ?? '',
+        'inserito_da' => $operatore_nome,
+        'codice_a_barre' => $_POST['codice_a_barre'] ?? '',
+        'notifica_inviata' => false,
         'created_at' => date('c')
     ];
 
-    // Inserimento del ritiro su Supabase
-    $url_inserimento = SUPABASE_URL . '/rest/v1/ritiri';
+    // Inserimento nella tabella corretta ritiri_sangue su Supabase
+    $url_inserimento = SUPABASE_URL . '/rest/v1/ritiri_sangue';
     $ch = curl_init($url_inserimento);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
@@ -45,14 +56,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     curl_close($ch);
 
     if ($http_code >= 200 && $http_code < 300) {
-        $messaggio_esito = "<div style='background:#d4edda; color:#155724; padding:10px; border:1px solid #c3e6cb; margin-bottom:15px;'>Ritiro creato con successo! Invio notifica push in corso...</div>";
+        $messaggio_esito = "<div style='background:#d4edda; color:#155724; padding:10px; border:1px solid #c3e6cb; margin-bottom:15px;'>Ritiro registrato con successo in ritiri_sangue! Invio notifica push...</div>";
         
         // Attiva l'invio della notifica push FCM e cattura il debug
         ob_start();
-        invia_notifica_push_fcm("Nuovo Ritiro Sangue", "È stato registrato un nuovo ritiro per il reparto: " . ($_POST['reparto'] ?? 'Generico'));
+        $titolo_notifica = "Nuovo Ritiro - Reparto: " . $_POST['reparto'];
+        $testo_notifica = "Codice: " . ($_POST['codice_a_barre'] ?? 'N/D') . " | Turno: " . ($_POST['turno_successivo'] ?? 'N/D');
+        invia_notifica_push_fcm($titolo_notifica, $testo_notifica);
         $debug_fcm_output = ob_get_clean();
     } else {
-        $messaggio_esito = "<div style='background:#f8d7da; color:#721c24; padding:10px; border:1px solid #f5c6cb; margin-bottom:15px;'>Errore durante la creazione del ritiro.</div>";
+        $messaggio_esito = "<div style='background:#f8d7da; color:#721c24; padding:10px; border:1px solid #f5c6cb; margin-bottom:15px;'>Errore inserimento Supabase: $response</div>";
     }
 }
 
@@ -127,12 +140,13 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; }
-        .container { max-width: 600px; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: auto; }
-        h2 { color: #333; margin-top: 0; }
+        .container { max-width: 650px; background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin: auto; }
+        h2 { color: #333; margin-top: 0; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        textarea { resize: vertical; height: 80px; }
+        button { background: #007bff; color: white; border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; }
         button:hover { background: #0056b3; }
         .back-link { display: block; margin-top: 15px; text-align: center; color: #007bff; text-decoration: none; }
         .back-link:hover { text-decoration: underline; }
@@ -140,7 +154,7 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
 </head>
 <body>
     <div class="container">
-        <h2>Inserisci Nuovo Ritiro</h2>
+        <h2>Registra Nuovo Ritiro Sangue</h2>
         
         <?php echo $messaggio_esito; ?>
         <?php echo $debug_fcm_output; ?>
@@ -148,30 +162,30 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
         <form method="POST" action="">
             <div class="form-group">
                 <label for="reparto">Reparto di Destinazione:</label>
-                <input type="text" id="reparto" name="reparto" required placeholder="Es. Chirurgia, Medicina, Terapia Intensiva">
+                <input type="text" id="reparto" name="reparto" required placeholder="Es. Chirurgia, Medicina d'Urgenza">
             </div>
 
             <div class="form-group">
-                <label for="tipo_sangue">Gruppo Sanguigno:</label>
-                <select id="tipo_sangue" name="tipo_sangue" required>
-                    <option value="">Seleziona gruppo...</option>
-                    <option value="0 Positivo">0 Positivo</option>
-                    <option value="0 Negativo">0 Negativo</option>
-                    <option value="A Positivo">A Positivo</option>
-                    <option value="A Negativo">A Negativo</option>
-                    <option value="B Positivo">B Positivo</option>
-                    <option value="B Negativo">B Negativo</option>
-                    <option value="AB Positivo">AB Positivo</option>
-                    <option value="AB Negativo">AB Negativo</option>
-                </select>
+                <label for="turno_successivo">Turno Successivo:</label>
+                <input type="text" id="turno_successivo" name="turno_successivo" placeholder="Es. Mattina / Pomeriggio / Notte">
             </div>
 
             <div class="form-group">
-                <label for="unita">Unità:</label>
-                <input type="number" id="unita" name="unita" min="1" value="1" required>
+                <label for="data_ritiro">Data Ritiro:</label>
+                <input type="date" id="data_ritiro" name="data_ritiro" value="<?php echo date('Y-m-d'); ?>" required>
             </div>
 
-            <button type="submit">Registra Ritiro e Invia Notifica</button>
+            <div class="form-group">
+                <label for="codice_a_barre">Codice a Barre:</label>
+                <input type="text" id="codice_a_barre" name="codice_a_barre" placeholder="Scansiona o inserisci codice a barre">
+            </div>
+
+            <div class="form-group">
+                <label for="note">Note:</label>
+                <textarea id="note" name="note" placeholder="Eventuali note cliniche o logistiche..."></textarea>
+            </div>
+
+            <button type="submit">Salva Ritiro e Invia Notifica Push</button>
         </form>
 
         <a href="bacheca_ritiri.php" class="back-link">← Torna alla Bacheca</a>
