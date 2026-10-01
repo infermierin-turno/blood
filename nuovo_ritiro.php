@@ -19,7 +19,6 @@ $debug_fcm_output = "";
 
 // Gestione dell'invio del form per un nuovo ritiro basato sulla tabella ritiri_sangue
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Ricaviamo il nome o l'email dell'operatore loggato per il campo inserito_da
     $operatore_nome = '';
     if (is_array($_SESSION['utente'])) {
         $operatore_nome = $_SESSION['utente']['email'] ?? $_SESSION['utente']['nome'] ?? 'Operatore';
@@ -28,7 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $dati_ritiro = [
+        'id_richiesta' => $_POST['id_richiesta'] ?? '',
         'reparto' => $_POST['reparto'] ?? '',
+        'tipo_emocomponente' => $_POST['tipo_emocomponente'] ?? 'Emazie concentrate',
         'turno_successivo' => $_POST['turno_successivo'] ?? '',
         'stato' => 'In attesa',
         'data_ritiro' => $_POST['data_ritiro'] ?? date('Y-m-d'),
@@ -39,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'created_at' => date('c')
     ];
 
-    // Inserimento nella tabella corretta ritiri_sangue su Supabase
+    // Inserimento nella tabella ritiri_sangue su Supabase
     $url_inserimento = SUPABASE_URL . '/rest/v1/ritiri_sangue';
     $ch = curl_init($url_inserimento);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -56,12 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     curl_close($ch);
 
     if ($http_code >= 200 && $http_code < 300) {
-        $messaggio_esito = "<div style='background:#d4edda; color:#155724; padding:10px; border:1px solid #c3e6cb; margin-bottom:15px;'>Ritiro registrato con successo in ritiri_sangue! Invio notifica push...</div>";
+        $messaggio_esito = "<div style='background:#d4edda; color:#155724; padding:10px; border:1px solid #c3e6cb; margin-bottom:15px;'>Ritiro registrato con successo! Invio notifica push in corso...</div>";
         
-        // Attiva l'invio della notifica push FCM e cattura il debug
         ob_start();
-        $titolo_notifica = "Nuovo Ritiro - Reparto: " . $_POST['reparto'];
-        $testo_notifica = "Codice: " . ($_POST['codice_a_barre'] ?? 'N/D') . " | Turno: " . ($_POST['turno_successivo'] ?? 'N/D');
+        $titolo_notifica = "Nuovo Ritiro - Richiesta ID: " . ($_POST['id_richiesta'] ?? 'N/D');
+        $testo_notifica = "Reparto: " . ($_POST['reparto'] ?? 'N/D') . " | Tipo: " . ($_POST['tipo_emocomponente'] ?? 'N/D');
         invia_notifica_push_fcm($titolo_notifica, $testo_notifica);
         $debug_fcm_output = ob_get_clean();
     } else {
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 /**
- * Funzione per l'invio delle notifiche push FCM con output di debug integrato
+ * Funzione per l'invio delle notifiche push FCM
  */
 function invia_notifica_push_fcm($titolo, $messaggio) {
     if (!defined('SUPABASE_URL')) {
@@ -161,8 +161,22 @@ function invia_notifica_push_fcm($titolo, $messaggio) {
 
         <form method="POST" action="">
             <div class="form-group">
+                <label for="id_richiesta">ID Richiesta:</label>
+                <input type="text" id="id_richiesta" name="id_richiesta" required placeholder="Es. 26637172">
+            </div>
+
+            <div class="form-group">
                 <label for="reparto">Reparto di Destinazione:</label>
                 <input type="text" id="reparto" name="reparto" required placeholder="Es. Chirurgia, Medicina d'Urgenza">
+            </div>
+
+            <div class="form-group">
+                <label for="tipo_emocomponente">Tipo Emocomponente:</label>
+                <select id="tipo_emocomponente" name="tipo_emocomponente" required>
+                    <option value="Emazie concentrate">Emazie concentrate</option>
+                    <option value="Plasma">Plasma</option>
+                    <option value="Concentrato piastrinico">Concentrato piastrinico</option>
+                </select>
             </div>
 
             <div class="form-group">
