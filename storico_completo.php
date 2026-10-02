@@ -41,6 +41,7 @@ $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
                     <thead class="bg-gray-50 border-b border-gray-200 uppercase text-gray-500 font-bold">
                         <tr>
                             <th class="px-2 py-3 sm:px-4">Data Carico</th>
+                            <th class="px-2 py-3 sm:px-4">Scadenza Sacca</th>
                             <th class="px-2 py-3 sm:px-4">Codice</th>
                             <th class="px-2 py-3 sm:px-4">Sacca</th>
                             <th class="px-2 py-3 sm:px-4">Paziente</th>
@@ -57,6 +58,9 @@ $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
                             <tr class="hover:bg-gray-50 transition">
                                 <td class="px-2 py-3 sm:px-4 text-gray-600 whitespace-nowrap">
                                     <?php echo isset($r['data_carico']) ? date('d/m H:i', strtotime($r['data_carico'])) : '-'; ?>
+                                </td>
+                                <td class="px-2 py-3 sm:px-4 text-gray-600 whitespace-nowrap font-medium">
+                                    <?php echo isset($r['data_scadenza_sacca']) ? date('d/m/Y H:i', strtotime($r['data_scadenza_sacca'])) : '-'; ?>
                                 </td>
                                 <td class="px-2 py-3 sm:px-4 font-mono"><?php echo htmlspecialchars($r['codice_barre'] ?? '-'); ?></td>
                                 <td class="px-2 py-3 sm:px-4 font-mono"><?php echo htmlspecialchars($r['numero_sacca'] ?? '-'); ?></td>
@@ -76,7 +80,7 @@ $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="9" class="px-6 py-10 text-center text-gray-500">Nessun dato presente nel registro.</td>
+                                <td colspan="10" class="px-6 py-10 text-center text-gray-500">Nessun dato presente nel registro.</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
