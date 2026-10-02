@@ -60,7 +60,7 @@ $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
                                     <?php echo isset($r['data_carico']) ? date('d/m H:i', strtotime($r['data_carico'])) : '-'; ?>
                                 </td>
                                 <td class="px-2 py-3 sm:px-4 text-gray-600 whitespace-nowrap font-medium">
-                                    <?php echo isset($r['data_scadenza_sacca']) ? date('d/m/Y H:i', strtotime($r['data_scadenza_sacca'])) : '-'; ?>
+                                    <?php echo isset($r['data_scadenza_sacca']) ? date('d/m/Y', strtotime($r['data_scadenza_sacca'])) : '-'; ?>
                                 </td>
                                 <td class="px-2 py-3 sm:px-4 font-mono"><?php echo htmlspecialchars($r['codice_barre'] ?? '-'); ?></td>
                                 <td class="px-2 py-3 sm:px-4 font-mono"><?php echo htmlspecialchars($r['numero_sacca'] ?? '-'); ?></td>
