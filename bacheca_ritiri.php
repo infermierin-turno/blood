@@ -118,7 +118,7 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             --danger-bg: #fef2f2;
             --success: #059669;        /* Verde ospedaliero sicurezza (Completato / Validato) */
             --success-bg: #ecfdf5;
-            --warning-bg: #fef3c7;    /* Giallo ambra / Ocra (In transito / Consegnato SIT) */
+            --warning-bg: #fef3c7;     /* Giallo ambra / Ocra (In transito / Consegnato SIT) */
             --warning-text: #78350f;
             --info-bg: #e0f2fe;        /* Azzurro diagnostico (Piastrine / Info) */
             --info-text: #0369a1;
@@ -701,7 +701,18 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
         }
         const messaging = firebase.messaging();
 
-        // Registrazione automatica del service worker e richiesta token al click del pulsante o all'avvio
+        // Registrazione del Service Worker per Firebase Messaging
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('firebase-messaging-sw.js')
+                .then((registration) => {
+                    console.log('Service Worker registrato con successo:', registration.scope);
+                })
+                .catch((err) => {
+                    console.log('Registrazione Service Worker fallita: ', err);
+                });
+        }
+
+        // Richiesta permesso e recupero token FCM
         function richiediPermessoNotifiche() {
             if (!('Notification' in window)) {
                 alert('Questo browser non supporta le notifiche desktop.');
