@@ -1,4 +1,5 @@
 <?php 
+date_default_timezone_set('Europe/Rome');
 session_start(); 
 if (!isset($_SESSION['utente'])) { 
     header("Location: index.php"); 
