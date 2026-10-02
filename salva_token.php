@@ -57,7 +57,7 @@ $payload = json_encode([
     'updated_at' => date('c')
 ]);
 
-// Per evitare conflitti sulla chiave primaria/unica del token, aggiungiamo on_conflict
+// Endpoint con on_conflict corretto per Supabase
 $url = SUPABASE_URL . '/rest/v1/fcm_tokens?on_conflict=fcm_token';
 $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -78,5 +78,5 @@ if ($http_code >= 200 && $http_code < 300) {
     echo json_encode(['successo' => true]);
 } else {
     http_response_code(500);
-    echo json_encode(['errore' => 'Errore nel salvataggio su Supabase', 'dettagli' => $response]);
+    echo json_encode(['errore' => 'Errore nel salvataggio su Supabase', 'dettagli' => $response, 'http_code' => $http_code]);
 }
