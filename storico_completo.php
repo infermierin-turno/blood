@@ -18,6 +18,18 @@ require_once __DIR__ . '/api_helper_sangue.php';
 
 // Recupero l'intero registro dei movimenti, ordinato per data
 $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
+
+// Funzione di supporto per convertire correttamente i timestamp UTC di Supabase nel fuso orario di Roma
+function formatta_data_ora($valore) {
+    if (empty($valore)) return '-';
+    try {
+        $dt = new DateTime($valore, new DateTimeZone('UTC'));
+        $dt->setTimezone(new DateTimeZone('Europe/Rome'));
+        return $dt->format('d/m H:i');
+    } catch (Exception $e) {
+        return '-';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -58,7 +70,7 @@ $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
                             <?php foreach($dati as $r): ?>
                             <tr class="hover:bg-gray-50 transition">
                                 <td class="px-2 py-3 sm:px-4 text-gray-600 whitespace-nowrap">
-                                    <?php echo isset($r['data_carico']) ? date('d/m H:i', strtotime($r['data_carico'])) : '-'; ?>
+                                    <?php echo formatta_data_ora($r['data_carico'] ?? null); ?>
                                 </td>
                                 <td class="px-2 py-3 sm:px-4 text-gray-600 whitespace-nowrap font-medium">
                                     <?php echo isset($r['data_scadenza_sacca']) ? date('d/m/Y', strtotime($r['data_scadenza_sacca'])) : '-'; ?>
@@ -75,7 +87,7 @@ $dati = esegui_get_api("registro_sangue?order=data_carico.desc");
                                     </span>
                                 </td>
                                 <td class="px-2 py-3 sm:px-4 text-gray-600 whitespace-nowrap">
-                                    <?php echo isset($r['data_scarico']) ? date('d/m H:i', strtotime($r['data_scarico'])) : '-'; ?>
+                                    <?php echo formatta_data_ora($r['data_scarico'] ?? null); ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
