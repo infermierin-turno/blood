@@ -490,7 +490,7 @@ if (is_array($dati)) {
     </header>
 
     <?php if ($is_read_only): ?>
-        <div class="badge-readonly">⚠️️ (Orario consegna rich. ordinarie: h 12.15 e h 16.30 - Sola lettura: <?php echo htmlspecialchars($nome_operatore); ?>)</div>
+        <div class="badge-readonly">⚠ (Orario consegna rich. ordinarie: h 12.15 e h 16.30 - Sola lettura: <?php echo htmlspecialchars($nome_operatore); ?>)</div>
         <div class="actions-grid">
             <a href="non_assegnate.php" class="btn-action warning">Richieste non assegnate</a>
             <a href="emoteca.php" class="btn-action primary">📦 Emoteca / Scorta</a>
