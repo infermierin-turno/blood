@@ -109,7 +109,6 @@ if (is_array($dati)) {
 
 // --- MOTORE DI PREDIZIONE E ORDINAMENTO ASSOLUTO (OGGI) ---
 $data_odierna = date('Y-m-d');
-$consigliati_oggi = [];
 
 if (is_array($dati) && count($dati) > 0) {
     foreach ($dati as &$r) {
@@ -141,21 +140,13 @@ if (is_array($dati) && count($dati) > 0) {
         // Quante volte è andato questo reparto negli ultimi 3 giorni (default 0)
         $num_volte_andato = $conteggio_ritiri_reparto[$reparto_corrente] ?? 0;
         $r['_num_volte_andato'] = $num_volte_andato;
-
-        if ($is_oggi) {
-            $r['_predizione_consigliato'] = true;
-            $motivo_str = $ha_emoglobina_specificata ? "Hb: $val_emoglobina g/dL" : "Nessuna Hb specificata";
-            $motivo_str .= " | Ritiri recenti: $num_volte_andato";
-            $consigliati_oggi[$reparto_corrente] = $motivo_str;
-        } else {
-            $r['_predizione_consigliato'] = false;
-        }
+        $r['_predizione_consigliato'] = $is_oggi;
     }
     unset($r);
 
     // Ordinamento rigoroso:
     // 1. Prima le richieste di OGGI rispetto a quelle passate.
-    // 2. Tra quelle di OGGI: ordinamento per valore di emoglobina in assoluto più basso (crescente: es. 6.2 prima di 8.5, e i non specificati vanno in fondo).
+    // 2. Tra quelle di OGGI: ordinamento per valore di emoglobina in assoluto più basso (crescente: es. 6.2 prima di 8.5, 9.4 prima di 11).
     // 3. A parità di emoglobina, sale chi è andato di meno (numero di ritiri recenti minore).
     // 4. Per i giorni passati, mantiene l'ordine cronologico standard.
     usort($dati, function($a, $b) {
@@ -184,6 +175,23 @@ if (is_array($dati) && count($dati) > 0) {
 
         return 0;
     });
+}
+
+// --- POPOLIAMO IL BANNER DELLE PREDIZIONI ORA CHE $dati È ORDINATO CORRETTAMENTE ---
+$consigliati_oggi = [];
+if (is_array($dati)) {
+    foreach ($dati as $r) {
+        if (!empty($r['_is_oggi'])) {
+            $reparto_corrente = trim($r['reparto'] ?? '');
+            if (!isset($consigliati_oggi[$reparto_corrente])) {
+                $val_emo = $r['_val_emoglobina'];
+                $num_andato = $r['_num_volte_andato'];
+                $motivo_str = ($val_emo !== 999.0) ? "Hb: $val_emo g/dL" : "Nessuna Hb specificata";
+                $motivo_str .= " | Ritiri recenti: $num_andato";
+                $consigliati_oggi[$reparto_corrente] = $motivo_str;
+            }
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -482,7 +490,7 @@ if (is_array($dati) && count($dati) > 0) {
     </header>
 
     <?php if ($is_read_only): ?>
-        <div class="badge-readonly">⚠️ (Orario consegna rich. ordinarie: h 12.15 e h 16.30 - Sola lettura: <?php echo htmlspecialchars($nome_operatore); ?>)</div>
+        <div class="badge-readonly">⚠️️ (Orario consegna rich. ordinarie: h 12.15 e h 16.30 - Sola lettura: <?php echo htmlspecialchars($nome_operatore); ?>)</div>
         <div class="actions-grid">
             <a href="non_assegnate.php" class="btn-action warning">Richieste non assegnate</a>
             <a href="emoteca.php" class="btn-action primary">📦 Emoteca / Scorta</a>
@@ -600,7 +608,7 @@ if (is_array($dati) && count($dati) > 0) {
             
             <?php if ($is_piastrine): ?>
                 <div class="note-box avviso-piastrine">
-                    🌡️️ <strong>Trasporto Piastrine:</strong> Temperatura ambiente e possibilmente in agitazione! (No ghiaccio, No frigo)
+                    🌡️ <strong>Trasporto Piastrine:</strong> Temperatura ambiente e possibilmente in agitazione! (No ghiaccio, No frigo)
                 </div>
             <?php endif; ?>
 
