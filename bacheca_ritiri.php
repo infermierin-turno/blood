@@ -21,7 +21,6 @@ require_once __DIR__ . '/api_helper_sangue.php';
 
 // Funzione per mascherare il nome del paziente per privacy (es. "Rossi Mario" -> "R. M.")
 function maschera_paziente($testo_note) {
-    // Cerca "Paziente: [Cognome] [Nome]" all'interno delle note
     return preg_replace_callback('/Paziente:\s*([^\s-]+)(?:\s+([^\s-]+))?/i', function($matches) {
         $cognome = $matches[1] ?? '';
         $nome = $matches[2] ?? '';
@@ -75,13 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'accettato_da' => $nome_operatore,
             'ritirato_il' => date('Y-m-d H:i:s'),
             'note' => $note_finali,
-            'notifica_inviata' => true  // <-- Imposta la notifica a true per evitare l'invio della mail
+            'notifica_inviata' => true
         ];
         
-        // Esecuzione PATCH con controllo errori
         $risposta = esegui_patch_api('ritiri_sangue?id=eq.' . $id_da_aggiornare, $dati_aggiornamento);
         
-        // Debug: se l'API restituisce un errore, lo mostriamo invece di ricaricare
         if (isset($risposta['code']) || $risposta === null) {
             die("Errore API: Impossibile aggiornare. Verifica le credenziali nel file config_sangue.php. Dettaglio: " . print_r($risposta, true));
         }
@@ -96,54 +93,100 @@ date_default_timezone_set('Europe/Rome');
 $data_limite_settimana = date('Y-m-d\T00:00:00', strtotime('-3 days'));
 $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&order=created_at.desc");
 
-// --- MOTORE DI PREDIZIONE POMERIDIANA BASATO SU 2 CRITERI ---
-// 1. Reparto già andato a ritirare di recente (negli ultimi 3 giorni)
-// 2. Emoglobina più bassa (< 7.0 g/dL)
-$reparti_gia_andati = [];
+// --- CONTEGGIO RITIRI EFFETTUATI PER REPARTO NEGLI ULTIMI 3 GIORNI ---
+$conteggio_ritiri_reparto = [];
 if (is_array($dati)) {
     foreach ($dati as $item) {
         if (!empty($item['reparto']) && ($item['stato'] === 'Ritirato' || !empty($item['ritirato_il']))) {
-            $reparti_gia_andati[trim($item['reparto'])] = true;
+            $rep_key = trim($item['reparto']);
+            if (!isset($conteggio_ritiri_reparto[$rep_key])) {
+                $conteggio_ritiri_reparto[$rep_key] = 0;
+            }
+            $conteggio_ritiri_reparto[$rep_key]++;
         }
     }
 }
 
+// --- MOTORE DI PREDIZIONE E ORDINAMENTO (OGGI: 1. Emoglobina bassa, 2. Chi è andato di meno) ---
+$data_odierna = date('Y-m-d');
+$consigliati_oggi = [];
+
 if (is_array($dati) && count($dati) > 0) {
     foreach ($dati as &$r) {
-        $score_predittivo = 0;
-        $motivi_predizione = [];
         $reparto_corrente = trim($r['reparto'] ?? '');
         $testo_note_item = $r['note'] ?? '';
-
-        // Criterio 1: Se il reparto NON è già andato di recente, aumenta la priorità di uscita pomeridiana (+40 punti)
-        $gia_andato = isset($reparti_gia_andati[$reparto_corrente]);
-        if (!$gia_andato) {
-            $score_predittivo += 40;
-            $motivi_predizione[] = "Il reparto non ha effettuato ritiri recenti";
-        } else {
-            $motivi_predizione[] = "Il reparto ha già effettuato ritiri nei giorni scorsi";
-        }
-
-        // Criterio 2: Se l'emoglobina è più bassa (< 7.0), assegna priorità critica massima (+60 punti)
-        $emo_bassa = false;
-        if (!empty($testo_note_item) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i', $testo_note_item, $m_emo)) {
-            $val_emo_calc = floatval(str_replace(',', '.', $m_emo[1]));
-            if ($val_emo_calc < 7.0) {
-                $emo_bassa = true;
-                $score_predittivo += 60;
-                $motivi_predizione[] = "Emoglobina particolarmente bassa (< 7 g/dL)";
+        
+        // Verifica se la richiesta appartiene alla data odierna
+        $data_creazione_item = '';
+        if (!empty($r['created_at'])) {
+            $ts_c = strtotime($r['created_at']);
+            if ($ts_c !== false) {
+                $data_creazione_item = date('Y-m-d', $ts_c + 7200);
             }
         }
+        
+        $is_oggi = ($data_creazione_item === $data_odierna);
+        $r['_is_oggi'] = $is_oggi;
 
-        $r['_predizione_score'] = $score_predittivo;
-        $r['_predizione_motivi'] = $motivi_predizione;
-        $r['_predizione_consigliato'] = ($score_predittivo >= 50); // Soglia per uscita pomeridiana consigliata
+        // Estrazione valore emoglobina (se presente)
+        $val_emoglobina = 999.0; // Valore alto di default se non specificato
+        $ha_emoglobina_critica = false;
+        if (!empty($testo_note_item) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i', $testo_note_item, $m_emo)) {
+            $val_emoglobina = floatval(str_replace(',', '.', $m_emo[1]));
+            if ($val_emoglobina < 7.0) {
+                $ha_emoglobina_critica = true;
+            }
+        }
+        $r['_val_emoglobina'] = $val_emoglobina;
+        $r['_emoglobina_critica'] = $ha_emoglobina_critica;
+
+        // Quante volte è andato questo reparto negli ultimi 3 giorni (default 0)
+        $num_volte_andato = $conteggio_ritiri_reparto[$reparto_corrente] ?? 0;
+        $r['_num_volte_andato'] = $num_volte_andato;
+
+        if ($is_oggi) {
+            // Segnamo come consigliato se ha emoglobina critica o è andato poche volte
+            $r['_predizione_consigliato'] = ($ha_emoglobina_critica || $num_volte_andato <= 1);
+            if ($r['_predizione_consigliato']) {
+                $motivo_str = $ha_emoglobina_critica ? "Emoglobina critica (< 7 g/dL)" : "Reparto andato poche volte ($num_volte_andato volte negli ultimi 3gg)";
+                $consigliati_oggi[$reparto_corrente] = $motivo_str;
+            }
+        } else {
+            $r['_predizione_consigliato'] = false;
+        }
     }
     unset($r);
 
-    // Ordinamento in base alla predizione pomeridiana (score più alto in cima)
+    // Ordinamento rigoroso:
+    // 1. Prima le richieste di OGGI rispetto a quelle passate.
+    // 2. Tra quelle di OGGI: prima quelle con emoglobina più bassa (valore numerico crescente, quindi chi ha meno di 7 o valori inferiori sale in cima).
+    // 3. A parità di emoglobina, sale chi è andato di meno (numero di ritiri recenti minore).
+    // 4. Per i giorni passati, mantiene l'ordine cronologico standard.
     usort($dati, function($a, $b) {
-        return ($b['_predizione_score'] ?? 0) <=> ($a['_predizione_score'] ?? 0);
+        $oggi_a = $a['_is_oggi'] ? 1 : 0;
+        $oggi_b = $b['_is_oggi'] ? 1 : 0;
+
+        if ($oggi_a !== $oggi_b) {
+            return $oggi_b <=> $oggi_a; // Prima quelle di oggi
+        }
+
+        if ($oggi_a && $oggi_b) {
+            // Criterio 1: Emoglobina più bassa (valore numerico minore = priorità maggiore)
+            $emo_a = $a['_val_emoglobina'];
+            $emo_b = $b['_val_emoglobina'];
+            if ($emo_a !== $emo_b) {
+                return $emo_a <=> $emo_b;
+            }
+
+            // Criterio 2: A parità di emoglobina, chi è andato di meno (numero ritiri minore = priorità maggiore)
+            $andato_a = $a['_num_volte_andato'];
+            $andato_b = $b['_num_volte_andato'];
+            if ($andato_a !== $andato_b) {
+                return $andato_a <=> $andato_b;
+            }
+        }
+
+        return 0;
     });
 }
 ?>
@@ -155,26 +198,21 @@ if (is_array($dati) && count($dati) > 0) {
     <title>Bacheca Ritiri - Emoteca Pellegrini</title>
     <style>
         :root {
-            /* Palette Clinica e Ospedalera Rinnovata */
-            --primary: #0284c7;        /* Blu istituzionale / sanitario pulito */
+            --primary: #0284c7;
             --primary-dark: #0369a1;
-            --bg-main: #f1f5f9;       /* Grigio chiaro asettico e riposante per reparti */
+            --bg-main: #f1f5f9;
             --surface: #ffffff;
-            --text-main: #0f172a;      /* Testo scuro ad alto contrasto per leggibilità rapida */
+            --text-main: #0f172a;
             --text-muted: #475569;
-            --border: #cbd5e1;          /* Bordi definiti ma non aggressivi */
-            
-            /* Codici Colore Semidatori Sanitari */
-            --danger: #dc2626;          /* Rosso clinico allerta (In attesa / Critico) */
+            --border: #cbd5e1;
+            --danger: #dc2626;
             --danger-bg: #fef2f2;
-            --success: #059669;         /* Verde ospedaliero sicurezza (Completato / Validato) */
+            --success: #059669;
             --success-bg: #ecfdf5;
-            --warning-bg: #fef3c7;      /* Giallo ambra / Ocra (In transito / Consegnato SIT) */
+            --warning-bg: #fef3c7;
             --warning-text: #78350f;
-            --info-bg: #e0f2fe;         /* Azzurro diagnostico (Piastrine / Info) */
+            --info-bg: #e0f2fe;
             --info-text: #0369a1;
-            
-            /* Colore Predizione Pomeridiana */
             --prediction-bg: #f5f3ff;
             --prediction-border: #8b5cf6;
             --prediction-text: #6d28d9;
@@ -235,13 +273,11 @@ if (is_array($dati) && count($dati) > 0) {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.2s;
             cursor: pointer;
             border: none;
         }
 
         .btn-logout { background: #e2e8f0; color: var(--text-muted); border: 1px solid #cbd5e1; }
-        .btn-logout:hover { background: #cbd5e1; }
         .btn-pw { background: var(--info-bg); color: var(--info-text); border: 1px solid #bae6fd; }
         .btn-notif { background: var(--warning-bg); color: var(--warning-text); border: 1px solid #fcd34d; }
 
@@ -250,10 +286,6 @@ if (is_array($dati) && count($dati) > 0) {
             grid-template-columns: 1fr 1fr;
             gap: 10px;
             margin-bottom: 16px;
-        }
-
-        .actions-grid.full {
-            grid-template-columns: 1fr;
         }
 
         .btn-action {
@@ -270,48 +302,39 @@ if (is_array($dati) && count($dati) > 0) {
             font-size: 0.95rem;
             border: 1px solid var(--border);
             box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-            transition: all 0.2s;
         }
 
-        .btn-action:hover {
-            background: #f8fafc;
-            border-color: var(--primary);
+        .btn-action.primary { background: var(--primary); color: white; border: none; }
+        .btn-action.secondary { background: #f3e8ff; color: #6b21a8; border-color: #d8b4fe; }
+        .btn-action.warning { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+        .btn-action.turni { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; grid-column: span 2; }
+
+        /* Banner Globale Unico in Alto */
+        .global-prediction-banner {
+            background: var(--prediction-bg);
+            border: 1px solid var(--prediction-border);
+            border-left: 6px solid #7c3aed;
+            padding: 14px 16px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        }
+        .global-prediction-title {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: var(--prediction-text);
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .global-prediction-list {
+            margin: 6px 0 0 0;
+            padding-left: 20px;
+            font-size: 0.88rem;
+            color: #4c1d95;
         }
 
-        .btn-action.primary {
-            background: var(--primary);
-            color: white;
-            border: none;
-            grid-column: span 2;
-        }
-        .btn-action.primary:hover {
-            background: var(--primary-dark);
-        }
-
-        .btn-action.secondary {
-            background: #f3e8ff;
-            color: #6b21a8;
-            border-color: #d8b4fe;
-        }
-
-        .btn-action.warning {
-            background: #fef3c7;
-            color: #92400e;
-            border-color: #f59e0b;
-            grid-column: span 1;
-        }
-
-        .btn-action.turni {
-            background: #ecfdf5;
-            color: #065f46;
-            border-color: #a7f3d0;
-            grid-column: span 2;
-        }
-        .btn-action.turni:hover {
-            background: #d1fae5;
-        }
-
-        /* Stati dei bordi della card con standard clinico ad alto contrasto */
         .card {
             background: var(--surface);
             padding: 16px;
@@ -321,22 +344,9 @@ if (is_array($dati) && count($dati) > 0) {
             border: 1px solid var(--border);
         }
 
-        /* 1. In attesa di consegna al SIT -> Bordo Sinistro ROSSO CLINICO */
-        .card.stato-attesa-sit {
-            border-left: 6px solid var(--danger);
-        }
-
-        /* 2. Consegnata al SIT / Da ritirare -> Bordo Sinistro GIALLO AMBRA OCRA */
-        .card.stato-consegnato-sit {
-            border-left: 6px solid #d97706;
-        }
-
-        /* 3. Ritirata -> Bordo Sinistro VERDE OSPEDALIERO */
-        .card.fatto {
-            border-left: 6px solid var(--success);
-            opacity: 0.95;
-            background: #fafafa;
-        }
+        .card.stato-attesa-sit { border-left: 6px solid var(--danger); }
+        .card.stato-consegnato-sit { border-left: 6px solid #d97706; }
+        .card.fatto { border-left: 6px solid var(--success); opacity: 0.95; background: #fafafa; }
 
         .card-header-row {
             display: flex;
@@ -345,52 +355,11 @@ if (is_array($dati) && count($dati) > 0) {
             margin-bottom: 8px;
         }
 
-        .card-info {
-            margin-bottom: 6px;
-            font-size: 0.95rem;
-        }
-
-        .label {
-            color: var(--text-muted);
-            font-weight: 700;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .valore-reparto {
-            font-size: 1.15rem;
-            font-weight: 800;
-            color: var(--text-main);
-        }
-
-        .valore-turno {
-            display: inline-block;
-            background: #e2e8f0;
-            color: #334155;
-            padding: 2px 8px;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 0.85rem;
-        }
-
-        .orario {
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            font-style: italic;
-            font-weight: 500;
-        }
-
-        .prediction-badge {
-            margin-top: 10px;
-            padding: 10px 12px;
-            background: var(--prediction-bg);
-            border: 1px solid var(--prediction-border);
-            border-radius: 6px;
-            font-size: 0.85rem;
-            color: var(--prediction-text);
-            font-weight: 600;
-        }
+        .card-info { margin-bottom: 6px; font-size: 0.95rem; }
+        .label { color: var(--text-muted); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; }
+        .valore-reparto { font-size: 1.15rem; font-weight: 800; color: var(--text-main); }
+        .valore-turno { display: inline-block; background: #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 0.85rem; }
+        .orario { color: var(--text-muted); font-size: 0.8rem; font-style: italic; font-weight: 500; }
 
         .note-box {
             margin-top: 12px;
@@ -402,26 +371,9 @@ if (is_array($dati) && count($dati) > 0) {
             color: var(--warning-text);
         }
 
-        .note-critica {
-            background: var(--danger-bg) !important;
-            border-left-color: var(--danger) !important;
-            color: #991b1b !important;
-            font-weight: 600;
-        }
-
-        .avviso-piastrine {
-            background: var(--info-bg) !important;
-            border-left-color: var(--primary) !important;
-            color: var(--info-text) !important;
-            font-weight: 600;
-        }
-
-        .avviso-emazie-plasma {
-            background: var(--success-bg) !important;
-            border-left-color: var(--success) !important;
-            color: #065f46 !important;
-            font-weight: 600;
-        }
+        .note-critica { background: var(--danger-bg) !important; border-left-color: var(--danger) !important; color: #991b1b !important; font-weight: 600; }
+        .avviso-piastrine { background: var(--info-bg) !important; border-left-color: var(--primary) !important; color: var(--info-text) !important; font-weight: 600; }
+        .avviso-emazie-plasma { background: var(--success-bg) !important; border-left-color: var(--success) !important; color: #065f46 !important; font-weight: 600; }
 
         .operatore-box {
             margin-top: 12px;
@@ -456,13 +408,6 @@ if (is_array($dati) && count($dati) > 0) {
             font-family: inherit;
             font-size: 0.95rem;
             resize: vertical;
-            box-sizing: border-box;
-        }
-
-        .input-note:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
         }
 
         .btn-ritirato {
@@ -476,12 +421,6 @@ if (is_array($dati) && count($dati) > 0) {
             font-weight: 700;
             font-size: 1rem;
             cursor: pointer;
-            box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
-            transition: background 0.2s;
-        }
-
-        .btn-ritirato:hover {
-            background: #047857;
         }
 
         .btn-consegna {
@@ -495,12 +434,6 @@ if (is_array($dati) && count($dati) > 0) {
             font-weight: 700;
             font-size: 0.95rem;
             cursor: pointer;
-            box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);
-            transition: background 0.2s;
-        }
-
-        .btn-consegna:hover {
-            background: var(--primary-dark);
         }
 
         .badge-readonly {
@@ -516,19 +449,7 @@ if (is_array($dati) && count($dati) > 0) {
             border: 1px solid var(--border);
         }
 
-        .readonly-notice {
-            margin-top: 12px;
-            font-size: 0.85rem;
-            color: #78350f;
-            font-weight: 600;
-            text-align: center;
-            background: var(--warning-bg);
-            padding: 10px;
-            border-radius: 6px;
-            border: 1px solid #fcd34d;
-        }
-
-        .readonly-consegnato-notice {
+        .readonly-notice, .readonly-consegnato-notice {
             margin-top: 12px;
             font-size: 0.85rem;
             color: #78350f;
@@ -565,10 +486,10 @@ if (is_array($dati) && count($dati) > 0) {
     </header>
 
     <?php if ($is_read_only): ?>
-        <div class="badge-readonly">⚠️ (Orario consegna rich. ordinarie: h 12.15 e h 16.30 - Stati - Rosso: in attesa consegna al S. Paolo - Giallo: In attesa assegnazione - Verde: Ritirata e Validata. Sola lettura: <?php echo htmlspecialchars($nome_operatore); ?>)</div>
+        <div class="badge-readonly">⚠️ (Orario consegna rich. ordinarie: h 12.15 e h 16.30 - Sola lettura: <?php echo htmlspecialchars($nome_operatore); ?>)</div>
         <div class="actions-grid">
             <a href="non_assegnate.php" class="btn-action warning">Richieste non assegnate</a>
-            <a href="emoteca.php" class="btn-action primary" style="grid-column: span 1;">📦 Emoteca / Scorta</a>
+            <a href="emoteca.php" class="btn-action primary">📦 Emoteca / Scorta</a>
         </div>
     <?php else: ?>
         <div class="actions-grid">
@@ -577,9 +498,26 @@ if (is_array($dati) && count($dati) > 0) {
             <a href="storico_completo.php" class="btn-action secondary">Registro Movimenti</a>
             <a href="non_assegnate.php" class="btn-action warning">Richieste non assegnate</a>
             <a href="emovigilanza.php" class="btn-action warning">Emovigilanze da ritirare</a>
-            <a href="emoteca.php" class="btn-action primary" style="grid-column: span 2;">📦 Emoteca / Scorta</a>
+            <a href="emoteca.php" class="btn-action primary">📦 Emoteca / Scorta</a>
             <a href="emoteca_turni.php" class="btn-action turni">Turni pomeridiani personale Blocco Operatorio</a>
             <a href="inserimento_richieste.php" class="btn-action turni">Ceck Prelievi</a>
+        </div>
+    <?php endif; ?>
+
+    <!-- BANNER UNICO IN ALTO CON L'ORDINAMENTO PREFERENZIALE ODIERNO -->
+    <?php if (!empty($consigliati_oggi)): ?>
+        <div class="global-prediction-banner">
+            <div class="global-prediction-title">
+                🤖 Ordine Consigliato Turno Pomeridiano (Richieste Odierne)
+            </div>
+            <div style="font-size: 0.85rem; color: #5b21b6; margin-bottom: 4px;">
+                Criterio applicato: 1) Emoglobina più bassa (< 7 g/dL) | 2) Reparto che è andato di meno nei giorni scorsi.
+            </div>
+            <ul class="global-prediction-list">
+                <?php foreach ($consigliati_oggi as $rep_cons => $motivo_cons): ?>
+                    <li><strong><?php echo htmlspecialchars($rep_cons); ?></strong> <span style="font-size: 0.8rem; opacity: 0.9;">(<?php echo htmlspecialchars($motivo_cons); ?>)</span></li>
+                <?php endforeach; ?>
+            </ul>
         </div>
     <?php endif; ?>
     
@@ -587,17 +525,9 @@ if (is_array($dati) && count($dati) > 0) {
         <?php
             $consegnato_sit = !empty($r['consegnato_sit']);
 
-            // Controllo se nelle note è presente un valore di emoglobina inferiore a 7
-            $is_emoglobina_critica = false;
+            $is_emoglobina_critica = $r['_emoglobina_critica'] ?? false;
             $testo_note = $r['note'] ?? '';
-            if (!empty($testo_note) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i', $testo_note, $matches)) {
-                $val_emo = floatval(str_replace(',', '.', $matches[1]));
-                if ($val_emo < 7.0) {
-                    $is_emoglobina_critica = true;
-                }
-            }
 
-            // Controllo se il tipo di emocomponente o le note indicano Piastrine / Concentrato piastrinico
             $is_piastrine = false;
             if (!empty($testo_note) && (
                 stripos($testo_note, 'Piastrine') !== false || 
@@ -608,7 +538,6 @@ if (is_array($dati) && count($dati) > 0) {
                 $is_piastrine = true;
             }
 
-            // Controllo se il tipo di emocomponente o le note indicano Emazie Concentrate o Plasma
             $is_emazie_plasma = false;
             if (!empty($testo_note) && (
                 stripos($testo_note, 'Emazie Concentrate') !== false || 
@@ -619,10 +548,8 @@ if (is_array($dati) && count($dati) > 0) {
                 $is_emazie_plasma = true;
             }
 
-            // Mascheramento del nome paziente per privacy nelle note visualizzate
             $testo_note_visualizzato = maschera_paziente($testo_note);
 
-            // Conversione corretta dell'orario di inserimento (created_at da UTC a ora italiana +2h)
             $created_formatted = 'N/D';
             if (!empty($r['created_at'])) {
                 $ts_created = strtotime($r['created_at']);
@@ -633,7 +560,6 @@ if (is_array($dati) && count($dati) > 0) {
                 }
             }
 
-            // Orario di ritiro salvato in locale
             $orario_ritiro_formattato = 'N/D';
             if (!empty($r['ritirato_il'])) {
                 $ts_ritiro = strtotime($r['ritirato_il']);
@@ -644,7 +570,6 @@ if (is_array($dati) && count($dati) > 0) {
                 }
             }
 
-            // Orario di consegna SIT salvato in locale
             $orario_consegna_formattato = 'N/D';
             if (!empty($r['consegnato_il'])) {
                 $ts_cons = strtotime($r['consegnato_il']);
@@ -655,13 +580,12 @@ if (is_array($dati) && count($dati) > 0) {
                 }
             }
 
-            // Determinazione della classe CSS della card in base allo stato
             if ($r['stato'] == 'Ritirato') {
-                $classe_card = 'fatto'; // Verde ospedaliero
+                $classe_card = 'fatto';
             } elseif ($consegnato_sit) {
-                $classe_card = 'stato-consegnato-sit'; // Giallo ocra / ambra
+                $classe_card = 'stato-consegnato-sit';
             } else {
-                $classe_card = 'stato-attesa-sit'; // Rosso clinico
+                $classe_card = 'stato-attesa-sit';
             }
         ?>
         <div class="card <?php echo $classe_card; ?>">
@@ -677,19 +601,6 @@ if (is_array($dati) && count($dati) > 0) {
             </div>
             
             <div class="orario" style="margin-bottom: 8px;">Inserito il: <?php echo htmlspecialchars($created_formatted); ?></div>
-
-            <!-- Box Predizione Uscita Pomeridiana -->
-            <?php if (isset($r['_predizione_consigliato'])): ?>
-                <div class="prediction-badge">
-                    🤖 <strong>Predizione Turno Pomeridiano:</strong> 
-                    <?php if ($r['_predizione_consigliato']): ?>
-                        <span style="color: #5b21b6; font-weight: 800;">CONSIGLIATO per l'uscita di oggi pomeriggio</span>
-                    <?php else: ?>
-                        <span style="color: #475569;">Priorità standard</span>
-                    <?php endif; ?>
-                    <br><span style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Motivi: <?php echo htmlspecialchars(implode(' | ', $r['_predizione_motivi'])); ?></span>
-                </div>
-            <?php endif; ?>
             
             <?php if ($is_piastrine): ?>
                 <div class="note-box avviso-piastrine">
@@ -712,7 +623,6 @@ if (is_array($dati) && count($dati) > 0) {
                 </div>
             <?php endif; ?>
 
-            <!-- Sezione Consegna al SIT -->
             <?php if ($consegnato_sit): ?>
                 <div class="consegnato-box">
                     📦 Consegnato al SIT da: <strong><?php echo htmlspecialchars($r['consegnato_da'] ?? 'N/D'); ?></strong><br>
@@ -761,12 +671,10 @@ if (is_array($dati) && count($dati) > 0) {
         </div>
     <?php endif; ?>
 
-    <!-- SDK di Firebase per le notifiche push -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
 
     <script>
-        // Configurazione Firebase del client
         const firebaseConfig = {
             apiKey: "AIzaSyD0RidVKjyRvYFd4ootXi5VWM28qVezwpo",
             authDomain: "emotecaapp.firebaseapp.com",
@@ -781,18 +689,16 @@ if (is_array($dati) && count($dati) > 0) {
         }
         const messaging = firebase.messaging();
 
-        // Registrazione del Service Worker per Firebase Messaging
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('firebase-messaging-sw.js')
                 .then((registration) => {
-                    console.log('Service Worker registrato con successo:', registration.scope);
+                    console.log('Service Worker registrato:', registration.scope);
                 })
                 .catch((err) => {
-                    console.log('Registrazione Service Worker fallita: ', err);
+                    console.log('Service Worker fallito: ', err);
                 });
         }
 
-        // Richiesta permesso e recupero token FCM
         function richiediPermessoNotifiche() {
             if (!('Notification' in window)) {
                 alert('Questo browser non supporta le notifiche desktop.');
@@ -801,18 +707,14 @@ if (is_array($dati) && count($dati) > 0) {
 
             Notification.requestPermission().then((permission) => {
                 if (permission === 'granted') {
-                    console.log('Permesso notifiche concesso.');
                     messaging.getToken({ 
                         vapidKey: 'BKhRHAH4cctir9Lo0B_KJsfYbv1YZ9FpmMWoXO7V13FL1aEgwNLy_SsG3AgnOu273Y2GphPWiXKZzZ9rVIBznZ8' 
                     }).then((currentToken) => {
                         if (currentToken) {
-                            console.log('FCM Token:', currentToken);
                             salvaTokenNelDatabase(currentToken);
-                        } else {
-                            console.log('Nessun token di registrazione disponibile.');
                         }
                     }).catch((err) => {
-                        console.error('Errore durante il recupero del token:', err);
+                        console.error('Errore recupero token:', err);
                     });
                 } else {
                     alert('Permesso per le notifiche negato.');
@@ -823,22 +725,18 @@ if (is_array($dati) && count($dati) > 0) {
         function salvaTokenNelDatabase(token) {
             fetch('salva_token.php', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fcm_token: token }),
             })
             .then(response => response.json())
             .then(data => {
-                console.log('Token salvato con successo:', data);
                 alert('Notifiche push attivate con successo su questo dispositivo!');
             })
             .catch((error) => {
-                console.error('Errore nel salvataggio del token:', error);
+                console.error('Errore salvataggio token:', error);
             });
         }
 
-        // Ricaricamento soft basato su visibilitychange:
         document.addEventListener('visibilitychange', function() {
             if (document.visibilityState === 'visible') {
                 window.location.reload(true);
