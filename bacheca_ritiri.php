@@ -512,10 +512,10 @@ if (is_array($dati)) {
     <?php if (!empty($consigliati_oggi)): ?>
         <div class="global-prediction-banner">
             <div class="global-prediction-title">
-                🤖 Ordine Consigliato Turno Pomeridiano (Richieste Odierne)
+                🤖 Ordine Consigliato per il ritiro sacche nel turno pomeridiano.
             </div>
             <div style="font-size: 0.85rem; color: #5b21b6; margin-bottom: 4px;">
-                Criterio applicato: 1) Emoglobina più bassa in assoluto | 2) A parità di Hb, chi è andato di meno nei giorni scorsi.
+                Criteri applicati: 1) Emoglobina più bassa in assoluto | 2) A parità di Hb, chi è andato di meno nei giorni scorsi.
             </div>
             <ul class="global-prediction-list">
                 <?php foreach ($consigliati_oggi as $rep_cons => $motivo_cons): ?>
