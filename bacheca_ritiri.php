@@ -107,7 +107,7 @@ if (is_array($dati)) {
     }
 }
 
-// --- MOTORE DI PREDIZIONE E ORDINAMENTO (OGGI: 1. Emoglobina bassa, 2. Chi è andato di meno) ---
+// --- MOTORE DI PREDIZIONE E ORDINAMENTO ASSOLUTO (OGGI) ---
 $data_odierna = date('Y-m-d');
 $consigliati_oggi = [];
 
@@ -128,29 +128,25 @@ if (is_array($dati) && count($dati) > 0) {
         $is_oggi = ($data_creazione_item === $data_odierna);
         $r['_is_oggi'] = $is_oggi;
 
-        // Estrazione valore emoglobina (se presente)
-        $val_emoglobina = 999.0; // Valore alto di default se non specificato
-        $ha_emoglobina_critica = false;
+        // Estrazione valore emoglobina (se non presente, diamo 999.0 in modo che finisca in fondo)
+        $val_emoglobina = 999.0;
+        $ha_emoglobina_specificata = false;
         if (!empty($testo_note_item) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i', $testo_note_item, $m_emo)) {
             $val_emoglobina = floatval(str_replace(',', '.', $m_emo[1]));
-            if ($val_emoglobina < 7.0) {
-                $ha_emoglobina_critica = true;
-            }
+            $ha_emoglobina_specificata = true;
         }
         $r['_val_emoglobina'] = $val_emoglobina;
-        $r['_emoglobina_critica'] = $ha_emoglobina_critica;
+        $r['_emoglobina_critica'] = ($ha_emoglobina_specificata && $val_emoglobina < 7.0);
 
         // Quante volte è andato questo reparto negli ultimi 3 giorni (default 0)
         $num_volte_andato = $conteggio_ritiri_reparto[$reparto_corrente] ?? 0;
         $r['_num_volte_andato'] = $num_volte_andato;
 
         if ($is_oggi) {
-            // Segnamo come consigliato se ha emoglobina critica o è andato poche volte
-            $r['_predizione_consigliato'] = ($ha_emoglobina_critica || $num_volte_andato <= 1);
-            if ($r['_predizione_consigliato']) {
-                $motivo_str = $ha_emoglobina_critica ? "Emoglobina critica (< 7 g/dL)" : "Reparto andato poche volte ($num_volte_andato volte negli ultimi 3gg)";
-                $consigliati_oggi[$reparto_corrente] = $motivo_str;
-            }
+            $r['_predizione_consigliato'] = true;
+            $motivo_str = $ha_emoglobina_specificata ? "Hb: $val_emoglobina g/dL" : "Nessuna Hb specificata";
+            $motivo_str .= " | Ritiri recenti: $num_volte_andato";
+            $consigliati_oggi[$reparto_corrente] = $motivo_str;
         } else {
             $r['_predizione_consigliato'] = false;
         }
@@ -159,7 +155,7 @@ if (is_array($dati) && count($dati) > 0) {
 
     // Ordinamento rigoroso:
     // 1. Prima le richieste di OGGI rispetto a quelle passate.
-    // 2. Tra quelle di OGGI: prima quelle con emoglobina più bassa (valore numerico crescente, quindi chi ha meno di 7 o valori inferiori sale in cima).
+    // 2. Tra quelle di OGGI: ordinamento per valore di emoglobina in assoluto più basso (crescente: es. 6.2 prima di 8.5, e i non specificati vanno in fondo).
     // 3. A parità di emoglobina, sale chi è andato di meno (numero di ritiri recenti minore).
     // 4. Per i giorni passati, mantiene l'ordine cronologico standard.
     usort($dati, function($a, $b) {
@@ -171,7 +167,7 @@ if (is_array($dati) && count($dati) > 0) {
         }
 
         if ($oggi_a && $oggi_b) {
-            // Criterio 1: Emoglobina più bassa (valore numerico minore = priorità maggiore)
+            // Criterio 1: Emoglobina più bassa in assoluto (valore numerico minore = priorità maggiore)
             $emo_a = $a['_val_emoglobina'];
             $emo_b = $b['_val_emoglobina'];
             if ($emo_a !== $emo_b) {
@@ -511,7 +507,7 @@ if (is_array($dati) && count($dati) > 0) {
                 🤖 Ordine Consigliato Turno Pomeridiano (Richieste Odierne)
             </div>
             <div style="font-size: 0.85rem; color: #5b21b6; margin-bottom: 4px;">
-                Criterio applicato: 1) Emoglobina più bassa (< 7 g/dL) | 2) Reparto che è andato di meno nei giorni scorsi.
+                Criterio applicato: 1) Emoglobina più bassa in assoluto | 2) A parità di Hb, chi è andato di meno nei giorni scorsi.
             </div>
             <ul class="global-prediction-list">
                 <?php foreach ($consigliati_oggi as $rep_cons => $motivo_cons): ?>
@@ -604,7 +600,7 @@ if (is_array($dati) && count($dati) > 0) {
             
             <?php if ($is_piastrine): ?>
                 <div class="note-box avviso-piastrine">
-                    🌡️ <strong>Trasporto Piastrine:</strong> Temperatura ambiente e possibilmente in agitazione! (No ghiaccio, No frigo)
+                    🌡️️ <strong>Trasporto Piastrine:</strong> Temperatura ambiente e possibilmente in agitazione! (No ghiaccio, No frigo)
                 </div>
             <?php endif; ?>
 
