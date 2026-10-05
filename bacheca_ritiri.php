@@ -95,6 +95,57 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 date_default_timezone_set('Europe/Rome');
 $data_limite_settimana = date('Y-m-d\T00:00:00', strtotime('-3 days'));
 $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&order=created_at.desc");
+
+// --- MOTORE DI PREDIZIONE POMERIDIANA BASATO SU 2 CRITERI ---
+// 1. Reparto già andato a ritirare di recente (negli ultimi 3 giorni)
+// 2. Emoglobina più bassa (< 7.0 g/dL)
+$reparti_gia_andati = [];
+if (is_array($dati)) {
+    foreach ($dati as $item) {
+        if (!empty($item['reparto']) && ($item['stato'] === 'Ritirato' || !empty($item['ritirato_il']))) {
+            $reparti_gia_andati[trim($item['reparto'])] = true;
+        }
+    }
+}
+
+if (is_array($dati) && count($dati) > 0) {
+    foreach ($dati as &$r) {
+        $score_predittivo = 0;
+        $motivi_predizione = [];
+        $reparto_corrente = trim($r['reparto'] ?? '');
+        $testo_note_item = $r['note'] ?? '';
+
+        // Criterio 1: Se il reparto NON è già andato di recente, aumenta la priorità di uscita pomeridiana (+40 punti)
+        $gia_andato = isset($reparti_gia_andati[$reparto_corrente]);
+        if (!$gia_andato) {
+            $score_predittivo += 40;
+            $motivi_predizione[] = "Il reparto non ha effettuato ritiri recenti";
+        } else {
+            $motivi_predizione[] = "Il reparto ha già effettuato ritiri nei giorni scorsi";
+        }
+
+        // Criterio 2: Se l'emoglobina è più bassa (< 7.0), assegna priorità critica massima (+60 punti)
+        $emo_bassa = false;
+        if (!empty($testo_note_item) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i', $testo_note_item, $m_emo)) {
+            $val_emo_calc = floatval(str_replace(',', '.', $m_emo[1]));
+            if ($val_emo_calc < 7.0) {
+                $emo_bassa = true;
+                $score_predittivo += 60;
+                $motivi_predizione[] = "Emoglobina particolarmente bassa (< 7 g/dL)";
+            }
+        }
+
+        $r['_predizione_score'] = $score_predittivo;
+        $r['_predizione_motivi'] = $motivi_predizione;
+        $r['_predizione_consigliato'] = ($score_predittivo >= 50); // Soglia per uscita pomeridiana consigliata
+    }
+    unset($r);
+
+    // Ordinamento in base alla predizione pomeridiana (score più alto in cima)
+    usort($dati, function($a, $b) {
+        return ($b['_predizione_score'] ?? 0) <=> ($a['_predizione_score'] ?? 0);
+    });
+}
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -109,19 +160,24 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             --primary-dark: #0369a1;
             --bg-main: #f1f5f9;       /* Grigio chiaro asettico e riposante per reparti */
             --surface: #ffffff;
-            --text-main: #0f172a;     /* Testo scuro ad alto contrasto per leggibilità rapida */
+            --text-main: #0f172a;      /* Testo scuro ad alto contrasto per leggibilità rapida */
             --text-muted: #475569;
-            --border: #cbd5e1;         /* Bordi definiti ma non aggressivi */
+            --border: #cbd5e1;          /* Bordi definiti ma non aggressivi */
             
             /* Codici Colore Semidatori Sanitari */
-            --danger: #dc2626;         /* Rosso clinico allerta (In attesa / Critico) */
+            --danger: #dc2626;          /* Rosso clinico allerta (In attesa / Critico) */
             --danger-bg: #fef2f2;
-            --success: #059669;        /* Verde ospedaliero sicurezza (Completato / Validato) */
+            --success: #059669;         /* Verde ospedaliero sicurezza (Completato / Validato) */
             --success-bg: #ecfdf5;
-            --warning-bg: #fef3c7;     /* Giallo ambra / Ocra (In transito / Consegnato SIT) */
+            --warning-bg: #fef3c7;      /* Giallo ambra / Ocra (In transito / Consegnato SIT) */
             --warning-text: #78350f;
-            --info-bg: #e0f2fe;        /* Azzurro diagnostico (Piastrine / Info) */
+            --info-bg: #e0f2fe;         /* Azzurro diagnostico (Piastrine / Info) */
             --info-text: #0369a1;
+            
+            /* Colore Predizione Pomeridiana */
+            --prediction-bg: #f5f3ff;
+            --prediction-border: #8b5cf6;
+            --prediction-text: #6d28d9;
         }
 
         * {
@@ -323,6 +379,17 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             font-size: 0.8rem;
             font-style: italic;
             font-weight: 500;
+        }
+
+        .prediction-badge {
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: var(--prediction-bg);
+            border: 1px solid var(--prediction-border);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--prediction-text);
+            font-weight: 600;
         }
 
         .note-box {
@@ -610,6 +677,19 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
             </div>
             
             <div class="orario" style="margin-bottom: 8px;">Inserito il: <?php echo htmlspecialchars($created_formatted); ?></div>
+
+            <!-- Box Predizione Uscita Pomeridiana -->
+            <?php if (isset($r['_predizione_consigliato'])): ?>
+                <div class="prediction-badge">
+                    🤖 <strong>Predizione Turno Pomeridiano:</strong> 
+                    <?php if ($r['_predizione_consigliato']): ?>
+                        <span style="color: #5b21b6; font-weight: 800;">CONSIGLIATO per l'uscita di oggi pomeriggio</span>
+                    <?php else: ?>
+                        <span style="color: #475569;">Priorità standard</span>
+                    <?php endif; ?>
+                    <br><span style="font-size: 0.75rem; font-weight: normal; opacity: 0.9;">Motivi: <?php echo htmlspecialchars(implode(' | ', $r['_predizione_motivi'])); ?></span>
+                </div>
+            <?php endif; ?>
             
             <?php if ($is_piastrine): ?>
                 <div class="note-box avviso-piastrine">
