@@ -26,18 +26,26 @@ $scadute = 0;
 if (is_array($sacche)) {
     foreach ($sacche as $s) {
         $totale++;
-        $scad_sacca = new DateTime($s['data_scadenza_sacca']);
+        
+        // Gestione sicura della data di scadenza della sacca
+        $scad_sacca = !empty($s['data_scadenza_sacca']) ? new DateTime($s['data_scadenza_sacca']) : null;
         $scad_ts = !empty($s['data_type_screen']) ? new DateTime($s['data_type_screen']) : null;
         
-        $diff_sacca = $oggi->diff($scad_sacca);
-        $giorni_sacca = (int)$diff_sacca->format('%r%a');
+        $giorni_sacca = 999;
+        if ($scad_sacca) {
+            $diff_sacca = $oggi->diff($scad_sacca);
+            $giorni_sacca = (int)$diff_sacca->format('%r%a');
+        }
         
-        $diff_ts = $scad_ts ? $oggi->diff($scad_ts) : null;
-        $giorni_ts = $diff_ts ? (int)$diff_ts->format('%r%a') : 999;
+        $giorni_ts = 999;
+        if ($scad_ts) {
+            $diff_ts = $oggi->diff($scad_ts);
+            $giorni_ts = (int)$diff_ts->format('%r%a');
+        }
         
-        if ($giorni_sacca < 0 || ($scad_ts && $giorni_ts < 0)) {
+        if (($scad_sacca && $giorni_sacca < 0) || ($scad_ts && $giorni_ts < 0)) {
             $scadute++;
-        } elseif ($giorni_sacca <= $alert_giorni || ($scad_ts && $giorni_ts <= $alert_giorni)) {
+        } elseif (($scad_sacca && $giorni_sacca <= $alert_giorni) || ($scad_ts && $giorni_ts <= $alert_giorni)) {
             $in_scadenza++;
         }
     }
@@ -85,16 +93,27 @@ if (is_array($sacche)) {
                     $parti = explode(" ", $nome_completo);
                     $nome_puntato = (count($parti) >= 2) ? strtoupper(substr($parti[0], 0, 1)) . ". " . strtoupper(substr($parti[1], 0, 1)) . "." : strtoupper(substr($nome_completo, 0, 1)) . ".";
 
-                    $scad_sacca = new DateTime($s['data_scadenza_sacca']);
+                    $scad_sacca = !empty($s['data_scadenza_sacca']) ? new DateTime($s['data_scadenza_sacca']) : null;
                     $scad_ts = !empty($s['data_type_screen']) ? new DateTime($s['data_type_screen']) : null;
-                    $diff_sacca = $oggi->diff($scad_sacca);
-                    $giorni_sacca = (int)$diff_sacca->format('%r%a');
-                    $diff_ts = $scad_ts ? $oggi->diff($scad_ts) : null;
-                    $giorni_ts = $diff_ts ? (int)$diff_ts->format('%r%a') : 999;
+                    
+                    $giorni_sacca = 999;
+                    if ($scad_sacca) {
+                        $diff_sacca = $oggi->diff($scad_sacca);
+                        $giorni_sacca = (int)$diff_sacca->format('%r%a');
+                    }
+                    
+                    $giorni_ts = 999;
+                    if ($scad_ts) {
+                        $diff_ts = $oggi->diff($scad_ts);
+                        $giorni_ts = (int)$diff_ts->format('%r%a');
+                    }
                     
                     $colore = "border-green-500 bg-white";
-                    if ($giorni_sacca < 0 || ($scad_ts && $giorni_ts < 0)) $colore = "border-red-600 bg-red-100";
-                    elseif ($giorni_sacca <= $alert_giorni || ($scad_ts && $giorni_ts <= $alert_giorni)) $colore = "border-orange-500 bg-orange-50";
+                    if (($scad_sacca && $giorni_sacca < 0) || ($scad_ts && $giorni_ts < 0)) {
+                        $colore = "border-red-600 bg-red-100";
+                    } elseif (($scad_sacca && $giorni_sacca <= $alert_giorni) || ($scad_ts && $giorni_ts <= $alert_giorni)) {
+                        $colore = "border-orange-500 bg-orange-50";
+                    }
                 ?>
                 <div class="p-4 border-l-8 rounded-lg shadow-sm <?php echo $colore; ?>">
                     <div class="flex justify-between items-center">
@@ -103,8 +122,8 @@ if (is_array($sacche)) {
                     </div>
                     <div class="text-sm mt-1">Paziente: <b><?php echo $nome_puntato; ?></b> | Destinazione: <b><?php echo htmlspecialchars($s['reparto']); ?></b></div>
                     <div class="grid grid-cols-2 mt-2 text-xs font-bold">
-                        <div class="<?php echo ($giorni_sacca <= $alert_giorni) ? 'text-red-600' : 'text-gray-500'; ?>">
-                            Scad. Sacca: <?php echo date('d/m/y', strtotime($s['data_scadenza_sacca'])); ?>
+                        <div class="<?php echo ($scad_sacca && $giorni_sacca <= $alert_giorni) ? 'text-red-600' : 'text-gray-500'; ?>">
+                            Scad. Sacca: <?php echo $scad_sacca ? date('d/m/y', strtotime($s['data_scadenza_sacca'])) : 'N/D'; ?>
                         </div>
                         <div class="<?php echo ($scad_ts && $giorni_ts <= $alert_giorni) ? 'text-red-600' : 'text-gray-500'; ?>">
                             Scad. T/S: <?php echo $scad_ts ? date('d/m/y', strtotime($s['data_type_screen'])) : 'N/D'; ?>
