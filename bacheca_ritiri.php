@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             die("Errore API: Impossibile registrare la consegna al SIT. Dettaglio: " . print_r($risposta, true));
         }
         
-        header("Location: bacheca_ritiri.php");
+        er("Location: bacheca_ritiri.php");
         exit;
     }
 
@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             die("Errore API: Impossibile aggiornare. Verifica le credenziali nel file config_sangue.php. Dettaglio: " . print_r($risposta, true));
         }
         
-        header("Location: bacheca_ritiri.php");
+        er("Location: bacheca_ritiri.php");
         exit;
     }
 }
@@ -199,6 +199,7 @@ if (is_array($dati)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
     <title>Bacheca Ritiri - Emoteca Pellegrini</title>
     <style>
         :root {
