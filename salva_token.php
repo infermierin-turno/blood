@@ -6,14 +6,14 @@ if (!isset($_SESSION['utente'])) {
     exit;
 }
 
+require_once __DIR__ . '/api_helper_sangue.php';
+
 if (!defined('SUPABASE_URL')) {
     define('SUPABASE_URL', getenv('SUPABASE_URL'));
 }
 if (!defined('SUPABASE_KEY')) {
     define('SUPABASE_KEY', getenv('SUPABASE_KEY'));
 }
-
-require_once __DIR__ . '/api_helper_sangue.php';
 
 $data = json_decode(file_get_contents('php://input'), true);
 $fcm_token = $data['fcm_token'] ?? null;
