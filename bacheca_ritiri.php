@@ -599,14 +599,4 @@ if (is_array($dati)) {
 
             <?php if (!empty($testo_note_visualizzato)): ?>
                 <div class="note-box <?php echo $is_emoglobina_critica ? 'note-critica' : ''; ?>">
-                    <?php if ($is_emoglobina_critica): ?>
-                        <div style="font-size: 1rem; margin-bottom: 4px;">🚨 <strong>ATTENZIONE: Emoglobina Bassa! (< 7 g/dL)</strong></div>
-                    <?php endif; ?>
-                    <strong>Note:</strong> <?php echo htmlspecialchars($testo_note_visualizzato); ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($consegnato_sit): ?>
-                <div class="consegnato-box">
-                    📦 Consegnato al SIT da: <strong><?php echo htmlspecialchars($r['consegnato_da'] ?? 'N/D'); ?></strong><br>
-                    <span style="font-size: 0.75rem; color: #78350f; opacity: 0.85;">Data consegna
+                    <?php
