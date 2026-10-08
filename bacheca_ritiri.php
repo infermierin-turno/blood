@@ -11,19 +11,24 @@ if (!isset($_SESSION['utente'])) {
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 
-$nome_operatore = $_SESSION['utente']['nome'] . ' ' .$_SESSION['utente']['cognome'];
-$ruolo_utente =$_SESSION['utente']['ruolo'] ?? '';
+$nome_operatore = $_SESSION['utente']['nome'] . ' ' . $_SESSION['utente']['cognome'];
+$ruolo_utente = $_SESSION['utente']['ruolo'] ?? '';
 
 // Definizione controllo sola lettura (rileva se il ruolo è viewer, sola_lettura o lettura)
-$is_read_only = (strtolower($ruolo_utente) === 'viewer' || strtolower($ruolo_utente) === 'sola_lettura' \vert{}\vert{} strtolower($ruolo_utente) === 'lettura');
+$is_read_only = (strtolower($ruolo_utente) === 'viewer' || strtolower($ruolo_utente) === 'sola_lettura' || strtolower($ruolo_utente) === 'lettura');
 
 require_once __DIR__ . '/api_helper_sangue.php';
 
 // Funzione per mascherare il nome del paziente per privacy (es. "Rossi Mario" -> "R. M.")
 function maschera_paziente($testo_note) {
-    return preg_replace_callback('/Paziente:\s*([^\s-]+)(?:\s+([^\s-]+))?/i', function($matches) {$cognome = $matches[1] ?? '';$nome = $matches[2] ?? '';$iniziale_cognome = mb_substr($cognome, 0, 1) . '.';$iniziale_nome = !empty($nome) ? mb_substr($nome, 0, 1) . '.' : '';
+    return preg_replace_callback('/Paziente:\s*([^\s-]+)(?:\s+([^\s-]+))?/i', function($matches) {
+        $cognome = $matches[1] ?? '';
+        $nome = $matches[2] ?? '';
         
-        return "Paziente: " . trim($iniziale_cognome . ' ' .$iniziale_nome);
+        $iniziale_cognome = mb_substr($cognome, 0, 1) . '.';
+        $iniziale_nome = !empty($nome) ? mb_substr($nome, 0, 1) . '.' : '';
+        
+        return "Paziente: " . trim($iniziale_cognome . ' ' . $iniziale_nome);
     }, $testo_note);
 }
 
@@ -36,15 +41,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     date_default_timezone_set('Europe/Rome');
 
     // Gestione Conferma Consegna al SIT
-    if (isset($_POST['id_consegna_sit'])) {$id_da_consegnare = $_POST['id_consegna_sit'];$dati_consegna = [
+    if (isset($_POST['id_consegna_sit'])) {
+        $id_da_consegnare = $_POST['id_consegna_sit'];
+        $dati_consegna = [
             'consegnato_sit' => true,
             'consegnato_il' => date('Y-m-d H:i:s'),
             'consegnato_da' => $nome_operatore
         ];
         
-        $risposta = esegui_patch_api('ritiri_sangue?id=eq.' . $id_da_consegnare,$dati_consegna);
+        $risposta = esegui_patch_api('ritiri_sangue?id=eq.' . $id_da_consegnare, $dati_consegna);
         
-        if (isset($risposta['code']) \vert{}\vert{}$risposta === null) {
+        if (isset($risposta['code']) || $risposta === null) {
             die("Errore API: Impossibile registrare la consegna al SIT. Dettaglio: " . print_r($risposta, true));
         }
         
@@ -54,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // Gestione Segna come Ritirato
     if (isset($_POST['id_ritiro'])) {
-        $id_da_aggiornare =$_POST['id_ritiro'];
+        $id_da_aggiornare = $_POST['id_ritiro'];
         $note_esistenti = $_POST['note_originali'] ?? '';
         $note_nuove = !empty($_POST['note_ritiro']) ? trim($_POST['note_ritiro']) : '';
         $note_finali = $note_esistenti;
@@ -70,9 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'notifica_inviata' => true
         ];
         
-        $risposta = esegui_patch_api('ritiri_sangue?id=eq.' . $id_da_aggiornare,$dati_aggiornamento);
+        $risposta = esegui_patch_api('ritiri_sangue?id=eq.' . $id_da_aggiornare, $dati_aggiornamento);
         
-        if (isset($risposta['code']) \vert{}\vert{}$risposta === null) {
+        if (isset($risposta['code']) || $risposta === null) {
             die("Errore API: Impossibile aggiornare. Verifica le credenziali nel file config_sangue.php. Dettaglio: " . print_r($risposta, true));
         }
         
@@ -89,8 +96,8 @@ $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&or
 // --- CONTEGGIO RITIRI EFFETTUATI PER REPARTO NEGLI ULTIMI 10 GIORNI (NORMALIZZATO) ---
 $conteggio_ritiri_reparto = [];
 if (is_array($dati)) {
-    foreach ($dati as$item) {
-        if (!empty($item['reparto']) && (trim($item['stato']) === 'Ritirato' \vert{}\vert{} !empty($item['ritirato_il']))) {
+    foreach ($dati as $item) {
+        if (!empty($item['reparto']) && (trim($item['stato']) === 'Ritirato' || !empty($item['ritirato_il']))) {
             $rep_key = mb_strtolower(trim($item['reparto']));
             if (!isset($conteggio_ritiri_reparto[$rep_key])) {
                 $conteggio_ritiri_reparto[$rep_key] = 0;
@@ -106,49 +113,53 @@ $data_odierna = date('Y-m-d');
 if (is_array($dati) && count($dati) > 0) {
     foreach ($dati as &$r) {
         $reparto_corrente = mb_strtolower(trim($r['reparto'] ?? ''));
-        $testo_note_item =$r['note'] ?? '';
+        $testo_note_item = $r['note'] ?? '';
         
-        // Verifica se la richiesta appartiene alla data odierna
         $data_creazione_item = '';
         if (!empty($r['created_at'])) {
             $ts_c = strtotime($r['created_at']);
-            if ($ts_c !== false) {$data_creazione_item = date('Y-m-d', $ts_c + 7200);             }         }$is_oggi = ($data_creazione_item ===$data_odierna);
-        $r['_is_oggi'] =$is_oggi;
+            if ($ts_c !== false) {
+                $data_creazione_item = date('Y-m-d', $ts_c + 7200);
+            }
+        }
+        
+        $is_oggi = ($data_creazione_item === $data_odierna);
+        $r['_is_oggi'] = $is_oggi;
 
-        // Estrazione valore emoglobina (se non presente, diamo 999.0 in modo che finisca in fondo)
         $val_emoglobina = 999.0;
         $ha_emoglobina_specificata = false;
-        if (!empty($testo_note_item) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i',$testo_note_item, $m_emo)) {$val_emoglobina = floatval(str_replace(',', '.', $m_emo[1]));$ha_emoglobina_specificata = true;
+        if (!empty($testo_note_item) && preg_match('/Emoglobina:\s*([0-9]+([.,][0-9]+)?)/i', $testo_note_item, $m_emo)) {
+            $val_emoglobina = floatval(str_replace(',', '.', $m_emo[1])); 
+            $ha_emoglobina_specificata = true;
         }
-        $r['_val_emoglobina'] =$val_emoglobina;
-        $r['_emoglobina_critica'] = ($ha_emoglobina_specificata &&$val_emoglobina < 7.0);
+        $r['_val_emoglobina'] = $val_emoglobina;
+        $r['_emoglobina_critica'] = ($ha_emoglobina_specificata && $val_emoglobina < 7.0);
 
-        // Quante volte è andato questo reparto negli ultimi 10 giorni (default 0)
         $num_volte_andato = $conteggio_ritiri_reparto[$reparto_corrente] ?? 0;
-        $r['_num_volte_andato'] =$num_volte_andato;
-        $r['_predizione_consigliato'] =$is_oggi;
+        $r['_num_volte_andato'] = $num_volte_andato;
+        $r['_predizione_consigliato'] = $is_oggi;
     }
     unset($r);
 
-    usort($dati, function($a,$b) {
-        $oggi_a =$a['_is_oggi'] ? 1 : 0;
-        $oggi_b =$b['_is_oggi'] ? 1 : 0;
+    usort($dati, function($a, $b) {
+        $oggi_a = $a['_is_oggi'] ? 1 : 0;
+        $oggi_b = $b['_is_oggi'] ? 1 : 0;
 
-        if ($oggi_a !==$oggi_b) {
-            return $oggi_b <=>$oggi_a;
+        if ($oggi_a !== $oggi_b) {
+            return $oggi_b <=> $oggi_a;
         }
 
-        if ($oggi_a &&$oggi_b) {
-            $emo_a =$a['_val_emoglobina'];
-            $emo_b =$b['_val_emoglobina'];
-            if ($emo_a !==$emo_b) {
-                return $emo_a <=>$emo_b;
+        if ($oggi_a && $oggi_b) {
+            $emo_a = $a['_val_emoglobina'];
+            $emo_b = $b['_val_emoglobina'];
+            if ($emo_a !== $emo_b) {
+                return $emo_a <=> $emo_b;
             }
 
-            $andato_a =$a['_num_volte_andato'];
-            $andato_b =$b['_num_volte_andato'];
-            if ($andato_a !==$andato_b) {
-                return $andato_a <=>$andato_b;
+            $andato_a = $a['_num_volte_andato'];
+            $andato_b = $b['_num_volte_andato'];
+            if ($andato_a !== $andato_b) {
+                return $andato_a <=> $andato_b;
             }
         }
 
@@ -156,16 +167,18 @@ if (is_array($dati) && count($dati) > 0) {
     });
 }
 
-// --- POPOLIAMO IL BANNER DELLE PREDIZIONI ORA CHE $dati È ORDINATO CORRETTAMENTE ---
 $consigliati_oggi = [];
 if (is_array($dati)) {
-    foreach ($dati as$r) {
+    foreach ($dati as $r) {
         if (!empty($r['_is_oggi'])) {
             $reparto_nome_originale = trim($r['reparto'] ?? '');
             $reparto_corrente = mb_strtolower($reparto_nome_originale);
-            if (!isset($consigliati_oggi[$reparto_corrente])) {$val_emo = $r['_val_emoglobina'];$num_andato = $r['_num_volte_andato'];$motivo_str = ($val_emo !== 999.0) ? "Hb: $val_emo g/dL" : "Nessuna Hb specificata";
+            if (!isset($consigliati_oggi[$reparto_corrente])) {
+                $val_emo = $r['_val_emoglobina'];
+                $num_andato = $r['_num_volte_andato'];
+                $motivo_str = ($val_emo !== 999.0) ? "Hb: $val_emo g/dL" : "Nessuna Hb specificata";
                 $motivo_str .= " | Ritiri recenti (10gg): $num_andato";
-                $consigliati_oggi[$reparto_nome_originale] =$motivo_str;
+                $consigliati_oggi[$reparto_nome_originale] = $motivo_str;
             }
         }
     }
@@ -489,7 +502,6 @@ if (is_array($dati)) {
         </div>
     <?php endif; ?>
 
-    <!-- BANNER UNICO IN ALTO CON L'ORDINAMENTO PREFERENZIALE ODIERNO -->
     <?php if (!empty($consigliati_oggi)): ?>
         <div class="global-prediction-banner">
             <div class="global-prediction-title">
@@ -499,19 +511,19 @@ if (is_array($dati)) {
                 Criteri applicati: 1) Emoglobina più bassa in assoluto | 2) A parità di Hb, chi è andato di meno negli ultimi 10 giorni.
             </div>
             <ul class="global-prediction-list">
-                <?php foreach ($consigliati_oggi as $rep_cons =>$motivo_cons): ?>
+                <?php foreach ($consigliati_oggi as $rep_cons => $motivo_cons): ?>
                     <li><strong><?php echo htmlspecialchars($rep_cons); ?></strong> <span style="font-size: 0.8rem; opacity: 0.9;">(<?php echo htmlspecialchars($motivo_cons); ?>)</span></li>
                 <?php endforeach; ?>
             </ul>
         </div>
     <?php endif; ?>
     
-    <?php if (is_array($dati) && count($dati) > 0): foreach ($dati as$r): ?>
+    <?php if (is_array($dati) && count($dati) > 0): foreach ($dati as $r): ?>
         <?php
             $consegnato_sit = !empty($r['consegnato_sit']);
 
-            $is_emoglobina_critica =$r['_emoglobina_critica'] ?? false;
-            $testo_note =$r['note'] ?? '';
+            $is_emoglobina_critica = $r['_emoglobina_critica'] ?? false;
+            $testo_note = $r['note'] ?? '';
 
             $is_piastrine = false;
             if (!empty($testo_note) && (
@@ -539,9 +551,9 @@ if (is_array($dati)) {
             if (!empty($r['created_at'])) {
                 $ts_created = strtotime($r['created_at']);
                 if ($ts_created !== false) {
-                    $created_formatted = date('Y-m-d H:i:s',$ts_created + 7200);
+                    $created_formatted = date('Y-m-d H:i:s', $ts_created + 7200);
                 } else {
-                    $created_formatted =$r['created_at'];
+                    $created_formatted = $r['created_at'];
                 }
             }
 
@@ -549,9 +561,9 @@ if (is_array($dati)) {
             if (!empty($r['ritirato_il'])) {
                 $ts_ritiro = strtotime($r['ritirato_il']);
                 if ($ts_ritiro !== false) {
-                    $orario_ritiro_formattato = date('Y-m-d H:i:s',$ts_ritiro);
+                    $orario_ritiro_formattato = date('Y-m-d H:i:s', $ts_ritiro);
                 } else {
-                    $orario_ritiro_formattato =$r['ritirato_il'];
+                    $orario_ritiro_formattato = $r['ritirato_il'];
                 }
             }
 
@@ -559,14 +571,16 @@ if (is_array($dati)) {
             if (!empty($r['consegnato_il'])) {
                 $ts_cons = strtotime($r['consegnato_il']);
                 if ($ts_cons !== false) {
-                    $orario_consegna_formattato = date('Y-m-d H:i:s',$ts_cons);
+                    $orario_consegna_formattato = date('Y-m-d H:i:s', $ts_cons);
                 } else {
-                    $orario_consegna_formattato =$r['consegnato_il'];
+                    $orario_consegna_formattato = $r['consegnato_il'];
                 }
             }
 
-            if ($r['stato'] == 'Ritirato') {$classe_card = 'fatto';
-            } elseif ($consegnato_sit) {$classe_card = 'stato-consegnato-sit';
+            if ($r['stato'] == 'Ritirato') {
+                $classe_card = 'fatto';
+            } elseif ($consegnato_sit) {
+                $classe_card = 'stato-consegnato-sit';
             } else {
                 $classe_card = 'stato-attesa-sit';
             }
@@ -599,4 +613,177 @@ if (is_array($dati)) {
 
             <?php if (!empty($testo_note_visualizzato)): ?>
                 <div class="note-box <?php echo $is_emoglobina_critica ? 'note-critica' : ''; ?>">
-                    <?php
+                    <?php if ($is_emoglobina_critica): ?>
+                        <div style="font-size: 1rem; margin-bottom: 4px;">🚨 <strong>ATTENZIONE: Emoglobina Bassa! (&lt; 7 g/dL)</strong></div>
+                    <?php endif; ?>
+                    <strong>Note:</strong> <?php echo htmlspecialchars($testo_note_visualizzato); ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($consegnato_sit): ?>
+                <div class="consegnato-box">
+                    📦 Consegnato al SIT da: <strong><?php echo htmlspecialchars($r['consegnato_da'] ?? 'N/D'); ?></strong><br>
+                    <span style="font-size: 0.75rem; color: #78350f; opacity: 0.85;">Data consegna: <?php echo htmlspecialchars($orario_consegna_formattato); ?></span>
+                </div>
+            <?php elseif ($r['stato'] != 'Ritirato'): ?>
+                <?php if (!$is_read_only): ?>
+                    <form method="POST">
+                        <input type="hidden" name="id_consegna_sit" value="<?php echo htmlspecialchars($r['id']); ?>">
+                        <button type="submit" class="btn-consegna">📦 Conferma: Consegnato al SIT (<?php echo htmlspecialchars($nome_operatore); ?>)</button>
+                    </form>
+                <?php endif; ?>
+            <?php endif; ?>
+            
+            <?php if ($r['stato'] == 'Ritirato' && !empty($r['accettato_da'])): ?>
+                <div class="operatore-box">
+                    ✓ Sacca ritirata. Procedura validata da: <strong><?php echo htmlspecialchars($r['accettato_da']); ?></strong><br>
+                    <span style="font-size: 0.75rem; color: #065f46; opacity: 0.85;">Data: <?php echo htmlspecialchars($orario_ritiro_formattato); ?></span>
+                </div>
+            <?php elseif ($r['stato'] == 'Da ritirare'): ?>
+                <?php if (!$is_read_only): ?>
+                    <?php if ($consegnato_sit): ?>
+                        <form method="POST">
+                            <input type="hidden" name="id_ritiro" value="<?php echo htmlspecialchars($r['id']); ?>">
+                            <input type="hidden" name="note_originali" value="<?php echo htmlspecialchars($r['note'] ?? ''); ?>">
+                            <textarea name="note_ritiro" class="input-note" placeholder="Eventuali note sul ritiro (es. operatore, temperatura...)" rows="2"></textarea>
+                            <button type="submit" class="btn-ritirato">✓ Segna come Ritirato</button>
+                        </form>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <?php if (!$consegnato_sit): ?>
+                        <div class="readonly-notice">
+                            Stato: richiesta presa in carico in attesa di consegna al S. Paolo.
+                        </div>
+                    <?php else: ?>
+                        <div class="readonly-consegnato-notice">
+                            Stato: richiesta consegnata in attesa di assegnazione (Contattare il SIT San Paolo int. 7872)
+                        </div>
+                    <?php endif; ?>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+    <?php endforeach; else: ?>
+        <div class="empty-state">
+            <p style="margin:0; font-weight: 500;">Nessun ritiro presente in bacheca negli ultimi 10 giorni.</p>
+        </div>
+    <?php endif; ?>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD0RidVKjyRvYFd4ootXi5VWM28qVezwpo",
+            authDomain: "emotecaapp.firebaseapp.com",
+            projectId: "emotecaapp",
+            storageBucket: "emotecaapp.firebasestorage.app",
+            messagingSenderId: "955424631104",
+            appId: "1:955424631104:web:d43214d2cd055b426eb2a5"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const messaging = firebase.messaging();
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('firebase-messaging-sw.js')
+                .then((registration) => {
+                    console.log('Service Worker registrato:', registration.scope);
+                })
+                .catch((err) => {
+                    console.log('Service Worker fallito: ', err);
+                });
+        }
+
+        // --- GESTIONE INSTALLAZIONE PWA (Pulsante Installa App) ---
+        let deferredPrompt;
+        const btnInstall = document.getElementById('btnInstall');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            if (btnInstall) {
+                btnInstall.style.display = 'inline-flex';
+            }
+        });
+
+        function installaApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('Utente ha accettato l\'installazione della PWA');
+                    } else {
+                        console.log('Utente ha rifiutato l\'installazione della PWA');
+                    }
+                    deferredPrompt = null;
+                    if (btnInstall) {
+                        btnInstall.style.display = 'none';
+                    }
+                });
+            }
+        }
+
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('PWA installata con successo');
+            if (btnInstall) {
+                btnInstall.style.display = 'none';
+            }
+        });
+
+        // --- GESTIONE NOTIFICHE PUSH FIREBASE ---
+        function richiediPermessoNotifiche() {
+            Notification.requestPermission().then((permission) => {
+                if (permission === 'granted') {
+                    console.log('Permesso notifiche concesso.');
+                    messaging.getToken({ vapidKey: 'BPrs_... (chiave VAPID esistente)' }).then((currentToken) => {
+                        if (currentToken) {
+                            console.log('Token FCM ottenuto:', currentToken);
+                            
+                            // Invio del token al server PHP per salvarlo su Supabase
+                            fetch('salva_token.php', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ fcm_token: currentToken })
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.successo) {
+                                    alert('Notifiche push attivate e registrate con successo!');
+                                } else {
+                                    console.error('Errore salvataggio token:', data.errore);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Errore di rete durante il salvataggio del token:', error);
+                            });
+
+                        } else {
+                            console.log('Nessun token di registrazione disponibile.');
+                        }
+                    }).catch((err) => {
+                        console.log('Errore durante il recupero del token FCM:', err);
+                    });
+                } else {
+                    alert('Permesso notifiche negato.');
+                }
+            });
+        }
+
+        // Ricezione messaggi in primo piano (foreground)
+        messaging.onMessage((payload) => {
+            console.log('Messaggio ricevuto in primo piano: ', payload);
+            if (payload.notification) {
+                if (Notification.permission === 'granted') {
+                    new Notification(payload.notification.title, {
+                        body: payload.notification.body,
+                        icon: 'icon-192.png'
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
