@@ -93,11 +93,11 @@ date_default_timezone_set('Europe/Rome');
 $data_limite_settimana = date('Y-m-d\T00:00:00', strtotime('-10 days'));
 $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&order=created_at.desc");
 
-// --- CONTEGGIO RITIRI EFFETTUATI PER REPARTO NEGLI ULTIMI 10 GIORNI (NORMALIZZATO) ---
+// --- CONTEGGIO RITIRI EFFETTUATI PER REPARTO NEGLI ULTIMI 10 GIORNI (CORRETTO E ROBUSTO) ---
 $conteggio_ritiri_reparto = [];
 if (is_array($dati)) {
     foreach ($dati as $item) {
-        if (!empty($item['reparto']) && (trim($item['stato']) === 'Ritirato' || !empty($item['ritirato_il']))) {
+        if (!empty($item['reparto'])) {
             $rep_key = mb_strtolower(trim($item['reparto']));
             if (!isset($conteggio_ritiri_reparto[$rep_key])) {
                 $conteggio_ritiri_reparto[$rep_key] = 0;
@@ -667,7 +667,7 @@ if (is_array($dati)) {
             <p style="margin:0; font-weight: 500;">Nessun ritiro presente in bacheca negli ultimi 10 giorni.</p>
         </div>
     <?php endif; ?>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
 
     <script>
