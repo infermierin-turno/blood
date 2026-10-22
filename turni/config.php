@@ -4,9 +4,22 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Configurazione Supabase
-define('SUPABASE_URL', 'https://cfrsuknofgywvznjhqvp.supabase.co');
-define('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmcnN1a25vZmd5d3Z6bmpocXZwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDk5MjU2MywiZXhwIjoyMDk2NTY4NTYzfQ.nmwml2Kw2wZcJfYe8DaNLN3a2befbmAOH-OcL3NwIVY');
+// Configurazione Supabase tramite Variabili d'Ambiente Render
+$turni_url = getenv('TURNI_SUPABASE_URL');
+$turni_key = getenv('TURNI_SUPABASE_KEY');
+
+// Fallback di sicurezza nel caso in cui le variabili non vengano trovate
+if (!$turni_url || !$turni_key) {
+    error_log("ATTENZIONE: Variabili d'ambiente TURNI_SUPABASE_URL o TURNI_SUPABASE_KEY non trovate.");
+}
+
+if (!defined('SUPABASE_URL')) {
+    define('SUPABASE_URL', $turni_url ?: '');
+}
+
+if (!defined('SUPABASE_KEY')) {
+    define('SUPABASE_KEY', $turni_key ?: '');
+}
 
 /**
  * Funzione centralizzata per le chiamate REST a Supabase tramite cURL
