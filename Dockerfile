@@ -39,9 +39,11 @@ RUN chown -R www-data:www-data /var/www/html
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Aggiungiamo le regole di proxy in Apache per inviare a Uvicorn (porta 8000) le richieste API
+# Configurazione del VirtualHost con i ProxyPass per le API Python
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
+    ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
+    ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
     ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
     ProxyPassReverse /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
     ProxyPass /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
