@@ -1,4 +1,7 @@
 <?php
+// Attiviamo il buffering dell'output per prevenire errori sugli header
+ob_start();
+
 session_start();
 require_once 'config.php';
 
