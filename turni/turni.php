@@ -113,7 +113,7 @@ if (empty($utente_id)) {
     exit;
 }
 
-// Se in sessione manca l'organizzazione_id o il reparto_id, li recuperiamo direttamente dal DB per l'utente loggato
+// Se in sessione manca l'organizzazione_id o il reparto_id, li recuperiamo dal DB
 if (empty($org_id_utente) || empty($reparto_id_utente)) {
     $resUCorr = supabase_turni_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id");
     if (!empty($resUCorr) && is_array($resUCorr)) {
@@ -126,7 +126,7 @@ if (empty($org_id_utente) || empty($reparto_id_utente)) {
     }
 }
 
-// 2. Recupero di tutti i reparti (filtrati per organizzazione se è un capo personale)
+// 2. Recupero reparti
 $reparti_disponibili = [];
 $urlReparti = "reparti?select=id,nome_reparto,organizzazione_id&order=nome_reparto.asc";
 if ($is_capo_personale && !empty($org_id_utente)) {
@@ -147,7 +147,7 @@ if ($is_super_admin || $is_capo_personale) {
     $reparto_selezionato = $reparto_id_utente;
 }
 
-// 4. Determinazione del nome del reparto e della struttura da mostrare a schermo
+// 4. Determinazione del nome del reparto e della struttura
 $nome_reparto_selezionato = ($is_super_admin || ($is_capo_personale && $reparto_selezionato === '')) ? "Tutti i Reparti della Struttura" : "Reparto non assegnato";
 $nome_struttura_corrente = "Azienda Sanitaria / Struttura";
 
@@ -240,7 +240,7 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
     return true;
 }
 
-// COSTRUZIONE MAPPA UTENTI DALLA TABELLA staging_utenti
+// MAPPA UTENTI
 $mappaUtenti = [];
 
 if ($is_super_admin) {
@@ -397,13 +397,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // GENERAZIONE TURNI CON MOTORE AI PYTHON (CON DEBUG DETTAGLIATO)
+    // GENERAZIONE TURNI CON MOTORE AI PYTHON (SISTEMATA CON SEQUENZA E PARTENZA)
     if ($azione === 'genera_turni_ai') {
         $data_inizio_gen = trim($_POST['data_inizio_gen'] ?? '');
         $data_fine_gen = trim($_POST['data_fine_gen'] ?? '');
         $collaboratore_gen = trim($_POST['collaboratore_gen'] ?? ''); 
         $turno_partenza = trim($_POST['turno_partenza'] ?? ''); 
+        $sequenza_custom = trim($_POST['sequenza_turni'] ?? '');
         $riposo_domenicale = isset($_POST['riposo_domenicale']) ? true : false; 
+        $rispetta_ferie = isset($_POST['rispetta_ferie']) ? true : false;
 
         if (!empty($data_inizio_gen) && !empty($data_fine_gen)) {
             $clean_org_id = (!empty($org_id_utente)) ? $org_id_utente : null;
@@ -420,7 +422,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messaggio = "Nessun operatore disponibile in reparto o con i filtri selezionati.";
                 $tipo_alert = "danger";
             } else {
-                // Inviamo tutti i possibili formati di chiave che il backend Python potrebbe attendersi
+                // Parsing sequenza custom (es. "M,P,N,S,R")
+                $sequenza_array = [];
+                if (!empty($sequenza_custom)) {
+                    $partiSeq = explode(',', $sequenza_custom);
+                    foreach ($partiSeq as $p) {
+                        $pClean = strtoupper(trim($p));
+                        if ($pClean !== '') {
+                            $sequenza_array[] = $pClean;
+                        }
+                    }
+                }
+
                 $payloadAI = [
                     'organizzazione_id' => $clean_org_id,
                     'reparto_id' => $clean_rep_id,
@@ -430,7 +443,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'operatori_ids' => $operatori_target,
                     'utenti_ids' => $operatori_target,
                     'turno_partenza' => (!empty($turno_partenza)) ? $turno_partenza : null,
-                    'rispetta_ferie' => true,
+                    'sequenza_turni' => !empty($sequenza_array) ? $sequenza_array : ['M', 'P', 'N', 'S', 'R'],
+                    'rispetta_ferie' => $rispetta_ferie,
                     'riposo_domenicale' => $riposo_domenicale 
                 ];
 
@@ -585,7 +599,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             </div>
         <?php } ?>
 
-        <!-- Header con Titolo e Box Reparto / Struttura in alto -->
+        <!-- Header con Titolo e Box Reparto / Struttura -->
         <div class="card shadow-sm mb-4 p-3">
             <div class="row align-items-center g-3">
                 <div class="col-md-6">
@@ -632,7 +646,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
         <div class="row mb-4">
             <!-- Box Assegnazione Singola Manuale -->
-            <div class="col-lg-6 mb-3 mb-lg-0">
+            <div class="col-lg-5 mb-3 mb-lg-0">
                 <div class="card h-100 bg-white p-3">
                     <div class="card-header bg-white pb-2 px-0 border-bottom">
                         <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-person-plus-fill"></i> Assegnazione Singola Manuale</h5>
@@ -676,8 +690,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 </div>
             </div>
 
-            <!-- Box Generazione Automatica AI -->
-            <div class="col-lg-6">
+            <!-- Box Generazione Automatica AI COMPLETA DI SEQUENZA E PARTENZA -->
+            <div class="col-lg-7">
                 <div class="card h-100 bg-white p-3">
                     <div class="card-header bg-white pb-2 px-0 border-bottom">
                         <h5 class="mb-0 fs-6 fw-bold text-primary"><i class="bi bi-cpu-fill"></i> Generazione Automatica Turni (AI Engine)</h5>
@@ -696,7 +710,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 </div>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label small fw-bold">Collaboratore (Opzionale)</label>
+                                <label class="form-label small fw-bold">Collaboratore Target (Opzionale)</label>
                                 <select class="form-select form-select-sm" name="collaboratore_gen">
                                     <option value="">-- Tutti gli operatori del reparto --</option>
                                     <?php foreach ($listaCollaboratori as $collab) { ?>
@@ -706,14 +720,38 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     <?php } ?>
                                 </select>
                             </div>
-                            <div class="mb-2">
-                                <label class="form-label small fw-bold">Turno di Partenza (Opzionale)</label>
-                                <input type="text" class="form-control form-control-sm" name="turno_partenza" placeholder="Es. Mattina o M">
+                            
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">Turno di Partenza</label>
+                                    <select class="form-select form-select-sm" name="turno_partenza">
+                                        <option value="">-- Predefinito (Mattina / M) --</option>
+                                        <?php foreach ($tipologieTurni as $t) { ?>
+                                            <option value="<?php echo htmlspecialchars($t['codice_breve']); ?>">
+                                                <?php echo htmlspecialchars($t['nome_turno']); ?> (<?php echo htmlspecialchars($t['codice_breve']); ?>)
+                                            </option>
+                                        <?php } ?>
+                                    </select>
+                                    <span class="text-muted" style="font-size:0.65rem;">Seleziona da quale turno della sequenza far iniziare l'operatore.</span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">Sequenza Turni (separata da virgole)</label>
+                                    <input type="text" class="form-control form-control-sm" name="sequenza_turni" value="M,P,N,S,R" placeholder="Es. M,P,N,S,R">
+                                    <span class="text-muted" style="font-size:0.65rem;">Default: M (Mattina), P (Pomeriggio), N (Notte), S (Smonto), R (Riposo).</span>
+                                </div>
                             </div>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" name="riposo_domenicale" id="riposo_domenicale" value="1" checked>
-                                <label class="form-check-label small" for="riposo_domenicale">Rispetta riposo domenicale</label>
+
+                            <div class="d-flex gap-3 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="riposo_domenicale" id="riposo_domenicale" value="1" checked>
+                                    <label class="form-check-label small" for="riposo_domenicale">Rispetta riposo domenicale</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="rispetta_ferie" id="rispetta_ferie" value="1" checked>
+                                    <label class="form-check-label small" for="rispetta_ferie">Rispetta ferie / assenze verificate</label>
+                                </div>
                             </div>
+
                             <button type="submit" class="btn btn-dark btn-sm fw-bold w-100"><i class="bi bi-magic"></i> Esegui Generazione AI</button>
                         </form>
                     </div>
@@ -826,14 +864,12 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataStr + ")";
             
             if (eventiGiorno && eventiGiorno.length > 0) {
-                // Se c'è già un turno, predisponiamo la modifica
                 document.getElementById('modaleAzione').value = 'modifica_turno_cella';
                 document.getElementById('modaleTurnoId').value = eventiGiorno[0].id;
                 document.getElementById('modaleValore').value = eventiGiorno[0].tipo_evento;
                 document.getElementById('btnSalvaCella').innerText = 'Aggiorna Turno';
                 document.getElementById('btnCancellaCella').classList.remove('d-none');
             } else {
-                // Altrimenti aggiunta
                 document.getElementById('modaleAzione').value = 'aggiungi_turno_cella';
                 document.getElementById('modaleTurnoId').value = '';
                 document.getElementById('modaleValore').value = '';
