@@ -15,6 +15,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $endpoint = "staging_utenti?email=eq." . urlencode($email) . "&select=*";
         $risposta = supabase_request($endpoint);
 
+        // --- BLOCCO DI DEBUG TEMPORANEO ---
+        echo "<div style='background: #1e1e1e; color: #00ff00; padding: 20px; margin: 20px; font-family: monospace; border: 2px solid #00ff00; border-radius: 8px; z-index: 99999; position: relative;'>";
+        echo "<h3 style='color: #ff5555; margin-top: 0;'>DEBUG SUPABASE</h3>";
+        echo "<strong>URL SUPABASE ATTUALE:</strong> " . htmlspecialchars(SUPABASE_URL) . "<br><br>";
+        echo "<strong>ENDPOINT CHIAMATO:</strong> " . htmlspecialchars($endpoint) . "<br><br>";
+        echo "<strong>RISPOSTA RICEVUTA DA SUPABASE:</strong><pre>";
+        var_dump($risposta);
+        echo "</pre></div>";
+        exit; // Interrompiamo l'esecuzione qui per leggere il debug a schermo
+        // ----------------------------------
+
         if (is_array($risposta)) {
             $utenti = $risposta;
         } elseif (is_string($risposta)) {
