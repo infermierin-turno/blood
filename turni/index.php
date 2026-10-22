@@ -11,20 +11,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($email) && !empty($password)) {
         $utenti = [];
 
-        // DEBUG: Scarichiamo TUTTI i record da staging_utenti senza filtri per ispezionarli
-        $endpoint = "staging_utenti?select=*";
+        // 1. Cerchiamo l'utente filtrando per email nella tabella staging_utenti
+        $endpoint = "staging_utenti?email=eq." . urlencode($email) . "&select=*";
         $risposta = supabase_request($endpoint);
 
-        // --- SCHERMATA DI DEBUG VISIVA ---
-        echo "<div style='background: #1e1e1e; color: #00ff00; padding: 20px; margin: 20px; font-family: monospace; border: 2px solid #00ff00; border-radius: 8px; z-index: 99999; position: relative;'>";
-        echo "<h3 style='color: #ff5555; margin-top: 0;'>DEBUG DATI SUPABASE (staging_utenti)</h3>";
-        echo "<strong>Email cercata dal form:</strong> " . htmlspecialchars($email) . "<br><br>";
-        echo "<strong>Record totali restituiti dalla tabella:</strong><pre>";
-        var_dump($risposta);
-        echo "</pre></div>";
-        exit; // Interrompiamo l'esecuzione per leggere i dati a schermo
-        // ---------------------------------
+        if (is_array($risposta)) {
+            $utenti = $risposta;
+        } elseif (is_string($risposta)) {
+            $decodificato = json_decode($risposta, true);
+            if (is_array($decodificato)) {
+                $utenti = $decodificato;
+            }
+        }
 
+        // 2. Fallback sulle altre tabelle se necessario
+        if (empty($utenti)) {
+            $endpoint_utenti = "utenti?email=eq." . urlencode($email) . "&select=*";
+            $risposta_utenti = supabase_request($endpoint_utenti);
+            if (is_array($risposta_utenti)) {
+                $utenti = $risposta_utenti;
+            } elseif (is_string($risposta_utenti)) {
+                $decodificato_utenti = json_decode($risposta_utenti, true);
+                if (is_array($decodificato_utenti)) {
+                    $utenti = $decodificato_utenti;
+                }
+            }
+        }
+
+        if (empty($utenti)) {
+            $endpoint_dash = "dashboard_data?email=eq." . urlencode($email) . "&select=*";
+            $risposta_dash = supabase_request($endpoint_dash);
+            if (is_array($risposta_dash)) {
+                $utenti = $risposta_dash;
+            } elseif (is_string($risposta_dash)) {
+                $decodificato_dash = json_decode($risposta_dash, true);
+                if (is_array($decodificato_dash)) {
+                    $utenti = $decodificato_dash;
+                }
+            }
+        }
+
+        if (!empty($utenti) && is_array($utenti)) {
+            $utente = $utenti[0] ?? null;
+            
+            // Gestione dei vari formati di password nel DB (password, PASSWORD, password_hash)
+            $passwordDb = $utente['password'] ?? $utente['PASSWORD'] ?? $utente['password_hash'] ?? '';
+            
+            if ($utente && ($password === $passwordDb || (!empty($passwordDb) && password_verify($password, $passwordDb)))) {
+                $_SESSION['utente'] = $utente;
+                
+                // Normalizzazione rigorosa del ruolo e dei permessi amministrativi
+                $ruoloDb = trim($utente['ruolo'] ?? $utente['RUOLO'] ?? $utente['role'] ?? 'collaboratore');
+                $_SESSION['ruolo'] = $ruoloDb;
+                
+                // Controllo flessibile per super admin / admin / capo personale
+                $isSuperAdmin = false;
+                if (!empty($utente['is_super_admin']) || 
+                    strtolower($ruoloDb) === 'super admin' || 
+                    strtolower($ruoloDb) === 'admin' || 
+                    strtolower($ruoloDb) === 'capo personale') {
+                    $isSuperAdmin = true;
+                }
+                $_SESSION['is_super_admin'] = $isSuperAdmin;
+
+                header("Location: dashboard.php");
+                exit;
+            } else {
+                $errore = "Credenziali non valide o password errata.";
+            }
+        } else {
+            $errore = "Utente non trovato con questa email.";
+        }
     } else {
         $errore = "Compila tutti i campi.";
     }
