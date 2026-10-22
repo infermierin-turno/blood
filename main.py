@@ -15,12 +15,15 @@ app = FastAPI()
 # Montiamo l'applicazione Shopify sotto il prefisso /shopify
 app.mount("/shopify", shopify_app)
 
-SUPABASE_URL = "https://ruvdlcgsmtwszxsposjt.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dmRsY2dzbXR3c3p4c3Bvc2p0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNjQ4MzksImV4cCI6MjA5ODc0MDgzOX0.V_nFon6WsICyaiiN1bujrg5P9ORKb8-L1eMBlCFKZF8"
+# Leggiamo le chiavi in modo sicuro dalle variabili d'ambiente di Render
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-@app.get("/")
+# Spostiamo lo stato online su un percorso dedicato per non sovrapporsi ad Apache sulla home (index.php)
+@app.get("/api-status")
 def home():
     return {"status": "online", "message": "Shopify Coffee Agent & Hospital Backend online"}
 
@@ -105,12 +108,10 @@ def ricevi_booking(payload: BookingPayload, response: Response):
     # 3. Estrazione intelligente dell'emoglobina tramite Regex flessibile
     emoglobina_trovata = None
     
-    # Cerca pattern espliciti come "emoglobina: 11.5", "hb 12", "valore hb: 10" ecc.
     match_emo = re.search(r'(?:emoglobina|hb|valore)[:\s]*([0-9]+([.,][0-9]+)?)', testo_grezzo, re.IGNORECASE)
     if match_emo:
         emoglobina_trovata = match_emo.group(1).replace(',', '.')
     else:
-        # Se non c'è l'etichetta esplicita ma c'è un valore numerico nel campo emoglobina specifico
         emo_raw = payload.emoglobina
         if emo_raw:
             emo_str = str(emo_raw[0]) if isinstance(emo_raw, list) and emo_raw else str(emo_raw)
@@ -118,7 +119,6 @@ def ricevi_booking(payload: BookingPayload, response: Response):
             if match_num:
                 emoglobina_trovata = match_num.group(1).replace(',', '.')
 
-    # Pulizia delle note originali (escludendo eventuali duplicati di etichette)
     nota_input = str(payload.note) if payload.note and not isinstance(payload.note, (list, dict)) else ""
 
     orario_input = (
@@ -138,7 +138,6 @@ def ricevi_booking(payload: BookingPayload, response: Response):
     turno_calcolato = "Pomeriggio" if 480 <= minuti_totali <= 750 else "Notte"
     urgenza_input = payload.urgenza if payload.urgenza else "Ordinaria"
 
-    # 4. Composizione pulita delle note finali
     note_finali = f"[{urgenza_input}]"
     if emoglobina_trovata:
         note_finali += f" Emoglobina: {emoglobina_trovata} g/dL -"
