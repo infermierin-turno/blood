@@ -7,8 +7,8 @@ from typing import Optional, List, Dict, Any
 
 app = FastAPI(title="TurnoMed Python Engine", version="2.8.16")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_URL = os.getenv("TURNI_SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("TURNI_SUPABASE_KEY", "")
 
 class GenerazioneRequest(BaseModel):
     model_config = ConfigDict(extra='allow')
