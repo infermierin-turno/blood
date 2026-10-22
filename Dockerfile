@@ -1,9 +1,9 @@
 FROM php:8.2-apache
 
-# Abilita i moduli Apache necessari per il rewrite degli URL
-RUN a2enmod rewrite
+# Abilita i moduli Apache necessari (incluso il proxy per girare le richieste a Python)
+RUN a2enmod rewrite proxy proxy_http
 
-# Installa le dipendenze di sistema, le estensioni PHP e Python3 con pip
+# Installa le dipendenze di sistema, PHP e Python3 con pip
 RUN apt-get update && apt-get install -y \
     libicu-dev \
     libpq-dev \
@@ -23,28 +23,46 @@ RUN apt-get update && apt-get install -y \
     opcache \
     calendar
 
-# Configura la cartella di lavoro del server web
+# Configura la cartella di lavoro
 WORKDIR /var/www/html
 
-# Copia tutti i file del progetto nella cartella
+# Copia i file del progetto
 COPY . /var/www/html/
 
-# Installa le dipendenze Python dal file requirements.txt
+# Installa le dipendenze Python
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
-# Imposta i permessi corretti per i file web
+# Permessi
 RUN chown -R www-data:www-data /var/www/html
 
-# Render assegna una porta dinamica tramite la variabile d'ambiente PORT, 
-# configuriamo Apache per ascoltare sulla porta 8080 interna, mentre Uvicorn o un proxy gestirà la porta di Render
+# Configura Apache per ascoltare sulla porta dinamica di Render
 ENV PORT=10000
-RUN sed -i 's/80/8080/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Creiamo uno script di avvio per eseguire sia Uvicorn (Python) che Apache (PHP) contemporaneamente
-RUN echo '#!/bin/bash\nuvicorn main:app --host 0.0.0.0 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
+# Aggiungiamo le regole di proxy in Apache per inviare a Uvicorn (porta 8000) le richieste API
+RUN echo "<VirtualHost *:${PORT}>\n\
+    DocumentRoot /var/www/html\n\
+    ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
+    ProxyPassReverse /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
+    ProxyPass /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
+    ProxyPassReverse /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
+    ProxyPass /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
+    ProxyPassReverse /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
+    ProxyPass /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
+    ProxyPassReverse /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
+    ProxyPass /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
+    ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
+    ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
+    ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
+    <Directory /var/www/html>\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+</VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Esponi la porta principale richiesta da Render
+# Script di avvio: avvia Uvicorn in background sulla porta 8000 e Apache in primo piano sulla porta principale
+RUN echo '#!/bin/bash\nuvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
+
 EXPOSE 10000
 
-# Avvia lo script combinato
 CMD ["/start.sh"]
