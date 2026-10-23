@@ -285,8 +285,8 @@ if ($è_admin_o_coordinatore) {
                 </div>
             <?php endif; ?>
 
-            <!-- Sezione Straordinari: visibile a Super Admin, Capo Personale o se il reparto ha il flag attivo -->
-            <?php if ($is_super_admin || $is_capo_personale || $gestione_straordinari_attiva): ?>
+            <!-- Sezione Straordinari: visibile SOLO a Super Admin, Capo Personale o Coordinatore (escluso utente standard) -->
+            <?php if ($is_super_admin || $is_capo_personale || $is_coordinatore): ?>
                 <div class="col-md-4">
                     <div class="card h-100 border-start border-dark border-4">
                         <div class="card-body d-flex flex-column justify-content-between p-4">
