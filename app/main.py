@@ -1,9 +1,12 @@
 import os
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 import httpx
 from typing import Optional, List, Dict, Any
+
+# Importazione dell'agente di equità e suggerimento sostituti per la reperibilità
+from app.engine_rep_equita import verifica_equita_e_suggerisci_sostituti
 
 app = FastAPI(title="TurnoMed Python Engine", version="2.8.16")
 
@@ -32,6 +35,30 @@ class GenerazioneRequest(BaseModel):
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "TurnoMed Python Engine attivo!"}
+
+@app.get("/api/equita/reperibilita")
+async def api_verifica_equita(
+    utente_id: str = Query(..., description="ID del dipendente"),
+    reparto_id: str = Query(..., description="ID del reparto"),
+    data_turno: str = Query(..., description="Data del turno YYYY-MM-DD"),
+    tipo_reperibilita: str = Query("REP", description="Tipo o fascia di reperibilità"),
+    organizzazione_id: str = Query(None, description="ID organizzazione opzionale")
+):
+    """
+    Endpoint per il controllo semestrale dell'equità di reperibilità 
+    e il suggerimento intelligente dei sostituti basato su squadra e turni complementari.
+    """
+    try:
+        risultato = await verifica_equita_e_suggerisci_sostituti(
+            utente_id=utente_id,
+            reparto_id=reparto_id,
+            data_turno=data_turno,
+            tipo_reperibilita=tipo_reperibilita,
+            organizzazione_id=organizzazione_id
+        )
+        return {"success": True, "data": risultato}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/genera-turni")
 async def genera_turni(data: GenerazioneRequest):
