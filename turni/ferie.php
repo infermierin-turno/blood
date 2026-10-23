@@ -156,8 +156,13 @@ function isRepartoSbloccato($reparto_id_target) {
     return $_SESSION['sblocco_desiderata'] ?? false;
 }
 
-$reparto_utente_corrente = $reparto_selezionato !== '' ? $reparto_selezionato : $reparto_id_utente;
-$sblocco_attivo = isRepartoSbloccato($reparto_utente_corrente);
+// CORRETTO: Controllo unificato dello sblocco per l'utente/reparto corrente
+$reparto_utente_corrente = !empty($reparto_selezionato) ? $reparto_selezionato : (!empty($reparto_id_utente) ? $reparto_id_utente : '');
+$sblocco_attivo = false;
+if (isRepartoSbloccato($reparto_utente_corrente) || (!empty($reparto_id_utente) && isRepartoSbloccato($reparto_id_utente)) || ($_SESSION['sblocco_desiderata'] ?? false)) {
+    $sblocco_attivo = true;
+}
+
 $giorno_corrente = (int)date('j');
 
 $inserimento_bloccato = false;
@@ -275,7 +280,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $reparto_collaboratore_target = $mappaUtenti[$collaboratore_selezionato]['reparto_id'] ?? $reparto_id_utente;
-        $sblocco_target_attivo = isRepartoSbloccato($reparto_collaboratore_target);
+        $sblocco_target_attivo = false;
+        if (isRepartoSbloccato($reparto_collaboratore_target) || isRepartoSbloccato($reparto_utente_corrente) || ($_SESSION['sblocco_desiderata'] ?? false)) {
+            $sblocco_target_attivo = true;
+        }
         
         $blocco_corrente = false;
         if ($giorno_corrente > 16 && $giorno_corrente <= 30 && !$sblocco_target_attivo && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
