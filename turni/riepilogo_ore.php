@@ -118,14 +118,14 @@ if (is_array($data_tipi)) {
             $ore = floatval($t['ore'] ?? $t['durata'] ?? $t['numero_ore'] ?? 0);
         }
 
-        // Categorizzazione
+        // Categorizzazione corretta (prima i riposi/smonti per evitare conflitti con la 'R')
         $categoria = 'ordinario';
         if (str_starts_with($sigla1, 'ST') || str_starts_with($sigla2, 'ST') || strpos($nome_turno_lower, 'straordinario') !== false) {
             $categoria = 'straordinario';
-        } elseif (str_starts_with($sigla1, 'R') || str_starts_with($sigla2, 'R') || strpos($nome_turno_lower, 'reperibilit') !== false) {
-            $categoria = 'reperibilita';
-        } elseif (str_starts_with($sigla1, 'RI') || str_starts_with($sigla2, 'RI') || strpos($nome_turno_lower, 'riposo') !== false || strpos($nome_turno_lower, 'smonto') !== false || $sigla1 === 'S') {
+        } elseif ($sigla1 === 'R' || $sigla2 === 'R' || $sigla1 === 'S' || $sigla2 === 'S' || str_starts_with($sigla1, 'RI') || str_starts_with($sigla2, 'RI') || strpos($nome_turno_lower, 'riposo') !== false || strpos($nome_turno_lower, 'smonto') !== false) {
             $categoria = 'escluso'; // Riposi e smonti
+        } elseif (str_starts_with($sigla1, 'REP') || str_starts_with($sigla2, 'REP') || strpos($nome_turno_lower, 'reperibilit') !== false) {
+            $categoria = 'reperibilita';
         }
 
         if (!empty($sigla1)) {
