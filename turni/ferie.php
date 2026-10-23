@@ -71,17 +71,11 @@ if (empty($utente_id)) {
     exit;
 }
 
-// Se in sessione mancano organizzazione_id o reparto_id, li recuperiamo dal DB per l'utente loggato
-if (empty($org_id_utente) || empty($reparto_id_utente)) {
-    $resUCorr = supabase_ferie_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id");
-    if (!empty($resUCorr) && is_array($resUCorr)) {
-        if (empty($org_id_utente)) {
-            $org_id_utente = $resUCorr[0]['organizzazione_id'] ?? null;
-        }
-        if (empty($reparto_id_utente)) {
-            $reparto_id_utente = $resUCorr[0]['reparto_id'] ?? null;
-        }
-    }
+// Forza sempre il recupero aggiornato di organizzazione_id e reparto_id da DB per l'utente loggato
+$resUCorr = supabase_ferie_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id");
+if (!empty($resUCorr) && is_array($resUCorr)) {
+    $org_id_utente = $resUCorr[0]['organizzazione_id'] ?? $org_id_utente;
+    $reparto_id_utente = $resUCorr[0]['reparto_id'] ?? $reparto_id_utente;
 }
 
 // 2. Recupero reparti disponibili (filtrati per organizzazione se capo personale)
@@ -128,50 +122,35 @@ if ($reparto_selezionato !== '') {
 $messaggio = '';
 $tipo_alert = '';
 
-// Gestione Sblocco Desiderata PERSISTENTE su Supabase per ciascun reparto
+// Gestione Sblocco Desiderata PERSISTENTE su Supabase
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && $_POST['azione'] === 'toggle_sblocco') {
     if ($is_coordinatore || $is_super_admin || $is_capo_personale) {
         $target_reparto_id = trim($_POST['reparto_id'] ?? $reparto_id_utente);
         $nuovo_stato_sblocco = isset($_POST['stato_sblocco']) && $_POST['stato_sblocco'] === '1';
 
         if (!empty($target_reparto_id)) {
-            // Aggiorna lo stato nel database di Supabase sulla tabella reparti
             supabase_ferie_request("reparti?id=eq." . urlencode($target_reparto_id), 'PATCH', [
                 'sblocco_desiderata' => $nuovo_stato_sblocco
             ]);
         }
-        
-        // Salva temporaneamente anche in sessione per reattività immediata
-        $_SESSION['sblocco_desiderata_reparto'][$target_reparto_id] = $nuovo_stato_sblocco;
-        $_SESSION['sblocco_desiderata'] = $nuovo_stato_sblocco;
 
         header("Location: ferie.php?msg=sblocco_aggiornato&reparto_id=" . urlencode($reparto_selezionato));
         exit;
     }
 }
 
-// Funzione di verifica sblocco con controllo combinato DB / Sessione
-function isRepartoSbloccatoDB($reparto_id_target) {
-    if (empty($reparto_id_target)) return $_SESSION['sblocco_desiderata'] ?? false;
-    
-    // Controlla prima dal DB
-    $resRep = supabase_ferie_request("reparti?id=eq." . urlencode($reparto_id_target) . "&select=sblocco_desiderata");
+// Controllo sblocco diretto da Supabase
+function checkSbloccoReparto($repId) {
+    if (empty($repId)) return false;
+    $resRep = supabase_ferie_request("reparti?id=eq." . urlencode($repId) . "&select=sblocco_desiderata");
     if (is_array($resRep) && !empty($resRep)) {
-        if (isset($resRep[0]['sblocco_desiderata'])) {
-            return (bool)$resRep[0]['sblocco_desiderata'];
-        }
+        return (bool)($resRep[0]['sblocco_desiderata'] ?? false);
     }
-
-    // Fallback su sessione se presente
-    if (isset($_SESSION['sblocco_desiderata_reparto'][$reparto_id_target])) {
-        return (bool)$_SESSION['sblocco_desiderata_reparto'][$reparto_id_target];
-    }
-    
-    return $_SESSION['sblocco_desiderata'] ?? false;
+    return false;
 }
 
-$reparto_utente_corrente = !empty($reparto_selezionato) ? $reparto_selezionato : (!empty($reparto_id_utente) ? $reparto_id_utente : '');
-$sblocco_attivo = isRepartoSbloccatoDB($reparto_utente_corrente);
+$reparto_target_check = !empty($reparto_selezionato) ? $reparto_selezionato : $reparto_id_utente;
+$sblocco_attivo = checkSbloccoReparto($reparto_target_check);
 
 $giorno_corrente = (int)date('j');
 
@@ -290,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $reparto_collaboratore_target = $mappaUtenti[$collaboratore_selezionato]['reparto_id'] ?? $reparto_id_utente;
-        $sblocco_target_attivo = isRepartoSbloccatoDB($reparto_collaboratore_target);
+        $sblocco_target_attivo = checkSbloccoReparto($reparto_collaboratore_target);
         
         $blocco_corrente = false;
         if ($giorno_corrente > 16 && $giorno_corrente <= 30 && !$sblocco_target_attivo && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
@@ -573,14 +552,14 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div>
                     <h5 class="mb-1 fs-6 fw-bold"><i class="bi bi-calendar-check text-warning"></i> Controllo Scadenza Desiderata (Scadenza: 16 del mese)</h5>
-                    <p class="text-muted small mb-0">Gestisci lo sblocco per il reparto selezionato. Il valore rimarrà memorizzato nel database anche dopo il logout.</p>
+                    <p class="text-muted small mb-0">Gestisci lo sblocco per il reparto selezionato. Il valore rimane salvato su DB anche dopo il logout.</p>
                 </div>
                 <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="d-flex align-items-center gap-2">
                     <input type="hidden" name="azione" value="toggle_sblocco">
-                    <input type="hidden" name="reparto_id" value="<?php echo htmlspecialchars($reparto_utente_corrente); ?>">
+                    <input type="hidden" name="reparto_id" value="<?php echo htmlspecialchars($reparto_target_check); ?>">
                     <input type="hidden" name="stato_sblocco" value="<?php echo $sblocco_attivo ? '0' : '1'; ?>">
                     <span class="small fw-bold text-<?php echo $sblocco_attivo ? 'success' : 'secondary'; ?>">
-                        <?php echo $sblocco_attivo ? 'Sblocco Attivo (Permanente)' : 'Blocco Standard Attivo'; ?>
+                        <?php echo $sblocco_attivo ? 'Sblocco Attivo (Permanente su DB)' : 'Blocco Standard Attivo'; ?>
                     </span>
                     <button type="submit" class="btn btn-sm btn-<?php echo $sblocco_attivo ? 'outline-danger' : 'outline-success'; ?> fw-bold">
                         <?php echo $sblocco_attivo ? 'Disattiva Sblocco' : 'Sblocca Fino al 30'; ?>
