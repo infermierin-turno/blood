@@ -800,7 +800,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                         $dataCellStr = sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g);
                                         $turniGiornoCell = $mappaTurniGriglia[$uId][$g] ?? [];
                                     ?>
-                                        <td class="cella-interattiva" onclick="apriModaleCella('<?php echo $uId; ?>', '<?php echo htmlspecialchars($nomeCollab); ?>', '<?php echo $dataCellStr; ?>', <?php echo htmlspecialchars(json_encode($turniGiornoCell)); ?>)">
+                                        <td class="cella-interattiva" onclick="apriModaleCella('<?php echo $uId; ?>', '<?php echo htmlspecialchars($nomeCollab); ?>', '<?php echo $dataCellStr; ?>', <?php echo htmlspecialchars(json_encode($turniGiornoCell)); ?>, '<?php echo $reparto_selezionato; ?>')">
                                             <?php if (!empty($turniGiornoCell)) { 
                                                 foreach ($turniGiornoCell as $tc) {
                                                     $codEv = strtoupper(trim($tc['tipo_evento']));
@@ -830,10 +830,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
     <!-- MODALE GESTIONE CELLA / TURNO -->
     <div class="modal fade" id="modaleCella" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-dark text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold" id="modaleCellaTitolo">Gestione Turno</h5>
+                    <h5 class="modal-title fs-6 fw-bold" id="modaleCellaTitolo">Gestione Turno & Equità Reperibilità</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -861,6 +861,13 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
                     <hr class="my-3">
 
+                    <!-- Box Dinamico per Equità e Sostituti -->
+                    <div id="boxEquitaSostituti" class="mb-3">
+                        <!-- Caricato via JS -->
+                    </div>
+
+                    <hr class="my-3">
+
                     <!-- Elenco turni esistenti nella cella -->
                     <h6 class="small fw-bold text-dark mb-2">Turni già presenti in questa data:</h6>
                     <div id="modalElencoTurniEsistenti">
@@ -873,11 +880,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function apriModaleCella(utenteId, nomeOperatore, dataStr, turniArray) {
+        async function apriModaleCella(utenteId, nomeOperatore, dataStr, turniArray, repartoId) {
             document.getElementById('modal_utente_id').value = utenteId;
             document.getElementById('modal_data').value = dataStr;
             
-            // Formattazione data per titolo
             const [anno, mese, giorno] = dataStr.split('-');
             document.getElementById('modaleCellaTitolo').innerText = "Gestione Turno - " + giorno + "/" + mese + "/" + anno;
             document.getElementById('modaleCellaSottotitolo').innerText = "Operatore: " + nomeOperatore;
@@ -911,6 +917,68 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             // Mostra modale
             let myModal = new bootstrap.Modal(document.getElementById('modaleCella'));
             myModal.show();
+
+            // Interroga il microservizio Python su Render per il controllo equità e sostituti
+            let boxEquita = document.getElementById('boxEquitaSostituti');
+            boxEquita.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div> <small class="text-muted">Analisi equità semestrale e ricerca sostituti in corso...</small>';
+
+            // Determina il tipo di reperibilità se presente nei turni della cella
+            let tipoRep = "RDM";
+            if (turniArray && turniArray.length > 0) {
+                let trovato = turniArray.find(t => ["RDM", "RDP", "RN", "REP"].includes(t.tipo_evento.toUpperCase()));
+                if (trovato) tipoRep = trovato.tipo_evento.toUpperCase();
+            }
+
+            try {
+                // Sostituisci l'URL con l'indirizzo reale del tuo servizio su Render o localhost
+                let urlPython = `http://127.0.0.1:8000/api/equita/reperibilita?utente_id=${utenteId}&reparto_id=${repartoId}&data_turno=${dataStr}&tipo_reperibilita=${tipoRep}`;
+                
+                let response = await fetch(urlPython);
+                let result = await response.json();
+
+                if (result.success && result.data) {
+                    let d = result.data;
+                    let htmlEquita = `<div class="card bg-light p-2 border">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small fw-bold text-dark"><i class="bi bi-shield-check text-primary"></i> Controllo Equità Semestrale (Reperibilità)</span>
+                            <span class="badge bg-secondary small">Mese: ${d.reperibilita_mese}/6 | Semestre: ${d.reperibilita_semestre} (Media: ${d.media_reparto_semestre})</span>
+                        </div>`;
+
+                    if (d.avvisi && d.avvisi.length > 0) {
+                        htmlEquita += `<div class="alert alert-warning py-1 px-2 mb-2 small">`;
+                        d.avvisi.forEach(avv => { htmlEquita += `<div>${avv}</div>`; });
+                        htmlEquita += `</div>`;
+                    }
+
+                    if (d.sostituti_consigliati && d.sostituti_consigliati.length > 0) {
+                        htmlEquita += `<div class="small fw-bold text-success mb-1"><i class="bi bi-people-fill"></i> Sostituti Consigliati (Squadra ${d.squadra || 'N/D'}):</div>`;
+                        htmlEquita += `<div class="table-responsive" style="max-height: 120px; overflow-y: auto;">
+                            <table class="table table-sm table-bordered bg-white mb-0" style="font-size: 0.7rem;">
+                                <thead class="table-dark">
+                                    <tr><th>Collega</th><th>Carico Sem.</th><th>Motivo / Turno</th></tr>
+                                </thead>
+                                <tbody>`;
+                        d.sostituti_consigliati.forEach(s => {
+                            htmlEquita += `<tr>
+                                <td class="fw-bold">${s.nome}</td>
+                                <td class="text-center"><span class="badge bg-info text-dark">${s.reperibilita_semestre}</span></td>
+                                <td class="text-muted">${s.motivo}</td>
+                            </tr>`;
+                        });
+                        htmlEquita += `</tbody></table></div>`;
+                    } else {
+                        htmlEquita += `<small class="text-muted italic">Nessun sostituto idoneo trovato con i turni complementari nella stessa squadra per questa data.</small>`;
+                    }
+
+                    htmlEquita += `</div>`;
+                    boxEquita.innerHTML = htmlEquita;
+                } else {
+                    boxEquita.innerHTML = '<small class="text-muted">Impossibile caricare i dati di equità.</small>';
+                }
+            } catch (err) {
+                boxEquita.innerHTML = '<small class="text-danger">Errore di connessione al motore di equità Python.</small>';
+                console.error(err);
+            }
         }
     </script>
 </body>
