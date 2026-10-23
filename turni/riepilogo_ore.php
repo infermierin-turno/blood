@@ -124,6 +124,8 @@ if (is_array($data_tipi)) {
             $categoria = 'straordinario';
         } elseif (str_starts_with($sigla1, 'R') || str_starts_with($sigla2, 'R') || strpos($nome_turno_lower, 'reperibilit') !== false) {
             $categoria = 'reperibilita';
+        } elseif (str_starts_with($sigla1, 'RI') || str_starts_with($sigla2, 'RI') || strpos($nome_turno_lower, 'riposo') !== false || strpos($nome_turno_lower, 'smonto') !== false || $sigla1 === 'S') {
+            $categoria = 'escluso'; // Riposi e smonti
         }
 
         if (!empty($sigla1)) {
@@ -191,13 +193,12 @@ usort($dipendenti, function($a, $b) {
 // Raccogliamo gli ID dei dipendenti filtrati
 $array_id_dipendenti = array_column($dipendenti, 'id');
 
-// 3. Recupero turni/eventi dalla tabella pianificazione nel mese selezionato
+// 3. Recupero turni/eventi dalla tabella pianificazione nel mese selezionato (ottimizzato per utente_id)
 $elenco_turni = [];
 if (!empty($array_id_dipendenti)) {
-    $pianificazione_query = '?data_inizio=gte.' . urlencode($primo_giorno) . '&data_inizio=lte.' . urlencode($ultimo_giorno) . '&select=*';
-    if (!empty($org_id_utente)) {
-        $pianificazione_query .= '&organizzazione_id=eq.' . $org_id_utente;
-    }
+    $in_utenti = '(' . implode(',', $array_id_dipendenti) . ')';
+    $pianificazione_query = '?utente_id=in.' . urlencode($in_utenti) . '&data_inizio=gte.' . urlencode($primo_giorno) . '&data_inizio=lte.' . urlencode($ultimo_giorno) . '&select=*';
+    
     $resp_turni = supabase_request('pianificazione', $pianificazione_query);
     $data_turni = is_array($resp_turni) ? ($resp_turni['data'] ?? $resp_turni) : [];
     $elenco_turni = is_array($data_turni) ? $data_turni : [];
@@ -421,12 +422,23 @@ $nomi_giorni_settimana = ['D', 'L', 'M', 'M', 'G', 'V', 'S'];
                                 $classe_colore = '';
 
                                 if (!empty($lista_sigle)) {
-                                    $conteggio_turni += count($lista_sigle);
                                     $testo_cella = implode('<br>', $lista_sigle);
                                     
                                     foreach ($lista_sigle as $sigla_u) {
                                         $categoria = $mappa_tipo_categoria[$sigla_u] ?? 'ordinario';
                                         $ore_turno = $mappa_ore_turni[$sigla_u] ?? 0;
+
+                                        // Escludiamo i riposi e gli smonti dal conteggio dei turni lavorati e delle ore
+                                        if ($categoria === 'escluso') {
+                                            if (empty($classe_colore)) {
+                                                if ($sigla_u == 'R') $classe_colore = 'turno-r';
+                                                elseif ($sigla_u == 'S') $classe_colore = 'turno-s';
+                                            }
+                                            continue; 
+                                        }
+
+                                        // Incrementa il conteggio turni effettivi lavorati
+                                        $conteggio_turni++;
 
                                         if ($categoria == 'straordinario') {
                                             $ore_straordinarie += $ore_turno;
@@ -440,8 +452,6 @@ $nomi_giorni_settimana = ['D', 'L', 'M', 'M', 'G', 'V', 'S'];
                                                 if ($sigla_u == 'M') $classe_colore = 'turno-m';
                                                 elseif ($sigla_u == 'P') $classe_colore = 'turno-p';
                                                 elseif ($sigla_u == 'N') $classe_colore = 'turno-n';
-                                                elseif ($sigla_u == 'S') $classe_colore = 'turno-s';
-                                                elseif ($sigla_u == 'R') $classe_colore = 'turno-r';
                                             }
                                         }
                                     }
