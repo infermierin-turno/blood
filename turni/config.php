@@ -8,10 +8,7 @@ if (session_status() === PHP_SESSION_NONE) {
 $turni_url = getenv('TURNI_SUPABASE_URL');
 $turni_key = getenv('TURNI_SUPABASE_KEY');
 
-// Test rapido di lettura variabili Render (rimuovilo dopo il controllo)
-echo "<!-- DEBUG URL: " . (defined('SUPABASE_URL') ? SUPABASE_URL : 'NON DEFINITO') . " -->";
 // Fallback di sicurezza nel caso in cui le variabili non vengano trovate
-
 if (!$turni_url || !$turni_key) {
     error_log("ATTENZIONE: Variabili d'ambiente TURNI_SUPABASE_URL o TURNI_SUPABASE_KEY non trovate.");
 }
