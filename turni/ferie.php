@@ -174,7 +174,6 @@ if ($is_super_admin) {
         $urlUtenti = "staging_utenti?reparto_id=eq." . urlencode($reparto_selezionato) . "&select=id,nome,email,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
     }
 } elseif ($is_capo_personale) {
-    // Capo Personale: FILTRO TASSATIVO SULL'ORGANIZZAZIONE_ID
     if (!empty($org_id_utente)) {
         if ($reparto_selezionato !== '') {
             $urlUtenti = "staging_utenti?organizzazione_id=eq.$org_id_utente&reparto_id=eq." . urlencode($reparto_selezionato) . "&select=id,nome,email,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
@@ -185,7 +184,6 @@ if ($is_super_admin) {
         $urlUtenti = "";
     }
 } else {
-    // Coordinatore o altro ruolo: filtra per reparto
     if (!empty($reparto_id_utente)) {
         $urlUtenti = "staging_utenti?reparto_id=eq.$reparto_id_utente&select=id,nome,email,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
     } else {
@@ -389,7 +387,6 @@ if (isset($_GET['azione_stato']) && isset($_GET['id'])) {
                 }
             }
 
-            // Elimina dalla pianificazione se presente
             $urlDelPian = "pianificazione?utente_id=eq." . urlencode($assData['utente_id']) . "&data_inizio=gte." . urlencode($assData['data_inizio']) . "&data_inizio=lte." . urlencode($assData['data_fine']);
             supabase_ferie_request($urlDelPian, 'DELETE');
         }
@@ -512,7 +509,6 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
 
     <div class="container-fluid px-4">
         
-        <!-- Header con Filtro Reparto (uguale a turni.php e planner.php) -->
         <div class="card shadow-sm mb-4 p-3">
             <div class="row align-items-center g-3">
                 <div class="col-md-7">
@@ -557,7 +553,6 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             </div>
         <?php } ?>
 
-        <!-- Pannello Coordinatore/Capo Personale: Gestione Sblocco Desiderata -->
         <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
         <div class="card shadow-sm mb-4 bg-white border-start border-4 border-warning p-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -580,7 +575,6 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
         </div>
         <?php endif; ?>
 
-        <!-- Form Inserimento Richiesta Assenza -->
         <div class="card shadow-sm mb-4 bg-white p-3">
             <div class="card-header bg-white pb-2 px-0 border-bottom">
                 <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-plus-circle"></i> <?php echo ($is_coordinatore || $is_super_admin || $is_capo_personale) ? 'Inserisci Nuova Richiesta / Assenza Collaboratore' : 'Inoltra Nuova Richiesta di Ferie o Permesso'; ?></h5>
@@ -631,7 +625,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                             </div>
                             <div class="col-md-<?php echo ($is_coordinatore || $is_super_admin || $is_capo_personale) ? '2' : '2'; ?>">
                                 <label class="form-label small fw-bold d-block">&nbsp;</label>
-                                <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold"><i class="bi bi-send-fill"></i> Invia</button>
+                                <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold"><i class="bi bi-check-lg"></i> Invia</button>
                             </div>
                         </div>
                     </form>
@@ -639,79 +633,70 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             </div>
         </div>
 
-        <!-- Tabella Elenco Assenze -->
-        <div class="card shadow-sm bg-white mb-5">
-            <div class="card-header bg-white py-3">
-                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-list-check"></i> Elenco Richieste e Assenze Registrate</h5>
+        <!-- Tabella Elenco Richieste e Assenze -->
+        <div class="card shadow-sm mb-4 bg-white p-3">
+            <div class="card-header bg-white pb-2 px-0 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-list-task"></i> Storico Richieste e Assenze</h5>
+                <span class="badge bg-secondary"><?php echo count($listaAssenze); ?> record</span>
             </div>
-            <div class="card-body p-0">
+            <div class="card-body px-0">
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
-                        <thead class="table-dark">
+                    <table class="table table-hover align-middle small mb-0">
+                        <thead class="table-light">
                             <tr>
                                 <th>Collaboratore</th>
                                 <th>Tipo</th>
                                 <th>Dal</th>
                                 <th>Al</th>
                                 <th>Stato</th>
-                                <th>Note / Conflitti</th>
+                                <th>Note / Dettagli</th>
                                 <th class="text-end">Azioni</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if (empty($listaAssenze)) { ?>
+                            <?php if (empty($listaAssenze)): ?>
                                 <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted">Nessuna richiesta di assenza trovata.</td>
+                                    <td colspan="7" class="text-center text-muted py-4">Nessuna richiesta o assenza registrata.</td>
                                 </tr>
-                            <?php } else { ?>
-                                <?php foreach ($listaAssenze as $ass) { 
+                            <?php else: ?>
+                                <?php foreach ($listaAssenze as $ass): 
                                     $uAssId = $ass['utente_id'] ?? '';
-                                    $nomeUtenteAss = $mappaUtenti[$uAssId]['nome'] ?? 'Utente Sconosciuto';
-                                    $tipoAss = $ass['tipo_assenza'] ?? $ass['tipo'] ?? 'ferie';
-                                    $dInz = $ass['data_inizio'] ?? '';
+                                    $nomeCollab = $mappaUtenti[$uAssId]['nome'] ?? 'Utente Sconosciuto';
+                                    $tipoA = ucfirst($ass['tipo_assenza'] ?? 'Ferie');
+                                    $dIniz = $ass['data_inizio'] ?? '';
                                     $dFin = $ass['data_fine'] ?? '';
-                                    $statoAss = strtolower($ass['stato'] ?? 'in attesa');
-                                    $noteAss = $ass['note'] ?? '';
+                                    $statoA = $ass['stato'] ?? 'in attesa';
+                                    $noteA = $ass['note'] ?? '';
 
-                                    // Se l'utente non è nella mappa (es. fuori reparto/struttura), saltalo per sicurezza multi-tenant
-                                    if (!isset($mappaUtenti[$uAssId]) && !$is_super_admin && !$is_capo_personale) {
-                                        continue;
-                                    }
+                                    $badgeStatoBg = 'warning text-dark';
+                                    if ($statoA === 'approvato') $badgeStatoBg = 'success';
+                                    elseif ($statoA === 'rifiutato') $badgeStatoBg = 'danger';
                                 ?>
                                     <tr>
-                                        <td class="fw-bold text-dark"><?php echo htmlspecialchars($nomeUtenteAss); ?></td>
-                                        <td><span class="badge bg-secondary text-uppercase" style="font-size: 0.7rem;"><?php echo htmlspecialchars($tipoAss); ?></span></td>
-                                        <td><?php echo htmlspecialchars($dInz); ?></td>
+                                        <td class="fw-bold"><?php echo htmlspecialchars($nomeCollab); ?></td>
+                                        <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($tipoA); ?></span></td>
+                                        <td><?php echo htmlspecialchars($dIniz); ?></td>
                                         <td><?php echo htmlspecialchars($dFin); ?></td>
-                                        <td>
-                                            <?php if ($statoAss === 'approvato') { ?>
-                                                <span class="badge bg-success">Approvato</span>
-                                            <?php } elseif ($statoAss === 'rifiutato') { ?>
-                                                <span class="badge bg-danger">Rifiutato</span>
-                                            <?php } else { ?>
-                                                <span class="badge bg-warning text-dark">In attesa</span>
-                                            <?php } ?>
-                                        </td>
-                                        <td class="text-muted small" style="max-width: 250px;"><?php echo htmlspecialchars($noteAss); ?></td>
+                                        <td><span class="badge bg-<?php echo $badgeStatoBg; ?>"><?php echo htmlspecialchars(ucfirst($statoA)); ?></span></td>
+                                        <td class="text-muted text-wrap" style="max-width: 250px;"><?php echo htmlspecialchars($noteA); ?></td>
                                         <td class="text-end">
-                                            <div class="d-inline-flex gap-1">
-                                                <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
-                                                    <?php if ($statoAss !== 'approvato'): ?>
-                                                        <a href="ferie.php?azione_stato=approvato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-success btn-sm py-0 px-2" title="Approva"><i class="bi bi-check"></i></a>
-                                                    <?php endif; ?>
-                                                    <?php if ($statoAss !== 'rifiutato'): ?>
-                                                        <a href="ferie.php?azione_stato=rifiutato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-warning btn-sm py-0 px-2" title="Rifiuta"><i class="bi bi-x"></i></a>
-                                                    <?php endif; ?>
+                                            <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
+                                                <?php if ($statoA === 'in attesa'): ?>
+                                                    <a href="ferie.php?azione_stato=approvato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-success py-0 px-1" title="Approva"><i class="bi bi-check"></i></a>
+                                                    <a href="ferie.php?azione_stato=rifiutato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-danger py-0 px-1" title="Rifiuta"><i class="bi bi-x"></i></a>
                                                 <?php endif; ?>
-                                                
-                                                <?php if (($is_coordinatore || $is_super_admin || $is_capo_personale) || ($uAssId === $utente_id && $statoAss === 'in attesa')): ?>
-                                                    <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-outline-danger btn-sm py-0 px-2" onclick="return confirm('Sei sicuro di voler eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
+                                                <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Elimina" onclick="return confirm('Sei sicuro di voler eliminare questa richiesta?');"><i class="bi bi-trash"></i></a>
+                                            <?php else: ?>
+                                                <?php if ($uAssId === $utente_id && $statoA === 'in attesa'): ?>
+                                                    <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ritira richiesta" onclick="return confirm('Vuoi ritirare la tua richiesta?');"><i class="bi bi-trash"></i> Ritira</a>
+                                                <?php else: ?>
+                                                    <span class="text-muted small">-</span>
                                                 <?php endif; ?>
-                                            </div>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
-                                <?php } ?>
-                            <?php } ?>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -719,7 +704,5 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
         </div>
 
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
