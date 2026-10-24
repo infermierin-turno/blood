@@ -58,6 +58,7 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
+# Se il file principale è dentro la cartella app, usiamo app.main:app (o adegua se si chiama diversamente)
 RUN echo '#!/bin/bash\nuvicorn app.main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
