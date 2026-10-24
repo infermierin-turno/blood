@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 // Recupero dati filtrando direttamente per gli ultimi 10 giorni tramite PostgREST (gte)
 date_default_timezone_set('Europe/Rome');
-$data_limite_settimana = date('Y-m-d\T00:00:00', strtotime('-10 days'));
+$data_limite_settimana = date('Y-m-d\T00:00:00', strtotime('-5 days'));
 $dati = esegui_get_api("ritiri_sangue?created_at=gte.{$data_limite_settimana}&order=created_at.desc");
 
 // --- CONTEGGIO RITIRI EFFETTUATI PER REPARTO NEGLI ULTIMI 10 GIORNI (CORRETTO E ROBUSTO) ---
