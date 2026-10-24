@@ -673,44 +673,45 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     <?php } ?>
                                 </select>
                             </div>
-                            <div class="mb-2">
-                                <label class="form-label small fw-bold">Data Turno</label>
-                                <input type="date" class="form-control form-control-sm" name="data_inizio" value="<?php echo date('Y-m-d'); ?>" required>
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Data Inizio</label>
+                                    <input type="date" class="form-control form-control-sm" name="data_inizio" value="<?php echo date('Y-m-d'); ?>" required>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Note / Extra</label>
+                                    <input type="text" class="form-control form-control-sm" name="note" placeholder="Opzionale">
+                                </div>
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label small fw-bold">Note / Dettagli</label>
-                                <input type="text" class="form-control form-control-sm" name="note" placeholder="Opzionale...">
-                            </div>
-                            <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold">
-                                <i class="bi bi-check-circle me-1"></i> Assegna Turno
-                            </button>
+                            <button type="submit" class="btn btn-dark btn-sm w-100 fw-bold"><i class="bi bi-check-lg"></i> Assegna Turno</button>
                         </form>
                     </div>
                 </div>
             </div>
 
-            <!-- Box Generazione Automatica AI -->
+            <!-- Box Generatore AI / Motore di Equità -->
             <div class="col-lg-7">
-                <div class="card h-100 bg-white p-3">
-                    <div class="card-header bg-white pb-2 px-0 border-bottom">
-                        <h5 class="mb-0 fs-6 fw-bold text-primary"><i class="bi bi-cpu-fill"></i> Generazione Automatica Turni (Motore AI)</h5>
+                <div class="card h-100 bg-white p-3 border border-dark">
+                    <div class="card-header bg-white pb-2 px-0 border-bottom d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fs-6 fw-bold text-dark"><i class="bi bi-cpu-fill text-warning"></i> Motore Intelligente Turni (AI Engine)</h5>
+                        <span class="badge bg-dark">Python FastAPI</span>
                     </div>
                     <div class="card-body px-0">
                         <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>">
                             <input type="hidden" name="azione" value="genera_turni_ai">
                             <div class="row g-2 mb-2">
                                 <div class="col-md-6">
-                                    <label class="form-label small fw-bold">Data Inizio</label>
+                                    <label class="form-label small fw-bold">Data Inizio Periodo</label>
                                     <input type="date" class="form-control form-control-sm" name="data_inizio_gen" value="<?php echo $primo_giorno_tab; ?>" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label small fw-bold">Data Fine</label>
+                                    <label class="form-label small fw-bold">Data Fine Periodo</label>
                                     <input type="date" class="form-control form-control-sm" name="data_fine_gen" value="<?php echo $ultimo_giorno_tab; ?>" required>
                                 </div>
                             </div>
                             <div class="row g-2 mb-2">
                                 <div class="col-md-6">
-                                    <label class="form-label small fw-bold">Collaboratore (Opzionale)</label>
+                                    <label class="form-label small fw-bold">Operatore (Opzionale - Lascia vuoto per tutti)</label>
                                     <select class="form-select form-select-sm" name="collaboratore_gen">
                                         <option value="">-- Tutti i collaboratori del reparto --</option>
                                         <?php foreach ($listaCollaboratori as $collab) { ?>
@@ -721,192 +722,208 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     </select>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label small fw-bold">Turno di Partenza</label>
+                                    <label class="form-label small fw-bold">Turno di Partenza / Ancoraggio</label>
                                     <select class="form-select form-select-sm" name="turno_partenza">
-                                        <option value="">-- Automatico --</option>
+                                        <option value="">-- Nessun vincolo iniziale --</option>
                                         <?php foreach ($tipologieTurni as $t) { ?>
-                                            <option value="<?php echo htmlspecialchars($t['codice_breve']); ?>"><?php echo htmlspecialchars($t['nome_turno']); ?> (<?php echo htmlspecialchars($t['codice_breve']); ?>)</option>
+                                            <option value="<?php echo htmlspecialchars($t['codice_breve']); ?>">
+                                                <?php echo htmlspecialchars($t['nome_turno']); ?> (<?php echo htmlspecialchars($t['codice_breve']); ?>)
+                                            </option>
                                         <?php } ?>
                                     </select>
                                 </div>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label small fw-bold">Sequenza Turni (separati da virgola)</label>
-                                <input type="text" class="form-control form-control-sm" name="sequenza_turni" value="M,P,N,S,R" placeholder="Es. M,P,N,S,R">
+                                <label class="form-label small fw-bold">Sequenza Turni Personalizzata (Separati da virgola)</label>
+                                <input type="text" class="form-control form-control-sm" name="sequenza_turni" value="M, P, N, S, R" placeholder="Es. M, P, N, S, R">
                             </div>
                             <div class="row g-2 mb-3">
                                 <div class="col-md-6">
-                                    <div class="form-check mt-1">
-                                        <input class="form-check-input" type="checkbox" name="riposo_domenicale" id="riposo_domenicale" value="1" checked>
-                                        <label class="form-check-label small fw-bold" for="riposo_domenicale">Garantisci Riposo Domenicale (R)</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="riposo_domenicale" value="1" id="ripDom" checked>
+                                        <label class="form-check-label small" for="ripDom">Garantisci Riposo Domenicale</label>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="form-check mt-1">
-                                        <input class="form-check-input" type="checkbox" name="rispetta_ferie" id="rispetta_ferie" value="1" checked>
-                                        <label class="form-check-label small fw-bold" for="rispetta_ferie">Rispetta Ferie Approvate</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="rispetta_ferie" value="1" id="respFerie" checked>
+                                        <label class="form-check-label small" for="respFerie">Rispetta Ferie e Assenze</label>
                                     </div>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-dark btn-sm w-100 fw-bold">
-                                <i class="bi bi-play-circle-fill me-1"></i> Avvia Generazione Turni AI
-                            </button>
+                            <button type="submit" class="btn btn-warning btn-sm w-100 fw-bold text-dark"><i class="bi bi-magic"></i> Esegui Generazione Automatica Turni</button>
                         </form>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- TABELLONE MENSILE INTERATTIVO -->
-        <div class="card p-3 shadow-sm mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0 fw-bold"><i class="bi bi-table"></i> Tabellone Turni - <?php echo $nomeMeseCorrente . ' ' . $anno_selezionato; ?></h5>
-                <span class="badge bg-secondary">Totale Operatori: <?php echo count($listaCollaboratori); ?></span>
+        <!-- Tabellone / Griglia Mensile Turni -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-grid-3x3"></i> Tabellone Turni - <?php echo $nomeMeseCorrente . ' ' . $anno_selezionato; ?></h5>
+                <span class="badge bg-secondary"><?php echo count($listaCollaboratori); ?> Operatori in reparto</span>
             </div>
-
-            <?php if (empty($listaCollaboratori)) { ?>
-                <div class="alert alert-warning text-center small mb-0">Nessun collaboratore trovato per i filtri selezionati.</div>
-            <?php } else { ?>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-striped table-turni mb-0">
-                        <thead>
-                            <tr class="table-dark">
-                                <th class="col-operatore-sticky bg-dark text-white">Operatore / Squadra</th>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 650px; overflow-y: auto;">
+                    <table class="table table-bordered table-turni mb-0">
+                        <thead class="table-dark sticky-top" style="z-index: 3;">
+                            <tr>
+                                <th class="col-operatore-sticky bg-dark text-white">Operatore / Qualifica</th>
                                 <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
-                                    $timestampG = strtotime(sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g));
-                                    $isFestivo = (date('w', $timestampG) == 0);
+                                    $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
+                                    $giornoSettimana = date('N', $timestampGiorno); // 1 (Lunedì) a 7 (Domenica)
+                                    $isFestivo = ($giornoSettimana == 7);
                                 ?>
                                     <th class="<?php echo $isFestivo ? 'bg-danger text-white' : ''; ?>" style="min-width: 32px;">
-                                        <div style="font-size: 0.6rem;"><?php echo date('D', $timestampG); ?></div>
+                                        <div style="font-size: 0.65rem;"><?php echo substr(date('D', $timestampGiorno), 0, 2); ?></div>
                                         <div><?php echo $g; ?></div>
                                     </th>
                                 <?php } ?>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($listaCollaboratori as $collab) { 
-                                $uId = $collab['id'];
-                                $nomeCollab = $collab['nome'] ?? 'Operatore';
-                                $squadraCollab = $collab['squadra'] ?? '-';
-                            ?>
+                            <?php if (empty($listaCollaboratori)) { ?>
                                 <tr>
-                                    <td class="col-operatore-sticky">
-                                        <div class="text-truncate" style="max-width: 160px;" title="<?php echo htmlspecialchars($nomeCollab); ?>">
-                                            <?php echo htmlspecialchars($nomeCollab); ?>
-                                        </div>
-                                        <small class="text-muted" style="font-size: 0.65rem;">Sq: <strong><?php echo htmlspecialchars($squadraCollab); ?></strong></small>
+                                    <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">
+                                        Nessun operatore trovato per il reparto selezionato.
                                     </td>
-                                    <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
-                                        $dataCellStr = sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g);
-                                        $turniGiornoCell = $mappaTurniGriglia[$uId][$g] ?? [];
-                                    ?>
-                                        <td class="cella-interattiva" onclick="apriModaleCella('<?php echo $uId; ?>', '<?php echo htmlspecialchars($nomeCollab); ?>', '<?php echo $dataCellStr; ?>', <?php echo htmlspecialchars(json_encode($turniGiornoCell)); ?>, '<?php echo $reparto_selezionato; ?>')">
-                                            <?php if (!empty($turniGiornoCell)) { 
-                                                foreach ($turniGiornoCell as $tc) {
-                                                    $codEv = strtoupper(trim($tc['tipo_evento']));
-                                                    $coloreBadge = $mappaColoriTurni[$codEv] ?? '#6c757d';
-                                                    $statoEv = $tc['stato'] ?? 'Approvato';
-                                                    $isInAttesa = (strcasecmp($statoEv, 'In attesa') === 0 || strcasecmp($statoEv, 'Pending') === 0);
-                                            ?>
-                                                    <span class="badge badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo $coloreBadge; ?>;" title="<?php echo htmlspecialchars($codEv . ' - ' . $statoEv); ?>">
-                                                        <?php echo htmlspecialchars($codEv); ?>
-                                                    </span>
-                                            <?php 
-                                                }
-                                            } else { ?>
-                                                <span class="text-muted" style="opacity: 0.3;">·</span>
-                                            <?php } ?>
-                                        </td>
-                                    <?php } ?>
                                 </tr>
+                            <?php } else { ?>
+                                <?php foreach ($listaCollaboratori as $collab) { 
+                                    $uId = $collab['id'];
+                                    $nomeCollab = $collab['nome'];
+                                    $qualificaCollab = $collab['ruolo'] ?? $collab['qualifica'] ?? 'Operatore';
+                                ?>
+                                    <tr>
+                                        <td class="col-operatore-sticky">
+                                            <div class="text-truncate" style="max-width: 160px;" title="<?php echo htmlspecialchars($nomeCollab); ?>">
+                                                <?php echo htmlspecialchars($nomeCollab); ?>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 0.65rem;"><?php echo htmlspecialchars($qualificaCollab); ?></div>
+                                        </td>
+                                        <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
+                                            $dataCellStr = sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g);
+                                            $turniGiornoCell = $mappaTurniGriglia[$uId][$g] ?? [];
+                                        ?>
+                                            <td class="cella-interattiva" onclick="apriGestioneCella('<?php echo $uId; ?>', '<?php echo htmlspecialchars($nomeCollab, ENT_QUOTES); ?>', '<?php echo $dataCellStr; ?>', '<?php echo htmlspecialchars(json_encode($turniGiornoCell), ENT_QUOTES); ?>')">
+                                                <?php if (!empty($turniGiornoCell)) { ?>
+                                                    <div class="d-flex flex-column gap-1 align-items-center justify-content-center">
+                                                        <?php foreach ($turniGiornoCell as $tc) { 
+                                                            $codiceEv = strtoupper(trim($tc['tipo_evento']));
+                                                            $coloreBg = $mappaColoriTurni[$codiceEv] ?? '#6c757d';
+                                                            $statoEv = $tc['stato'] ?? 'Approvato';
+                                                            $isInAttesa = (strcasecmp($statoEv, 'In attesa') === 0 || strcasecmp($statoEv, 'Pending') === 0);
+                                                        ?>
+                                                            <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo $coloreBg; ?>;" title="<?php echo $codiceEv; ?> (<?php echo $statoEv; ?>)">
+                                                                <?php echo $codiceEv; ?>
+                                                            </span>
+                                                        <?php } ?>
+                                                    </div>
+                                                <?php } else { ?>
+                                                    <span class="text-muted opacity-25">-</span>
+                                                <?php } ?>
+                                            </td>
+                                        <?php } ?>
+                                    </tr>
+                                <?php } ?>
                             <?php } ?>
                         </tbody>
                     </table>
                 </div>
-            <?php } ?>
+            </div>
         </div>
 
     </div>
 
-    <!-- MODALE GESTIONE CELLA / TURNO -->
-    <div class="modal fade" id="modaleCella" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+    <!-- MODALE GESTIONE CELLA TABELLONE (AGGIUNGI / MODIFICA / CANCELLA) -->
+    <div class="modal fade" id="modalGestioneCella" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header bg-dark text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold" id="modaleCellaTitolo">Gestione Turno & Equità Reperibilità</h5>
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-calendar3"></i> Gestione Turno Operatore</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="small mb-3 text-muted" id="modaleCellaSottotitolo"></p>
-                    
-                    <!-- Form Aggiunta Turno -->
-                    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" id="formAggiungiTurno">
+                    <p class="small mb-2">Operatore: <strong id="modalOperatoreNome"></strong></p>
+                    <p class="small mb-3">Data: <strong id="modalDataVisualizzata"></strong></p>
+
+                    <div id="containerTurniEsistenti" class="mb-3">
+                        <!-- Turni già presenti in questa data -->
+                    </div>
+
+                    <hr>
+
+                    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" id="formAggiungiTurnoCella">
                         <input type="hidden" name="azione" value="aggiungi_turno_cella">
-                        <input type="hidden" name="utente_id" id="modal_utente_id">
-                        <input type="hidden" name="data" id="modal_data">
-                        
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold">Assegna Nuovo Turno / Evento</label>
-                            <div class="input-group input-group-sm">
-                                <select class="form-select" name="valore" required>
-                                    <option value="">-- Seleziona --</option>
-                                    <?php foreach ($tipologieTurni as $t) { ?>
-                                        <option value="<?php echo htmlspecialchars($t['codice_breve']); ?>"><?php echo htmlspecialchars($t['nome_turno']); ?> (<?php echo htmlspecialchars($t['codice_breve']); ?>)</option>
-                                    <?php } ?>
-                                </select>
-                                <button type="submit" class="btn btn-primary fw-bold"><i class="bi bi-plus-lg"></i> Aggiungi</button>
-                            </div>
+                        <input type="hidden" name="utente_id" id="inputUtenteIdCella">
+                        <input type="hidden" name="data" id="inputDataCella">
+
+                        <h6 class="small fw-bold text-primary mb-2"><i class="bi bi-plus-circle"></i> Aggiungi Nuovo Turno in Data</h6>
+                        <div class="input-group input-group-sm mb-2">
+                            <select class="form-select" name="valore" required>
+                                <option value="">-- Seleziona turno --</option>
+                                <?php foreach ($tipologieTurni as $t) { ?>
+                                    <option value="<?php echo htmlspecialchars($t['codice_breve']); ?>">
+                                        <?php echo htmlspecialchars($t['nome_turno']); ?> (<?php echo htmlspecialchars($t['codice_breve']); ?>)
+                                    </option>
+                                <?php } ?>
+                            </select>
+                            <button class="btn btn-dark fw-bold" type="submit">Aggiungi</button>
                         </div>
                     </form>
-
-                    <hr class="my-3">
-
-                    <!-- Box Dinamico per Equità e Sostituti -->
-                    <div id="boxEquitaSostituti" class="mb-3">
-                        <!-- Caricato via JS -->
-                    </div>
-
-                    <hr class="my-3">
-
-                    <!-- Elenco turni esistenti nella cella -->
-                    <h6 class="small fw-bold text-dark mb-2">Turni già presenti in questa data:</h6>
-                    <div id="modalElencoTurniEsistenti">
-                        <!-- Popolato via JS -->
-                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Moduli di supporto per modifiche/cancellazioni puntuali da modale -->
+    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" id="formModificaTurnoCella" style="display:none;">
+        <input type="hidden" name="azione" value="modifica_turno_cella">
+        <input type="hidden" name="turno_id" id="mod_turno_id">
+        <input type="hidden" name="utente_id" id="mod_utente_id">
+        <input type="hidden" name="data" id="mod_data">
+        <input type="hidden" name="valore" id="mod_valore">
+        <input type="hidden" name="stato" value="Approvato">
+    </form>
+
+    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" id="formCancellaTurnoCella" style="display:none;">
+        <input type="hidden" name="azione" value="cancella_turno_cella">
+        <input type="hidden" name="turno_id" id="del_turno_id">
+    </form>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        async function apriModaleCella(utenteId, nomeOperatore, dataStr, turniArray, repartoId) {
-            document.getElementById('modal_utente_id').value = utenteId;
-            document.getElementById('modal_data').value = dataStr;
-            
-            const [anno, mese, giorno] = dataStr.split('-');
-            document.getElementById('modaleCellaTitolo').innerText = "Gestione Turno - " + giorno + "/" + mese + "/" + anno;
-            document.getElementById('modaleCellaSottotitolo').innerText = "Operatore: " + nomeOperatore;
+        const mappaColori = <?php echo json_encode($mappaColoriTurni); ?>;
 
-            let container = document.getElementById('modalElencoTurniEsistenti');
-            container.innerHTML = '';
+        function apriGestioneCella(utenteId, operatoreNome, dataStr, turniJson) {
+            document.getElementById('modalOperatoreNome').innerText = operatoreNome;
+            document.getElementById('modalDataVisualizzata').innerText = dataStr;
+            document.getElementById('inputUtenteIdCella').value = utenteId;
+            document.getElementById('inputDataCella').value = dataStr;
 
-            if (!turniArray || turniArray.length === 0) {
-                container.innerHTML = '<p class="small text-muted italic">Nessun turno registrato in questa data.</p>';
+            let turni = [];
+            try {
+                turni = JSON.parse(turniJson);
+            } catch (e) {
+                turni = [];
+            }
+
+            let container = document.getElementById('containerTurniEsistenti');
+            if (turni.length === 0) {
+                container.innerHTML = '<div class="alert alert-light border small py-2 mb-0 text-muted">Nessun turno registrato in questa data.</div>';
             } else {
-                let html = '<div class="list-group list-group-flush">';
-                turniArray.forEach(t => {
-                    html += `<div class="list-group-item px-0 d-flex justify-content-between align-items-center py-2">
+                let html = '<label class="form-label small fw-bold text-secondary mb-1">Turni esistenti in data:</label>';
+                html += '<div class="d-flex flex-column gap-2">';
+                turni.forEach(t => {
+                    let col = mappaColori[t.tipo_evento] || '#6c757d';
+                    html += `<div class="d-flex align-items-center justify-content-between p-2 border rounded bg-light">
                         <div>
-                            <span class="badge bg-primary me-2">${t.tipo_evento}</span>
-                            <small class="text-muted">Stato: ${t.stato || 'Approvato'}</small>
+                            <span class="badge" style="background-color: ${col}; font-size:0.75rem; padding: 4px 8px;">${t.tipo_evento}</span>
+                            <span class="small ms-2 text-muted">Stato: ${t.stato}</span>
                         </div>
                         <div class="d-flex gap-1">
-                            <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" class="d-inline">
-                                <input type="hidden" name="azione" value="cancella_turno_cella">
-                                <input type="hidden" name="turno_id" value="${t.id}">
-                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Elimina turno"><i class="bi bi-trash"></i></button>
-                            </form>
+                            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size:0.75rem;" onclick="cancellaTurnoCella('${t.id}')">Elimina</button>
                         </div>
                     </div>`;
                 });
@@ -914,70 +931,14 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 container.innerHTML = html;
             }
 
-            // Mostra modale
-            let myModal = new bootstrap.Modal(document.getElementById('modaleCella'));
+            let myModal = new bootstrap.Modal(document.getElementById('modalGestioneCella'));
             myModal.show();
+        }
 
-            // Interroga il microservizio Python su Render per il controllo equità e sostituti
-            let boxEquita = document.getElementById('boxEquitaSostituti');
-            boxEquita.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div> <small class="text-muted">Analisi equità semestrale e ricerca sostituti in corso...</small>';
-
-            // Determina il tipo di reperibilità se presente nei turni della cella
-            let tipoRep = "RDM";
-            if (turniArray && turniArray.length > 0) {
-                let trovato = turniArray.find(t => ["RDM", "RDP", "RN", "REP"].includes(t.tipo_evento.toUpperCase()));
-                if (trovato) tipoRep = trovato.tipo_evento.toUpperCase();
-            }
-
-            try {
-                // Sostituisci l'URL con l'indirizzo reale del tuo servizio su Render o localhost
-                let urlPython = `http://127.0.0.1:8000/api/equita/reperibilita?utente_id=${utenteId}&reparto_id=${repartoId}&data_turno=${dataStr}&tipo_reperibilita=${tipoRep}`;
-                
-                let response = await fetch(urlPython);
-                let result = await response.json();
-
-                if (result.success && result.data) {
-                    let d = result.data;
-                    let htmlEquita = `<div class="card bg-light p-2 border">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="small fw-bold text-dark"><i class="bi bi-shield-check text-primary"></i> Controllo Equità Semestrale (Reperibilità)</span>
-                            <span class="badge bg-secondary small">Mese: ${d.reperibilita_mese}/6 | Semestre: ${d.reperibilita_semestre} (Media: ${d.media_reparto_semestre})</span>
-                        </div>`;
-
-                    if (d.avvisi && d.avvisi.length > 0) {
-                        htmlEquita += `<div class="alert alert-warning py-1 px-2 mb-2 small">`;
-                        d.avvisi.forEach(avv => { htmlEquita += `<div>${avv}</div>`; });
-                        htmlEquita += `</div>`;
-                    }
-
-                    if (d.sostituti_consigliati && d.sostituti_consigliati.length > 0) {
-                        htmlEquita += `<div class="small fw-bold text-success mb-1"><i class="bi bi-people-fill"></i> Sostituti Consigliati (Squadra ${d.squadra || 'N/D'}):</div>`;
-                        htmlEquita += `<div class="table-responsive" style="max-height: 120px; overflow-y: auto;">
-                            <table class="table table-sm table-bordered bg-white mb-0" style="font-size: 0.7rem;">
-                                <thead class="table-dark">
-                                    <tr><th>Collega</th><th>Carico Sem.</th><th>Motivo / Turno</th></tr>
-                                </thead>
-                                <tbody>`;
-                        d.sostituti_consigliati.forEach(s => {
-                            htmlEquita += `<tr>
-                                <td class="fw-bold">${s.nome}</td>
-                                <td class="text-center"><span class="badge bg-info text-dark">${s.reperibilita_semestre}</span></td>
-                                <td class="text-muted">${s.motivo}</td>
-                            </tr>`;
-                        });
-                        htmlEquita += `</tbody></table></div>`;
-                    } else {
-                        htmlEquita += `<small class="text-muted italic">Nessun sostituto idoneo trovato con i turni complementari nella stessa squadra per questa data.</small>`;
-                    }
-
-                    htmlEquita += `</div>`;
-                    boxEquita.innerHTML = htmlEquita;
-                } else {
-                    boxEquita.innerHTML = '<small class="text-muted">Impossibile caricare i dati di equità.</small>';
-                }
-            } catch (err) {
-                boxEquita.innerHTML = '<small class="text-danger">Errore di connessione al motore di equità Python.</small>';
-                console.error(err);
+        function cancellaTurnoCella(turnoId) {
+            if (confirm('Sei sicuro di voler cancellare questo turno?')) {
+                document.getElementById('del_turno_id').value = turnoId;
+                document.getElementById('formCancellaTurnoCella').submit();
             }
         }
     </script>
