@@ -10,7 +10,11 @@ from typing import List, Optional, Union, Any
 # Importiamo l'app di Shopify dal file separato
 from main_shopify import app as shopify_app
 
-app = FastAPI(title="Emoteca & Shopify Backend Engine", version="2.9.1")
+app = FastAPI(
+    title="Emoteca & Shopify Backend Engine", 
+    version="2.9.2", 
+    redirect_slashes=True
+)
 
 # Montiamo l'applicazione Shopify sotto il prefisso /shopify
 app.mount("/shopify", shopify_app)
