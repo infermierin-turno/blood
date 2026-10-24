@@ -10,7 +10,7 @@ from typing import List, Optional, Union, Any
 # Importiamo l'app di Shopify dal file separato
 from main_shopify import app as shopify_app
 
-app = FastAPI()
+app = FastAPI(title="Emoteca & Shopify Backend Engine", version="2.9.1")
 
 # Montiamo l'applicazione Shopify sotto il prefisso /shopify
 app.mount("/shopify", shopify_app)
@@ -22,10 +22,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-# Spostiamo lo stato online su un percorso dedicato per non sovrapporsi ad Apache sulla home (index.php)
 @app.get("/api-status")
 def home():
-    return {"status": "online", "message": "Shopify Coffee Agent & Hospital Backend online"}
+    return {"status": "online", "message": "Shopify Coffee Agent & Emoteca Backend online"}
 
 
 @app.get("/analizza-scorte")
