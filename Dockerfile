@@ -1,9 +1,7 @@
 FROM php:8.2-apache
 
-# Abilita i moduli Apache necessari (incluso il proxy per girare le richieste a Python)
 RUN a2enmod rewrite proxy proxy_http
 
-# Installa le dipendenze di sistema, PHP e Python3 con pip
 RUN apt-get update && apt-get install -y \
     libicu-dev \
     libpq-dev \
@@ -23,23 +21,17 @@ RUN apt-get update && apt-get install -y \
     opcache \
     calendar
 
-# Configura la cartella di lavoro
 WORKDIR /var/www/html
 
-# Copia i file del progetto nella root del container
 COPY . /var/www/html/
 
-# Installa le dipendenze Python (assicurati che requirements.txt sia nella root o correggi il percorso se è in requirements.txt)
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
-# Permessi
 RUN chown -R www-data:www-data /var/www/html
 
-# Configura Apache per ascoltare sulla porta dinamica di Render
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Configurazione del VirtualHost con i ProxyPass per tutte le API Python
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
     ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
@@ -58,14 +50,15 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
     ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
+    ProxyPass /genera-turni http://127.0.0.1:8000/genera-turni\n\
+    ProxyPassReverse /genera-turni http://127.0.0.1:8000/genera-turni\n\
     <Directory /var/www/html>\n\
         AllowOverride All\n\
         Require all granted\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Script di avvio: avvia Uvicorn puntando correttamente a main:app nella root e Apache in primo piano
-RUN echo '#!/bin/bash\nuvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
+RUN echo '#!/bin/bash\nuvicorn app.main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
 
