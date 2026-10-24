@@ -64,6 +64,7 @@ async def api_verifica_equita(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/genera-turni")
+@app.post("/app/genera-turni")
 async def genera_turni(data: GenerazioneRequest):
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise HTTPException(status_code=500, detail="Configurazione Supabase mancante.")
