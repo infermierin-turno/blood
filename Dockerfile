@@ -38,6 +38,7 @@ RUN chown -R www-data:www-data /var/www/html
 # Configura Apache per ascoltare sulla porta dinamica di Render
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+
 # Configurazione del VirtualHost con i ProxyPass per tutte le API Python
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
@@ -53,6 +54,8 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     ProxyPassReverse /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
     ProxyPass /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
     ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
+    ProxyPass /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
+    ProxyPassReverse /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
     ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
     <Directory /var/www/html>\n\
