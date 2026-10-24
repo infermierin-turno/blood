@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 # Importazione dell'agente di equità e suggerimento sostituti per la reperibilità
 from app.engine_rep_equita import verifica_equita_e_suggerisci_sostituti
 
-app = FastAPI(title="TurnoMed Python Engine", version="2.8.16")
+app = FastAPI(title="TurnoMed Python Engine", version="2.8.17")
 
 SUPABASE_URL = os.getenv("TURNI_SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("TURNI_SUPABASE_KEY", "")
@@ -24,8 +24,11 @@ class GenerazioneRequest(BaseModel):
     mese: Optional[int] = None
     operatore_id: Optional[str] = None
     utente_id: Optional[str] = None
+    operatori_ids: Optional[List[str]] = []
+    utenti_ids: Optional[List[str]] = []
     turno_iniziale: Optional[str] = None
     turno_partenza: Optional[str] = None
+    sequenza_turni: Optional[List[str]] = ["M", "P", "N", "S", "R"]
     rispetta_ferie: Optional[bool] = True
     rispetta_ferie_approvate: Optional[bool] = True
     riposo_domenicale: Optional[bool] = False
@@ -67,6 +70,7 @@ async def genera_turni(data: GenerazioneRequest):
 
     headers = {
         "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,on_conflict=utente_id,data_inizio"
     }
@@ -74,10 +78,17 @@ async def genera_turni(data: GenerazioneRequest):
     org_id = data.organizzazione_id
     rep_id = data.reparto_id
     op_id = data.operatore_id or data.utente_id
+    
+    # Raccogliamo gli ID target passati dalla modale PHP (operatori_ids o utenti_ids)
+    target_ids = data.operatori_ids or data.utenti_ids or []
+    if op_id and op_id not in target_ids:
+        target_ids.append(op_id)
+
     t_iniziale = data.turno_iniziale or data.turno_partenza
     riposo_dom = data.riposo_domenicale or data.modalita_mattinieri
+    sequenza_turni = data.sequenza_turni if (data.sequenza_turni and len(data.sequenza_turni) > 0) else ["M", "P", "N", "S", "R"]
 
-    autore_uuid = op_id if op_id else None
+    autore_uuid = op_id if op_id else (target_ids[0] if target_ids else None)
 
     if not data.anno or not data.mese:
         if data.data_inizio:
@@ -95,8 +106,6 @@ async def genera_turni(data: GenerazioneRequest):
         anno = data.anno
         mese = data.mese
 
-    sequenza_turni = ["M", "P", "N", "S", "R"]
-
     async with httpx.AsyncClient() as client:
         try:
             # Interrogazione pulita della tabella staging_utenti
@@ -104,24 +113,24 @@ async def genera_turni(data: GenerazioneRequest):
             resp_all = await client.get(url_all, headers=headers)
             
             if resp_all.status_code != 200:
-                raise HTTPException(status_code=500, detail="Errore di comunicazione con il database.")
+                raise HTTPException(status_code=500, detail=f"Errore di comunicazione con il database Supabase (Status: {resp_all.status_code}).")
             
             tutti_operatori = resp_all.json()
             if not tutti_operatori or not isinstance(tutti_operatori, list):
                 raise HTTPException(status_code=400, detail="Nessun operatore trovato nella tabella staging_utenti.")
 
             operatori = []
-            if op_id:
+            if target_ids:
                 for o in tutti_operatori:
-                    if str(o.get('id')) == str(op_id) or str(o.get('utente_id')) == str(op_id):
+                    o_id_str = str(o.get('id') or o.get('utente_id'))
+                    if o_id_str in [str(t) for t in target_ids]:
                         operatori.append(o)
-                if not operatori:
-                    operatori = tutti_operatori
-            else:
-                if rep_id and str(rep_id).strip() != "" and str(rep_id).lower() != "null":
-                    operatori = [o for o in tutti_operatori if str(o.get('reparto_id')) == str(rep_id)]
-                if not operatori:
-                    operatori = tutti_operatori
+            
+            if not operatori and rep_id and str(rep_id).strip() != "" and str(rep_id).lower() != "null":
+                operatori = [o for o in tutti_operatori if str(o.get('reparto_id')) == str(rep_id)]
+
+            if not operatori:
+                operatori = tutti_operatori
 
             if not operatori:
                 raise HTTPException(status_code=400, detail="Nessun operatore trovato con i filtri selezionati.")
@@ -137,28 +146,33 @@ async def genera_turni(data: GenerazioneRequest):
             data_fine_mese_str = ultimo_giorno.strftime("%Y-%m-%d")
 
             is_custom_range = False
+            d_start_dt = None
+            d_end_dt = None
             if data.data_inizio and data.data_fine:
                 try:
                     d_start_dt = datetime.strptime(str(data.data_inizio)[:10], "%Y-%m-%d")
                     d_end_dt = datetime.strptime(str(data.data_fine)[:10], "%Y-%m-%d")
                     if (d_end_dt - d_start_dt).days >= 0:
                         is_custom_range = True
+                        data_inizio_mese_str = d_start_dt.strftime("%Y-%m-%d")
+                        data_fine_mese_str = d_end_dt.strftime("%Y-%m-%d")
                 except:
                     is_custom_range = False
 
-            # Recupero ferie/assenze approvate
+            # Recupero ferie/assenze approvate se richiesto
             assenze_map = {}
-            url_assenze = f"{SUPABASE_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
-            resp_assenze = await client.get(url_assenze, headers=headers)
-            if resp_assenze.status_code == 200:
-                for row in resp_assenze.json():
-                    u_id = row.get("utente_id")
-                    d_str = str(row.get("data_inizio", ""))[:10]
-                    t_ev = row.get("tipo_evento")
-                    if u_id and d_str and t_ev:
-                        if u_id not in assenze_map:
-                            assenze_map[u_id] = {}
-                        assenze_map[u_id][d_str] = t_ev
+            if data.rispetta_ferie or data.rispetta_ferie_approvate:
+                url_assenze = f"{SUPABASE_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
+                resp_assenze = await client.get(url_assenze, headers=headers)
+                if resp_assenze.status_code == 200:
+                    for row in resp_assenze.json():
+                        u_id = row.get("utente_id")
+                        d_str = str(row.get("data_inizio", ""))[:10]
+                        t_ev = row.get("tipo_evento")
+                        if u_id and d_str and t_ev:
+                            if u_id not in assenze_map:
+                                assenze_map[u_id] = {}
+                            assenze_map[u_id][d_str] = t_ev
 
             payload_inserimento = []
 
@@ -170,12 +184,12 @@ async def genera_turni(data: GenerazioneRequest):
                 if not utente_id:
                     continue
                 
-                if t_iniziale and t_iniziale in sequenza_turni and op_id:
+                if t_iniziale and t_iniziale in sequenza_turni:
                     indice_seq = sequenza_turni.index(t_iniziale)
                 else:
                     indice_seq = (index_op * 2) % len(sequenza_turni)
 
-                if is_custom_range:
+                if is_custom_range and d_start_dt and d_end_dt:
                     current_date_iter = d_start_dt
                     while current_date_iter <= d_end_dt:
                         data_str = current_date_iter.strftime("%Y-%m-%d")
@@ -238,11 +252,17 @@ async def genera_turni(data: GenerazioneRequest):
                             "note": "Generato automaticamente da Motore AI"
                         })
 
+            if not payload_inserimento:
+                return {
+                    "success": True,
+                    "message": "Nessun turno da generare (tutti i giorni coperti da assenze o intervallo vuoto)."
+                }
+
             url_pianificazione = f"{SUPABASE_URL}/rest/v1/pianificazione"
             resp_upsert = await client.post(url_pianificazione, headers=headers, json=payload_inserimento)
 
             if resp_upsert.status_code not in [200, 201, 204]:
-                raise HTTPException(status_code=500, detail="Errore durante il salvataggio della pianificazione.")
+                raise HTTPException(status_code=500, detail=f"Errore Supabase durante il salvataggio: {resp_upsert.text}")
 
             modo_str = " (con domeniche di riposo garantite)" if riposo_dom else ""
             return {
