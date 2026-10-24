@@ -25,6 +25,7 @@ WORKDIR /var/www/html
 
 COPY . /var/www/html/
 
+# Installa le dipendenze Python per i turni (assicurati che il requirements.txt sia nella root o punta alla cartella app)
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 RUN chown -R www-data:www-data /var/www/html
@@ -32,6 +33,7 @@ RUN chown -R www-data:www-data /var/www/html
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
+# Configurazione dei ProxyPass di Apache per smistare le chiamate del motore turni verso Uvicorn (porta 8000)
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
     ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
@@ -52,15 +54,16 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPass /genera-turni http://127.0.0.1:8000/genera-turni\n\
     ProxyPassReverse /genera-turni http://127.0.0.1:8000/genera-turni\n\
+    ProxyPass /api/equita http://127.0.0.1:8000/api/equita\n\
+    ProxyPassReverse /api/equita http://127.0.0.1:8000/api/equita\n\
     <Directory /var/www/html>\n\
         AllowOverride All\n\
         Require all granted\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Se il file principale è dentro la cartella app, usiamo app.main:app (o adegua se si chiama diversamente)
-# Avvia Uvicorn puntando direttamente a main:app nella root e Apache in primo piano
-RUN echo '#!/bin/bash\nuvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
+# Script di avvio: lancia Uvicorn puntando correttamente al modulo dentro la cartella app (app.main:app) in background e Apache in foreground
+RUN echo '#!/bin/bash\nuvicorn app.main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
 
