@@ -38,26 +38,21 @@ RUN chown -R www-data:www-data /var/www/html
 # Configura Apache per ascoltare sulla porta dinamica di Render
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
-
 # Configurazione del VirtualHost con i ProxyPass per tutte le API Python
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
-    ProxyPass /genera-turni http://127.0.0.1:8000/genera-turni\n\
-    ProxyPassReverse /genera-turni http://127.0.0.1:8000/genera-turni\n\
     ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
     ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
-    ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
-    ProxyPassReverse /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
     ProxyPass /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
     ProxyPassReverse /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
+    ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
+    ProxyPassReverse /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
     ProxyPass /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
     ProxyPassReverse /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
     ProxyPass /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
     ProxyPassReverse /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
     ProxyPass /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
     ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
-    ProxyPass /api/equita/reperibilita http://127.0.0.1:8000/api/equita/reperibilita\n\
-    ProxyPassReverse /api/equita/reperibilita http://127.0.0.1:8000/api/equita/reperibilita\n\
     ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
     <Directory /var/www/html>\n\
