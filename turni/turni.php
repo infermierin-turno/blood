@@ -51,7 +51,7 @@ function supabase_turni_request($endpoint, $method = 'GET', $data = null) {
 
 // Funzione per comunicare con il microservizio Python su Render
 function call_python_engine_genera($payload = []) {
-    $url = 'http://127.0.0.1:8000/app/genera-turni';
+    $url = 'http://127.0.0.1:8000/genera-turni';
 
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
