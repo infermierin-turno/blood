@@ -12,7 +12,7 @@ from main_shopify import app as shopify_app
 
 app = FastAPI(
     title="Emoteca & Shopify Backend Engine", 
-    version="2.9.3", 
+    version="2.9.4", 
     redirect_slashes=True
 )
 
@@ -58,18 +58,14 @@ def analizza_scorte():
                 "id": sacca["id"],
                 "gruppo_sanguigno": gruppo,
                 "priorita": "Massima",
-                "messaggio": (
-                    "Sacca universale critica (0 Negativo) - Priorità massima di utilizzo"
-                ),
+                "messaggio": "Sacca universale critica (0 Negativo) - Priorità massima di utilizzo",
             })
         elif gruppo == "AB Negativo":
             critiche.append({
                 "id": sacca["id"],
                 "gruppo_sanguigno": gruppo,
                 "priorita": "Alta",
-                "messaggio": (
-                    "Gruppo raro (AB Negativo) - Monitorare scorte limitate"
-                ),
+                "messaggio": "Gruppo raro (AB Negativo) - Monitorare scorte limitate",
             })
 
     return {
@@ -91,7 +87,6 @@ class BookingPayload(BaseModel):
 def ricevi_booking(payload: BookingPayload, response: Response):
     print(f"DEBUG RICEVUTO DA POWER AUTOMATE: {payload}")
     
-    # 1. Estrazione sicura e pulita del reparto
     reparto_raw = payload.reparto
     if isinstance(reparto_raw, list):
         reparto_val = reparto_raw[0].strip() if reparto_raw else ""
@@ -100,7 +95,6 @@ def ricevi_booking(payload: BookingPayload, response: Response):
     else:
         reparto_val = ""
 
-    # FILTRO ANTIRICHIESTE-MONCHE: se il reparto è solo un numero, scartiamo la chiamata sdoppiata
     if reparto_val and all(c.isdigit() or c in '.,' for c in reparto_val):
         print(f"RICHIESTA SCARTATA: Il campo reparto contiene solo un valore numerico ('{reparto_val}').")
         response.status_code = 200
@@ -110,12 +104,9 @@ def ricevi_booking(payload: BookingPayload, response: Response):
         response.status_code = 400
         return "Errore Dati - Campo reparto mancante"
 
-    # 2. Raccogliamo tutto il testo possibile (note, emoglobina, payload grezzo) per un'analisi unificata
     testo_grezzo = f"{str(payload.note or '')} {str(payload.emoglobina or '')} {str(payload)}"
 
-    # 3. Estrazione intelligente dell'emoglobina tramite Regex flessibile
     emoglobina_trovata = None
-    
     match_emo = re.search(r'(?:emoglobina|hb|valore)[:\s]*([0-9]+([.,][0-9]+)?)', testo_grezzo, re.IGNORECASE)
     if match_emo:
         emoglobina_trovata = match_emo.group(1).replace(',', '.')
@@ -170,9 +161,7 @@ def ricevi_booking(payload: BookingPayload, response: Response):
             "status": "OK",
             "turno": turno_calcolato,
             "urgenza": urgenza_input,
-            "azione_immediata": True
-            if urgenza_input.lower() == "urgentissima"
-            else False,
+            "azione_immediata": True if urgenza_input.lower() == "urgentissima" else False,
         }
     except Exception as e:
         print(f"ERRORE DETTAGLIATO SUPABASE/DB: {str(e)}")
@@ -200,9 +189,7 @@ def preleva_accumulo_mattina():
             }
 
         ids = [r["id"] for r in richieste]
-        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_(
-            "id", ids
-        ).execute()
+        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
 
         corpo_html = """
             <h2>Riepilogo Richieste Ordinarie (Mattina)</h2>
@@ -253,9 +240,7 @@ def preleva_accumulo_pomeriggio():
             }
 
         ids = [r["id"] for r in richieste]
-        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_(
-            "id", ids
-        ).execute()
+        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
 
         corpo_html = """
             <h4>Si richiede utilizzo del furgone per consegna richieste pomeridiane e emocomponenti da ritirare (Furgone ore 16:30)</h4>
@@ -323,9 +308,7 @@ def preleva_accumulo_notte():
             }
 
         ids = [r["id"] for r in richieste]
-        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_(
-            "id", ids
-        ).execute()
+        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
 
         orario_invio_effettivo = tempo_italia.strftime("%H:%M")
 
