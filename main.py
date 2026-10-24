@@ -12,7 +12,7 @@ from main_shopify import app as shopify_app
 
 app = FastAPI(
     title="Emoteca & Shopify Backend Engine", 
-    version="2.9.2", 
+    version="2.9.3", 
     redirect_slashes=True
 )
 
@@ -29,6 +29,11 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 @app.get("/api-status")
 def home():
     return {"status": "online", "message": "Shopify Coffee Agent & Emoteca Backend online"}
+
+
+@app.get("/debug-rotte")
+def debug_rotte():
+    return [route.path for route in app.routes]
 
 
 @app.get("/analizza-scorte")
