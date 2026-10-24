@@ -26,11 +26,11 @@ RUN apt-get update && apt-get install -y \
 # Configura la cartella di lavoro
 WORKDIR /var/www/html
 
-# Copia i file del progetto
+# Copia i file del progetto nella root del container
 COPY . /var/www/html/
 
-# Installa le dipendenze Python dalla cartella app/
-RUN pip3 install --no-cache-dir -r app/requirements.txt --break-system-packages
+# Installa le dipendenze Python (assicurati che requirements.txt sia nella root o correggi il percorso se è in requirements.txt)
+RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 # Permessi
 RUN chown -R www-data:www-data /var/www/html
@@ -44,6 +44,8 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
     ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
     ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
+    ProxyPass /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
+    ProxyPassReverse /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
     ProxyPass /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
     ProxyPassReverse /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
     ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
@@ -54,8 +56,6 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     ProxyPassReverse /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
     ProxyPass /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
     ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
-    ProxyPass /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
-    ProxyPassReverse /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
     ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
     <Directory /var/www/html>\n\
@@ -64,8 +64,8 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Script di avvio: avvia Uvicorn in background e Apache in primo piano
-RUN echo '#!/bin/bash\nuvicorn app.main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
+# Script di avvio: avvia Uvicorn puntando correttamente a main:app nella root e Apache in primo piano
+RUN echo '#!/bin/bash\nuvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
 
