@@ -12,7 +12,7 @@ from main_shopify import app as shopify_app
 
 app = FastAPI(
     title="Emoteca & Shopify Backend Engine", 
-    version="2.9.4", 
+    version="2.9.5", 
     redirect_slashes=True
 )
 
@@ -170,6 +170,7 @@ def ricevi_booking(payload: BookingPayload, response: Response):
 
 
 @app.get("/preleva-accumulo-mattina")
+@app.post("/preleva-accumulo-mattina")
 def preleva_accumulo_mattina():
     try:
         response = (
@@ -221,6 +222,7 @@ def preleva_accumulo_mattina():
 
 
 @app.get("/preleva-accumulo-pomeriggio")
+@app.post("/preleva-accumulo-pomeriggio")
 def preleva_accumulo_pomeriggio():
     try:
         response = (
@@ -272,6 +274,7 @@ def preleva_accumulo_pomeriggio():
 
 
 @app.get("/preleva-accumulo-notte")
+@app.post("/preleva-accumulo-notte")
 def preleva_accumulo_notte():
     tz_italia = ZoneInfo('Europe/Rome')
     tempo_italia = datetime.now(tz_italia)
