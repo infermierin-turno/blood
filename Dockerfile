@@ -25,6 +25,7 @@ WORKDIR /var/www/html
 
 COPY . /var/www/html/
 
+# Installazione delle dipendenze Python nella root
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 RUN chown -R www-data:www-data /var/www/html
@@ -32,8 +33,10 @@ RUN chown -R www-data:www-data /var/www/html
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
+# Configurazione completa di Apache con ProxyPreserveHost per evitare errori 404
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
+    ProxyPreserveHost On\n\
     ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
     ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
     ProxyPass /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
@@ -60,6 +63,7 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
+# Script di avvio per far convivere Uvicorn (background) e Apache (foreground)
 RUN echo '#!/bin/bash\nuvicorn app.main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
