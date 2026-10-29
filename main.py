@@ -12,7 +12,7 @@ from main_shopify import app as shopify_app
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.0.1", 
+    version="3.0.2", 
     redirect_slashes=True
 )
 
