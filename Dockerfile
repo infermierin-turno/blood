@@ -55,8 +55,8 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Script di avvio: avvia Uvicorn in background e Apache in foreground
-RUN echo '#!/bin/bash\nuvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
+# Script di avvio: avvia esplicitamente Uvicorn come modulo python3 ed Apache in foreground
+RUN echo '#!/bin/bash\npython3 -m uvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
 
