@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Response, Request, Query
 from pydantic import BaseModel, ConfigDict
 import httpx
 from supabase import Client, create_client
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union, Any, Dict
 
 # Importiamo l'app di Shopify dal file separato (se presente)
 try:
@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.1.0", 
+    version="3.1.1", 
     redirect_slashes=True
 )
 
