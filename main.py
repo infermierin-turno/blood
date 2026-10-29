@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import os
-import re
+re = __import__('re')
 from fastapi import FastAPI, HTTPException, Response, Request, Query
 from pydantic import BaseModel, ConfigDict
 import httpx
@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.2.0", 
+    version="3.2.2", 
     redirect_slashes=True
 )
 
@@ -25,7 +25,7 @@ if shopify_app:
     app.mount("/shopify", shopify_app)
 
 # ==========================================
-# CONFIGURAZIONE DOPPIO SUPABASE (Emoteca vs Turni)
+# CONFIGURAZIONE SICURA DA VARIABILI D'AMBIENTE
 # ==========================================
 
 # 1. Database Emoteca
@@ -33,7 +33,7 @@ EMOTECA_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 EMOTECA_KEY = os.getenv("SUPABASE_KEY", "").strip()
 supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_URL and EMOTECA_KEY else None
 
-# 2. Database Turni
+# 2. Database Turni (Legge in modo sicuro dalle variabili dedicate su Render)
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
 TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
@@ -148,7 +148,7 @@ async def genera_turni(request: Request):
         data.modalita_mattinieri = bool(body_json.get("modalita_mattinieri", False))
 
     if not TURNI_URL or not TURNI_KEY:
-        raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nel backend Python.")
+        raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nelle variabili d'ambiente di Render.")
 
     headers = {
         "apikey": TURNI_KEY,
