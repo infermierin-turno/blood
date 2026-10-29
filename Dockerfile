@@ -33,37 +33,29 @@ RUN chown -R www-data:www-data /var/www/html
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Configurazione completa di Apache con ProxyPreserveHost per inoltrare a Uvicorn sulla porta 8000
+# Configurazione di Apache: inoltriamo tutto il traffico API/JSON verso Uvicorn
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
     ProxyPreserveHost On\n\
-    ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
-    ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
-    ProxyPass /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
-    ProxyPassReverse /debug-rotte http://127.0.0.1:8000/debug-rotte\n\
-    ProxyPass /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
-    ProxyPassReverse /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
-    ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
-    ProxyPassReverse /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
-    ProxyPass /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
-    ProxyPassReverse /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
-    ProxyPass /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
-    ProxyPassReverse /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
-    ProxyPass /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
-    ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
-    ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
-    ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPass /genera-turni http://127.0.0.1:8000/genera-turni\n\
     ProxyPassReverse /genera-turni http://127.0.0.1:8000/genera-turni\n\
+    ProxyPass /app/genera-turni http://127.0.0.1:8000/app/genera-turni\n\
+    ProxyPassReverse /app/genera-turni http://127.0.0.1:8000/app/genera-turni\n\
+    ProxyPass /debug-rotte-attive http://127.0.0.1:8000/debug-rotte-attive\n\
+    ProxyPassReverse /debug-rotte-attive http://127.0.0.1:8000/debug-rotte-attive\n\
     ProxyPass /api/equita http://127.0.0.1:8000/api/equita\n\
     ProxyPassReverse /api/equita http://127.0.0.1:8000/api/equita\n\
+    ProxyPass /api-status http://127.0.0.1:8000/api-status\n\
+    ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
+    ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
+    ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
     <Directory /var/www/html>\n\
         AllowOverride All\n\
         Require all granted\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Script di avvio: punta a main:app (nella root) in background e Apache in foreground sulla porta 10000
+# Script di avvio: avvia Uvicorn in background e Apache in foreground
 RUN echo '#!/bin/bash\nuvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
