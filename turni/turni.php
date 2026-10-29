@@ -51,7 +51,7 @@ function supabase_turni_request($endpoint, $method = 'GET', $data = null) {
 
 // Funzione per comunicare con il microservizio Python su Render
 function call_python_engine_genera($payload = []) {
-    $url = 'https://blood-protur.onrender.com/turni/genera-turni';
+    $url = 'https://blood-protur.onrender.com/genera-turni';
 
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
