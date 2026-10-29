@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.1.2", 
+    version="3.2.0", 
     redirect_slashes=True
 )
 
@@ -24,20 +24,19 @@ app = FastAPI(
 if shopify_app:
     app.mount("/shopify", shopify_app)
 
-# Leggiamo le chiavi di Supabase coprendo qualsiasi variante usata finora
-SUPABASE_URL = (
-    os.getenv("SUPABASE_URL") or 
-    os.getenv("TURNI_SUPABASE_URL") or 
-    os.getenv("PUBLIC_SUPABASE_URL", "")
-).strip().rstrip("/")
+# ==========================================
+# CONFIGURAZIONE DOPPIO SUPABASE (Emoteca vs Turni)
+# ==========================================
 
-SUPABASE_KEY = (
-    os.getenv("SUPABASE_KEY") or 
-    os.getenv("TURNI_SUPABASE_KEY") or 
-    os.getenv("PUBLIC_SUPABASE_ANON_KEY", "")
-).strip()
+# 1. Database Emoteca
+EMOTECA_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+EMOTECA_KEY = os.getenv("SUPABASE_KEY", "").strip()
+supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_URL and EMOTECA_KEY else None
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+# 2. Database Turni
+TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
+TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
+supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
 
 # Importazione dell'agente di equità (se presente in app/)
 try:
@@ -56,7 +55,8 @@ def home():
     return {
         "status": "online", 
         "message": "Emoteca & Turni Backend online",
-        "supabase_configurato": bool(SUPABASE_URL and SUPABASE_KEY)
+        "emoteca_attiva": bool(supabase_emoteca),
+        "turni_attivi": bool(supabase_turni)
     }
 
 @app.get("/debug-rotte")
@@ -147,12 +147,12 @@ async def genera_turni(request: Request):
         data.riposo_domenicale = bool(body_json.get("riposo_domenicale", False))
         data.modalita_mattinieri = bool(body_json.get("modalita_mattinieri", False))
 
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise HTTPException(status_code=500, detail="Configurazione Supabase mancante nel backend Python.")
+    if not TURNI_URL or not TURNI_KEY:
+        raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nel backend Python.")
 
     headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "apikey": TURNI_KEY,
+        "Authorization": f"Bearer {TURNI_KEY}",
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,on_conflict=utente_id,data_inizio"
     }
@@ -194,21 +194,15 @@ async def genera_turni(request: Request):
 
     async with httpx.AsyncClient() as client:
         try:
-            # Tentativo su staging_utenti
-            url_all = f"{SUPABASE_URL}/rest/v1/staging_utenti?select=*"
+            url_all = f"{TURNI_URL}/rest/v1/staging_utenti?select=*"
             resp_all = await client.get(url_all, headers=headers)
             
-            # Fallback intelligente se staging_utenti non esiste (404)
-            if resp_all.status_code == 404:
-                url_all = f"{SUPABASE_URL}/rest/v1/utenti?select=*"
-                resp_all = await client.get(url_all, headers=headers)
-
             if resp_all.status_code != 200:
-                raise HTTPException(status_code=500, detail=f"Errore Supabase (Status: {resp_all.status_code} - Dettaglio: {resp_all.text}).")
+                raise HTTPException(status_code=500, detail=f"Errore Supabase Turni (Status: {resp_all.status_code} - Dettaglio: {resp_all.text}).")
             
             tutti_operatori = resp_all.json()
             if not tutti_operatori or not isinstance(tutti_operatori, list):
-                raise HTTPException(status_code=400, detail="Nessun operatore trovato nel database.")
+                raise HTTPException(status_code=400, detail="Nessun operatore trovato in staging_utenti sul database Turni.")
 
             operatori = []
             if target_ids:
@@ -253,7 +247,7 @@ async def genera_turni(request: Request):
 
             assenze_map = {}
             if getattr(data, "rispetta_ferie", True) or getattr(data, "rispetta_ferie_approvate", True):
-                url_assenze = f"{SUPABASE_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
+                url_assenze = f"{TURNI_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
                 resp_assenze = await client.get(url_assenze, headers=headers)
                 if resp_assenze.status_code == 200:
                     for row in resp_assenze.json():
@@ -349,11 +343,11 @@ async def genera_turni(request: Request):
                     "message": "Nessun turno da generare (tutti i giorni coperti da assenze o intervallo vuoto)."
                 }
 
-            url_pianificazione = f"{SUPABASE_URL}/rest/v1/pianificazione"
+            url_pianificazione = f"{TURNI_URL}/rest/v1/pianificazione"
             resp_upsert = await client.post(url_pianificazione, headers=headers, json=payload_inserimento)
 
             if resp_upsert.status_code not in [200, 201, 204]:
-                raise HTTPException(status_code=500, detail=f"Errore Supabase salvataggio: {resp_upsert.text}")
+                raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
             modo_str = " (con domeniche di riposo garantite)" if riposo_dom else ""
             return {
@@ -373,11 +367,11 @@ async def genera_turni(request: Request):
 
 @app.get("/analizza-scorte")
 def analizza_scorte():
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase non configurato.")
+    if not supabase_emoteca:
+        raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
     try:
         response = (
-            supabase.table("emoteca_scorte")
+            supabase_emoteca.table("emoteca_scorte")
             .select("*")
             .eq("stato", "Disponibile")
             .execute()
@@ -422,8 +416,8 @@ class BookingPayload(BaseModel):
 
 @app.post("/ricevi-booking")
 def ricevi_booking(payload: BookingPayload, response: Response):
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase non configurato.")
+    if not supabase_emoteca:
+        raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
     
     reparto_raw = payload.reparto
     if isinstance(reparto_raw, list):
@@ -490,7 +484,7 @@ def ricevi_booking(payload: BookingPayload, response: Response):
     }
 
     try:
-        res = supabase.table("ritiri_sangue").insert(dati_da_inserire).execute()
+        res = supabase_emoteca.table("ritiri_sangue").insert(dati_da_inserire).execute()
         response.status_code = 200
         return {
             "status": "OK",
@@ -506,11 +500,11 @@ def ricevi_booking(payload: BookingPayload, response: Response):
 @app.get("/preleva-accumulo-mattina")
 @app.post("/preleva-accumulo-mattina")
 def preleva_accumulo_mattina():
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase non configurato.")
+    if not supabase_emoteca:
+        raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
     try:
         response = (
-            supabase.table("ritiri_sangue")
+            supabase_emoteca.table("ritiri_sangue")
             .select("*")
             .eq("notifica_inviata", False)
             .execute()
@@ -526,7 +520,7 @@ def preleva_accumulo_mattina():
             }
 
         ids = [r["id"] for r in richieste]
-        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
+        supabase_emoteca.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
 
         corpo_html = """
             <h2>Riepilogo Richieste Ordinarie (Mattina)</h2>
@@ -560,11 +554,11 @@ def preleva_accumulo_mattina():
 @app.get("/preleva-accumulo-pomeriggio")
 @app.post("/preleva-accumulo-pomeriggio")
 def preleva_accumulo_pomeriggio():
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase non configurato.")
+    if not supabase_emoteca:
+        raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
     try:
         response = (
-            supabase.table("ritiri_sangue")
+            supabase_emoteca.table("ritiri_sangue")
             .select("*")
             .eq("notifica_inviata", False)
             .execute()
@@ -580,7 +574,7 @@ def preleva_accumulo_pomeriggio():
             }
 
         ids = [r["id"] for r in richieste]
-        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
+        supabase_emoteca.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
 
         corpo_html = """
             <h4>Si richiede utilizzo del furgone per consegna richieste pomeridiane e emocomponenti da ritirare (Furgone ore 16:30)</h4>
@@ -614,8 +608,8 @@ def preleva_accumulo_pomeriggio():
 @app.get("/preleva-accumulo-notte")
 @app.post("/preleva-accumulo-notte")
 def preleva_accumulo_notte():
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase non configurato.")
+    if not supabase_emoteca:
+        raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
     tz_italia = ZoneInfo('Europe/Rome')
     tempo_italia = datetime.now(tz_italia)
     
@@ -635,7 +629,7 @@ def preleva_accumulo_notte():
 
     try:
         response = (
-            supabase.table("ritiri_sangue")
+            supabase_emoteca.table("ritiri_sangue")
             .select("*")
             .eq("notifica_inviata", False)
             .execute()
@@ -651,7 +645,7 @@ def preleva_accumulo_notte():
             }
 
         ids = [r["id"] for r in richieste]
-        supabase.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
+        supabase_emoteca.table("ritiri_sangue").update({"notifica_inviata": True}).in_("id", ids).execute()
 
         orario_invio_effettivo = tempo_italia.strftime("%H:%M")
 
