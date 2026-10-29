@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.1.1", 
+    version="3.1.2", 
     redirect_slashes=True
 )
 
@@ -24,9 +24,18 @@ app = FastAPI(
 if shopify_app:
     app.mount("/shopify", shopify_app)
 
-# Leggiamo le chiavi in modo sicuro dalle variabili d'ambiente di Render
-SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("TURNI_SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("TURNI_SUPABASE_KEY", "")
+# Leggiamo le chiavi di Supabase coprendo qualsiasi variante usata finora
+SUPABASE_URL = (
+    os.getenv("SUPABASE_URL") or 
+    os.getenv("TURNI_SUPABASE_URL") or 
+    os.getenv("PUBLIC_SUPABASE_URL", "")
+).strip().rstrip("/")
+
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_KEY") or 
+    os.getenv("TURNI_SUPABASE_KEY") or 
+    os.getenv("PUBLIC_SUPABASE_ANON_KEY", "")
+).strip()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
@@ -44,7 +53,11 @@ except ImportError:
 
 @app.get("/api-status")
 def home():
-    return {"status": "online", "message": "Emoteca & Turni Backend online"}
+    return {
+        "status": "online", 
+        "message": "Emoteca & Turni Backend online",
+        "supabase_configurato": bool(SUPABASE_URL and SUPABASE_KEY)
+    }
 
 @app.get("/debug-rotte")
 @app.get("/debug-rotte-attive")
@@ -135,7 +148,7 @@ async def genera_turni(request: Request):
         data.modalita_mattinieri = bool(body_json.get("modalita_mattinieri", False))
 
     if not SUPABASE_URL or not SUPABASE_KEY:
-        raise HTTPException(status_code=500, detail="Configurazione Supabase mancante.")
+        raise HTTPException(status_code=500, detail="Configurazione Supabase mancante nel backend Python.")
 
     headers = {
         "apikey": SUPABASE_KEY,
@@ -181,15 +194,21 @@ async def genera_turni(request: Request):
 
     async with httpx.AsyncClient() as client:
         try:
+            # Tentativo su staging_utenti
             url_all = f"{SUPABASE_URL}/rest/v1/staging_utenti?select=*"
             resp_all = await client.get(url_all, headers=headers)
             
+            # Fallback intelligente se staging_utenti non esiste (404)
+            if resp_all.status_code == 404:
+                url_all = f"{SUPABASE_URL}/rest/v1/utenti?select=*"
+                resp_all = await client.get(url_all, headers=headers)
+
             if resp_all.status_code != 200:
-                raise HTTPException(status_code=500, detail=f"Errore Supabase (Status: {resp_all.status_code}).")
+                raise HTTPException(status_code=500, detail=f"Errore Supabase (Status: {resp_all.status_code} - Dettaglio: {resp_all.text}).")
             
             tutti_operatori = resp_all.json()
             if not tutti_operatori or not isinstance(tutti_operatori, list):
-                raise HTTPException(status_code=400, detail="Nessun operatore trovato in staging_utenti.")
+                raise HTTPException(status_code=400, detail="Nessun operatore trovato nel database.")
 
             operatori = []
             if target_ids:
