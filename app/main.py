@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 import httpx
 from typing import Optional, List, Dict, Any
@@ -9,11 +9,10 @@ from typing import Optional, List, Dict, Any
 try:
     from app.engine_rep_equita import verifica_equita_e_suggerisci_sostituti
 except ImportError:
-    # Fallback nel caso in cui il modulo venga eseguito da contesti differenti
     async def verifica_equita_e_suggerisci_sostituti(*args, **kwargs):
         return {"message": "Modulo equità non disponibile"}
 
-app = FastAPI(title="TurnoMed Python Engine", version="2.8.17")
+app = FastAPI(title="TurnoMed Python Engine", version="2.8.18")
 
 SUPABASE_URL = os.getenv("TURNI_SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("TURNI_SUPABASE_KEY", "")
@@ -69,9 +68,46 @@ async def api_verifica_equita(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/genera-turni")
-@app.post("/app/genera-turni")
-async def genera_turni(data: GenerazioneRequest):
+@app.api_route("/genera-turni", methods=["GET", "POST"])
+@app.api_route("/app/genera-turni", methods=["GET", "POST"])
+async def genera_turni(request: Request):
+    # Supporto flessibile: leggiamo sia JSON pulito che eventuali form o richieste raw
+    try:
+        body_json = await request.json()
+    except Exception:
+        body_json = {}
+
+    # Se arrivano parametri come query o form di fallback
+    if not body_json:
+        query_params = dict(request.query_params)
+        body_json = query_params
+
+    # Mappiamo sul modello Pydantic
+    try:
+        data = GenerazioneRequest(**body_json)
+    except Exception as validation_err:
+        # Se i campi non sono rigorosi ma passiamo dizionari grezzi, procediamo lo stesso estraendo dal dizionario
+        class DummyData:
+            pass
+        data = DummyData()
+        data.organizzazione_id = body_json.get("organizzazione_id")
+        data.reparto_id = body_json.get("reparto_id")
+        data.data_inizio = body_json.get("data_inizio")
+        data.data_fine = body_json.get("data_fine")
+        data.anno = int(body_json.get("anno")) if body_json.get("anno") else None
+        data.mese = int(body_json.get("mese")) if body_json.get("mese") else None
+        data.operatore_id = body_json.get("operatore_id")
+        data.utente_id = body_json.get("utente_id")
+        data.operatori_ids = body_json.get("operatori_ids", [])
+        data.utenti_ids = body_json.get("utenti_ids", [])
+        data.turno_iniziale = body_json.get("turno_iniziale")
+        data.turno_partenza = body_json.get("turno_partenza")
+        data.sequenza_turni = body_json.get("sequenza_turni", ["M", "P", "N", "S", "R"])
+        data.rispetta_ferie = bool(body_json.get("rispetta_ferie", True))
+        data.rispetta_ferie_approvate = bool(body_json.get("rispetta_ferie_approvate", True))
+        data.riposo_domenicale = bool(body_json.get("riposo_domenicale", False))
+        data.modalita_mattinieri = bool(body_json.get("modalita_mattinieri", False))
+
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise HTTPException(status_code=500, detail="Configurazione Supabase mancante.")
 
@@ -82,24 +118,29 @@ async def genera_turni(data: GenerazioneRequest):
         "Prefer": "resolution=merge-duplicates,on_conflict=utente_id,data_inizio"
     }
 
-    org_id = data.organizzazione_id
-    rep_id = data.reparto_id
-    op_id = data.operatore_id or data.utente_id
+    org_id = getattr(data, "organizzazione_id", None)
+    rep_id = getattr(data, "reparto_id", None)
+    op_id = getattr(data, "operatore_id", None) or getattr(data, "utente_id", None)
     
-    target_ids = data.operatori_ids or data.utenti_ids or []
+    target_ids = getattr(data, "operatori_ids", []) or getattr(data, "utenti_ids", []) or []
     if op_id and op_id not in target_ids:
         target_ids.append(op_id)
 
-    t_iniziale = data.turno_iniziale or data.turno_partenza
-    riposo_dom = data.riposo_domenicale or data.modalita_mattinieri
-    sequenza_turni = data.sequenza_turni if (data.sequenza_turni and len(data.sequenza_turni) > 0) else ["M", "P", "N", "S", "R"]
+    t_iniziale = getattr(data, "turno_iniziale", None) or getattr(data, "turno_partenza", None)
+    riposo_dom = bool(getattr(data, "riposo_domenicale", False) or getattr(data, "modalita_mattinieri", False))
+    seq_raw = getattr(data, "sequenza_turni", ["M", "P", "N", "S", "R"])
+    sequenza_turni = seq_raw if (seq_raw and len(seq_raw) > 0) else ["M", "P", "N", "S", "R"]
 
     autore_uuid = op_id if op_id else (target_ids[0] if target_ids else None)
 
-    if not data.anno or not data.mese:
-        if data.data_inizio:
+    anno_val = getattr(data, "anno", None)
+    mese_val = getattr(data, "mese", None)
+    data_inizio_val = getattr(data, "data_inizio", None)
+
+    if not anno_val or not mese_val:
+        if data_inizio_val:
             try:
-                dt_parsed = datetime.strptime(str(data.data_inizio)[:10], "%Y-%m-%d")
+                dt_parsed = datetime.strptime(str(data_inizio_val)[:10], "%Y-%m-%d")
                 anno = dt_parsed.year
                 mese = dt_parsed.month
             except:
@@ -109,8 +150,8 @@ async def genera_turni(data: GenerazioneRequest):
             anno = datetime.now().year
             mese = datetime.now().month
     else:
-        anno = data.anno
-        mese = data.mese
+        anno = int(anno_val)
+        mese = int(mese_val)
 
     async with httpx.AsyncClient() as client:
         try:
@@ -153,10 +194,11 @@ async def genera_turni(data: GenerazioneRequest):
             is_custom_range = False
             d_start_dt = None
             d_end_dt = None
-            if data.data_inizio and data.data_fine:
+            data_fine_val = getattr(data, "data_fine", None)
+            if data_inizio_val and data_fine_val:
                 try:
-                    d_start_dt = datetime.strptime(str(data.data_inizio)[:10], "%Y-%m-%d")
-                    d_end_dt = datetime.strptime(str(data.data_fine)[:10], "%Y-%m-%d")
+                    d_start_dt = datetime.strptime(str(data_inizio_val)[:10], "%Y-%m-%d")
+                    d_end_dt = datetime.strptime(str(data_fine_val)[:10], "%Y-%m-%d")
                     if (d_end_dt - d_start_dt).days >= 0:
                         is_custom_range = True
                         data_inizio_mese_str = d_start_dt.strftime("%Y-%m-%d")
@@ -165,7 +207,7 @@ async def genera_turni(data: GenerazioneRequest):
                     is_custom_range = False
 
             assenze_map = {}
-            if data.rispetta_ferie or data.rispetta_ferie_approvate:
+            if getattr(data, "rispetta_ferie", True) or getattr(data, "rispetta_ferie_approvate", True):
                 url_assenze = f"{SUPABASE_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
                 resp_assenze = await client.get(url_assenze, headers=headers)
                 if resp_assenze.status_code == 200:
