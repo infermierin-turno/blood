@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.5", 
+    version="3.3.7", 
     redirect_slashes=True
 )
 
@@ -35,7 +35,7 @@ supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_UR
 
 # 2. Database Turni
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
-TURNI_KEY = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip()
+TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_URL", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
 
 # Importazione dell'agente di equità (se presente in app/)
@@ -49,6 +49,22 @@ except ImportError:
 # ==========================================
 # SEZIONE STATUS & DEBUG
 # ==========================================
+
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "service": "Emoteca & Turni Unified Engine",
+        "version": "3.3.7",
+        "endpoints_disponibili": [
+            "/api-status",
+            "/genera-turni",
+            "/salva-singolo-turno",
+            "/preleva-accumulo-mattina",
+            "/preleva-accumulo-pomeriggio",
+            "/preleva-accumulo-notte"
+        ]
+    }
 
 @app.get("/api-status")
 def home():
