@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.8", 
+    version="3.3.9", 
     redirect_slashes=True
 )
 
@@ -55,7 +55,7 @@ def root():
     return {
         "status": "online",
         "service": "Emoteca & Turni Unified Engine",
-        "version": "3.3.8",
+        "version": "3.3.9",
         "endpoints_disponibili": [
             "/api-status",
             "/genera-turni",
@@ -361,8 +361,7 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Se c'è ferie, la inseriamo ma NON consumiamo il turno della sequenza,
-                        # così il giorno dopo la sequenza riprende esatta dove era rimasta!
+                        # CORRETTO: Se c'è ferie, inseriamo SOLO la ferie ed evitiamo di sovrapporre il turno di sequenza
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
@@ -374,18 +373,18 @@ async def genera_turni(request: Request):
                                 indice_seq = (indice_seq + 1) % len(sequenza_turni)
                             note_turno = "Generato rigorosamente da sequenza personalizzata"
 
-                        payload_inserimento.append({
-                            "organizzazione_id": org_operatore,
-                            "reparto_id": rep_operatore,
-                            "utente_id": utente_id,
-                            "data_inizio": data_inizio_ts,
-                            "data_fine": data_fine_ts,
-                            "tipo_evento": turno_assegnato,
-                            "stato": "Generato da AI",
-                            "creato_da": autore_uuid,
-                            "modificato_da": autore_uuid,
-                            "note": note_turno
-                        })
+                            payload_inserimento.append({
+                                "organizzazione_id": org_operatore,
+                                "reparto_id": rep_operatore,
+                                "utente_id": utente_id,
+                                "data_inizio": data_inizio_ts,
+                                "data_fine": data_fine_ts,
+                                "tipo_evento": turno_assegnato,
+                                "stato": "Generato da AI",
+                                "creato_da": autore_uuid,
+                                "modificato_da": autore_uuid,
+                                "note": note_turno
+                            })
                         current_date_iter += timedelta(days=1)
                 else:
                     for giorno in range(1, tot_giorni + 1):
@@ -394,7 +393,7 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Gestione ferie senza avanzare impropriamente l'indice della sequenza turni
+                        # CORRETTO: Se c'è ferie, non scriviamo il turno standard, lasciando pulita la cella con la sola ferie
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
@@ -406,18 +405,18 @@ async def genera_turni(request: Request):
                                 indice_seq = (indice_seq + 1) % len(sequenza_turni)
                             note_turno = "Generato rigorosamente da sequenza personalizzata"
 
-                        payload_inserimento.append({
-                            "organizzazione_id": org_operatore,
-                            "reparto_id": rep_operatore,
-                            "utente_id": utente_id,
-                            "data_inizio": data_inizio_ts,
-                            "data_fine": data_fine_ts,
-                            "tipo_evento": turno_assegnato,
-                            "stato": "Generato da AI",
-                            "creato_da": autore_uuid,
-                            "modificato_da": autore_uuid,
-                            "note": note_turno
-                        })
+                            payload_inserimento.append({
+                                "organizzazione_id": org_operatore,
+                                "reparto_id": rep_operatore,
+                                "utente_id": utente_id,
+                                "data_inizio": data_inizio_ts,
+                                "data_fine": data_fine_ts,
+                                "tipo_evento": turno_assegnato,
+                                "stato": "Generato da AI",
+                                "creato_da": autore_uuid,
+                                "modificato_da": autore_uuid,
+                                "note": note_turno
+                            })
 
             if not payload_inserimento:
                 return {
@@ -431,7 +430,7 @@ async def genera_turni(request: Request):
             if resp_upsert.status_code not in [200, 201, 204]:
                 raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
-            modo_str = " (con ferie gestite senza scartare i turni della sequenza)"
+            modo_str = " (con ferie gestite senza sovrapposizioni e sequenza protetta)"
             return {
                 "success": True,
                 "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
