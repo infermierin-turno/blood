@@ -23,11 +23,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /var/www/html
 
-# COPIA ESPLICITA: Forziamo l'inclusione di tutti i file necessari ignorando eventuali .dockerignore
-COPY requirements.txt /var/www/html/
-COPY main.py /var/www/html/
-COPY app/ /var/www/html/app/
-COPY *.php /var/www/html/
+# Ripristiniamo la copia completa di tutto il progetto (cartelle, file php, python e asset)
+COPY . /var/www/html/
 
 # Installazione delle dipendenze Python nella root
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
@@ -37,7 +34,7 @@ RUN chown -R www-data:www-data /var/www/html
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Configurazione di Apache: inoltriamo tutto il traffico API/JSON verso Uvicorn
+# Configurazione di Apache con ProxyPass per le rotte Python e il resto gestito da Apache/PHP
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
     ProxyPreserveHost On\n\
@@ -59,7 +56,7 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     </Directory>\n\
 </VirtualHost>" > /etc/apache2/sites-available/000-default.conf
 
-# Script di avvio: avvia esplicitamente Uvicorn come modulo python3 ed Apache in foreground
+# Script di avvio: avvia Uvicorn in background e Apache in foreground
 RUN echo '#!/bin/bash\npython3 -m uvicorn main:app --host 127.0.0.1 --port 8000 &\napache2-foreground' > /start.sh && chmod +x /start.sh
 
 EXPOSE 10000
