@@ -53,8 +53,8 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
     ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
-    ProxyPass /turni http://127.0.0.1:8000/turni\n\
-    ProxyPassReverse /turni http://127.0.0.1:8000/turni\n\
+    ProxyPass /genera-turni http://127.0.0.1:8000/genera-turni\n\
+    ProxyPassReverse /genera-turni http://127.0.0.1:8000/genera-turni\n\
     ProxyPass /api/equita http://127.0.0.1:8000/api/equita\n\
     ProxyPassReverse /api/equita http://127.0.0.1:8000/api/equita\n\
     <Directory /var/www/html>\n\
