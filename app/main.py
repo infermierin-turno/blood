@@ -13,7 +13,7 @@ except ImportError:
     async def verifica_equita_e_suggerisci_sostituti(*args, **kwargs):
         return {"message": "Modulo equità non disponibile"}
 
-app = FastAPI(title="TurnoMed Python Engine", version="2.8.20")
+app = FastAPI(title="TurnoMed Python Engine", version="2.8.21")
 
 SUPABASE_URL = os.getenv("TURNI_SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("TURNI_SUPABASE_KEY", "")
@@ -42,9 +42,9 @@ class GenerazioneRequest(BaseModel):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    print(f"[UVICORN] Richiesta in arrivo: {request.method} {request.url.path}")
+    print(f"[UVICORN LOG] Richiesta in arrivo: {request.method} {request.url.path}")
     response = await call_next(request)
-    print(f"[UVICORN] Risposta inviata con status: {response.status_code}")
+    print(f"[UVICORN LOG] Risposta inviata con status: {response.status_code}")
     return response
 
 @app.get("/")
@@ -146,7 +146,7 @@ async def genera_turni(request: Request):
                 dt_parsed = datetime.strptime(str(data_inizio_val)[:10], "%Y-%m-%d")
                 anno = dt_parsed.year
                 mese = dt_parsed.month
-            except:
+            except Exception:
                 anno = datetime.now().year
                 mese = datetime.now().month
         else:
@@ -206,7 +206,7 @@ async def genera_turni(request: Request):
                         is_custom_range = True
                         data_inizio_mese_str = d_start_dt.strftime("%Y-%m-%d")
                         data_fine_mese_str = d_end_dt.strftime("%Y-%m-%d")
-                except:
+                except Exception:
                     is_custom_range = False
 
             assenze_map = {}
@@ -261,65 +261,4 @@ async def genera_turni(request: Request):
                             "organizzazione_id": org_operatore,
                             "reparto_id": rep_operatore,
                             "utente_id": utente_id,
-                            "data_inizio": data_inizio_ts,
-                            "data_fine": data_fine_ts,
-                            "tipo_evento": turno_assegnato,
-                            "stato": "Generato da AI",
-                            "creato_da": autore_uuid,
-                            "modificato_da": autore_uuid,
-                            "note": "Generato automaticamente da Motore AI"
-                        })
-                        current_date_iter += timedelta(days=1)
-                else:
-                    for giorno in range(1, tot_giorni + 1):
-                        current_date_iter = datetime(anno, mese, giorno)
-                        data_str = current_date_iter.strftime("%Y-%m-%d")
-                        data_inizio_ts = f"{data_str} 00:00:00+00"
-                        data_fine_ts = f"{data_str} 23:59:59+00"
-
-                        if utente_id in assenze_map and data_str in assenze_map[utente_id]:
-                            continue
-
-                        if riposo_dom and current_date_iter.weekday() == 6:
-                            turno_assegnato = "R"
-                        elif riposo_dom:
-                            turno_assegnato = "M"
-                        else:
-                            turno_assegnato = sequenza_turni[indice_seq]
-                            indice_seq = (indice_seq + 1) % len(sequenza_turni)
-
-                        payload_inserimento.append({
-                            "organizzazione_id": org_operatore,
-                            "reparto_id": rep_operatore,
-                            "utente_id": utente_id,
-                            "data_inizio": data_inizio_ts,
-                            "data_fine": data_fine_ts,
-                            "tipo_evento": turno_assegnato,
-                            "stato": "Generato da AI",
-                            "creato_da": autore_uuid,
-                            "modificato_da": autore_uuid,
-                            "note": "Generato automaticamente da Motore AI"
-                        })
-
-            if not payload_inserimento:
-                return {
-                    "success": True,
-                    "message": "Nessun turno da generare (tutti i giorni coperti da assenze o intervallo vuoto)."
-                }
-
-            url_pianificazione = f"{SUPABASE_URL}/rest/v1/pianificazione"
-            resp_upsert = await client.post(url_pianificazione, headers=headers, json=payload_inserimento)
-
-            if resp_upsert.status_code not in [200, 201, 204]:
-                raise HTTPException(status_code=500, detail=f"Errore Supabase durante il salvataggio: {resp_upsert.text}")
-
-            modo_str = " (con domeniche di riposo garantite)" if riposo_dom else ""
-            return {
-                "success": True,
-                "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
-            }
-
-        except Exception as e:
-            if isinstance(e, HTTPException):
-                raise e
-            raise HTTPException(status_code=500, detail=f"Errore interno del motore: {str(e)}")
+                            "data_inizio": data_inizio
