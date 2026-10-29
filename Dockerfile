@@ -23,7 +23,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /var/www/html
 
-COPY . /var/www/html/
+# COPIA ESPLICITA: Forziamo l'inclusione di tutti i file necessari ignorando eventuali .dockerignore
+COPY requirements.txt /var/www/html/
+COPY main.py /var/www/html/
+COPY app/ /var/www/html/app/
+COPY *.php /var/www/html/
 
 # Installazione delle dipendenze Python nella root
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
