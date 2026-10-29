@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.2", 
+    version="3.3.3", 
     redirect_slashes=True
 )
 
@@ -35,7 +35,7 @@ supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_UR
 
 # 2. Database Turni
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
-TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
+TURNI_KEY = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
 
 # Importazione dell'agente di equità (se presente in app/)
@@ -345,11 +345,9 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Se c'è ferie, inseriamo la ferie ma NON facciamo avanzare l'indice della sequenza
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
-                            # NON incrementiamo indice_seq in modo che il turno lavorativo successivo rimanga intatto
                         else:
                             if riposo_dom and current_date_iter.weekday() == 6:
                                 turno_assegnato = "R"
@@ -378,7 +376,6 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Se c'è ferie, inseriamo la ferie SENZA incrementare l'indice della sequenza
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
@@ -563,8 +560,11 @@ def ricevi_booking(payload: BookingPayload, response: Response):
         return f"Errore DB - {str(e)}"
 
 
-@app.get("/preleva-accumulo-mattina")
-@app.post("/preleva-accumulo-mattina")
+# ==========================================
+# ROTTE ACCUMULO POWER AUTOMATE (GET + POST DUALI)
+# ==========================================
+
+@app.api_route("/preleva-accumulo-mattina", methods=["GET", "POST"])
 def preleva_accumulo_mattina():
     if not supabase_emoteca:
         raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
@@ -617,8 +617,7 @@ def preleva_accumulo_mattina():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/preleva-accumulo-pomeriggio")
-@app.post("/preleva-accumulo-pomeriggio")
+@app.api_route("/preleva-accumulo-pomeriggio", methods=["GET", "POST"])
 def preleva_accumulo_pomeriggio():
     if not supabase_emoteca:
         raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
@@ -671,8 +670,7 @@ def preleva_accumulo_pomeriggio():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/preleva-accumulo-notte")
-@app.post("/preleva-accumulo-notte")
+@app.api_route("/preleva-accumulo-notte", methods=["GET", "POST"])
 def preleva_accumulo_notte():
     if not supabase_emoteca:
         raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
