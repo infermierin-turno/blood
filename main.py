@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.4", 
+    version="3.3.5", 
     redirect_slashes=True
 )
 
@@ -35,7 +35,7 @@ supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_UR
 
 # 2. Database Turni
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
-TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_URL", "")).strip()
+TURNI_KEY = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
 
 # Importazione dell'agente di equità (se presente in app/)
@@ -561,11 +561,13 @@ def ricevi_booking(payload: BookingPayload, response: Response):
 
 
 # ==========================================
-# ROTTE ACCUMULO (COME STAMATTINA, STABILI E PULITE)
+# ROTTE ACCUMULO (CON E SENZA SLASH FINALE)
 # ==========================================
 
 @app.get("/preleva-accumulo-mattina")
 @app.post("/preleva-accumulo-mattina")
+@app.get("/preleva-accumulo-mattina/")
+@app.post("/preleva-accumulo-mattina/")
 def preleva_accumulo_mattina():
     if not supabase_emoteca:
         raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
@@ -620,6 +622,8 @@ def preleva_accumulo_mattina():
 
 @app.get("/preleva-accumulo-pomeriggio")
 @app.post("/preleva-accumulo-pomeriggio")
+@app.get("/preleva-accumulo-pomeriggio/")
+@app.post("/preleva-accumulo-pomeriggio/")
 def preleva_accumulo_pomeriggio():
     if not supabase_emoteca:
         raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
@@ -674,6 +678,8 @@ def preleva_accumulo_pomeriggio():
 
 @app.get("/preleva-accumulo-notte")
 @app.post("/preleva-accumulo-notte")
+@app.get("/preleva-accumulo-notte/")
+@app.post("/preleva-accumulo-notte/")
 def preleva_accumulo_notte():
     if not supabase_emoteca:
         raise HTTPException(status_code=500, detail="Supabase Emoteca non configurato.")
