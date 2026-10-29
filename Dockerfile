@@ -34,7 +34,7 @@ RUN chown -R www-data:www-data /var/www/html
 ENV PORT=10000
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Configurazione di Apache con ProxyPass per le rotte Python e il resto gestito da Apache/PHP
+# Configurazione di Apache con ProxyPass aggiornato per includere tutte le rotte Python / FastAPI
 RUN echo "<VirtualHost *:${PORT}>\n\
     DocumentRoot /var/www/html\n\
     ProxyPreserveHost On\n\
@@ -50,6 +50,20 @@ RUN echo "<VirtualHost *:${PORT}>\n\
     ProxyPassReverse /api-status http://127.0.0.1:8000/api-status\n\
     ProxyPass /shopify http://127.0.0.1:8000/shopify\n\
     ProxyPassReverse /shopify http://127.0.0.1:8000/shopify\n\
+    ProxyPass /salva-singolo-turno http://127.0.0.1:8000/salva-singolo-turno\n\
+    ProxyPassReverse /salva-singolo-turno http://127.0.0.1:8000/salva-singolo-turno\n\
+    ProxyPass /api/turni/salva-singolo http://127.0.0.1:8000/api/turni/salva-singolo\n\
+    ProxyPassReverse /api/turni/salva-singolo http://127.0.0.1:8000/api/turni/salva-singolo\n\
+    ProxyPass /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
+    ProxyPassReverse /ricevi-booking http://127.0.0.1:8000/ricevi-booking\n\
+    ProxyPass /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
+    ProxyPassReverse /analizza-scorte http://127.0.0.1:8000/analizza-scorte\n\
+    ProxyPass /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
+    ProxyPassReverse /preleva-accumulo-mattina http://127.0.0.1:8000/preleva-accumulo-mattina\n\
+    ProxyPass /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
+    ProxyPassReverse /preleva-accumulo-pomeriggio http://127.0.0.1:8000/preleva-accumulo-pomeriggio\n\
+    ProxyPass /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
+    ProxyPassReverse /preleva-accumulo-notte http://127.0.0.1:8000/preleva-accumulo-notte\n\
     <Directory /var/www/html>\n\
         AllowOverride All\n\
         Require all granted\n\
