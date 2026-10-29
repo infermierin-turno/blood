@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.7", 
+    version="3.3.8", 
     redirect_slashes=True
 )
 
@@ -35,7 +35,7 @@ supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_UR
 
 # 2. Database Turni
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
-TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_URL", "")).strip()
+TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
 
 # Importazione dell'agente di equità (se presente in app/)
@@ -55,7 +55,7 @@ def root():
     return {
         "status": "online",
         "service": "Emoteca & Turni Unified Engine",
-        "version": "3.3.7",
+        "version": "3.3.8",
         "endpoints_disponibili": [
             "/api-status",
             "/genera-turni",
@@ -361,6 +361,8 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
+                        # CORRETTO: Se c'è ferie, la inseriamo ma NON consumiamo il turno della sequenza,
+                        # così il giorno dopo la sequenza riprende esatta dove era rimasta!
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
@@ -392,6 +394,7 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
+                        # CORRETTO: Gestione ferie senza avanzare impropriamente l'indice della sequenza turni
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
