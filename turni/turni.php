@@ -69,8 +69,9 @@ function call_python_engine_genera($payload = []) {
     $error = curl_error($ch);
     curl_close($ch);
 
-    $_SESSION['debug_payload_inviato'] = json_encode($payload, JSON_PRETTY_PRINT);
-    $_SESSION['debug_risposta_ricevuta'] = "HTTP Code: $httpCode \nRisposta: " . $response;
+    // Debug esteso per tracciare esattamente URL, payload e risposta grezza
+    $_SESSION['debug_payload_inviato'] = "URL Chiamato: $url\n\nPayload:\n" . json_encode($payload, JSON_PRETTY_PRINT);
+    $_SESSION['debug_risposta_ricevuta'] = "HTTP Code: $httpCode \nErrore cURL: " . ($error ? $error : 'Nessuno') . "\nRisposta Grezza:\n" . $response;
 
     if ($error) {
         return ['success' => false, 'error' => "Errore cURL: " . $error];
