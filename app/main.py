@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
@@ -12,7 +13,7 @@ except ImportError:
     async def verifica_equita_e_suggerisci_sostituti(*args, **kwargs):
         return {"message": "Modulo equità non disponibile"}
 
-app = FastAPI(title="TurnoMed Python Engine", version="2.8.18")
+app = FastAPI(title="TurnoMed Python Engine", version="2.8.20")
 
 SUPABASE_URL = os.getenv("TURNI_SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("TURNI_SUPABASE_KEY", "")
@@ -38,6 +39,13 @@ class GenerazioneRequest(BaseModel):
     riposo_domenicale: Optional[bool] = False
     modalita_mattinieri: Optional[bool] = False
     ferie_approvate: Optional[List[Dict[str, Any]]] = []
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"[UVICORN] Richiesta in arrivo: {request.method} {request.url.path}")
+    response = await call_next(request)
+    print(f"[UVICORN] Risposta inviata con status: {response.status_code}")
+    return response
 
 @app.get("/")
 def read_root():
@@ -71,22 +79,17 @@ async def api_verifica_equita(
 @app.api_route("/genera-turni", methods=["GET", "POST"])
 @app.api_route("/app/genera-turni", methods=["GET", "POST"])
 async def genera_turni(request: Request):
-    # Supporto flessibile: leggiamo sia JSON pulito che eventuali form o richieste raw
     try:
         body_json = await request.json()
     except Exception:
         body_json = {}
 
-    # Se arrivano parametri come query o form di fallback
     if not body_json:
-        query_params = dict(request.query_params)
-        body_json = query_params
+        body_json = dict(request.query_params)
 
-    # Mappiamo sul modello Pydantic
     try:
         data = GenerazioneRequest(**body_json)
-    except Exception as validation_err:
-        # Se i campi non sono rigorosi ma passiamo dizionari grezzi, procediamo lo stesso estraendo dal dizionario
+    except Exception:
         class DummyData:
             pass
         data = DummyData()
