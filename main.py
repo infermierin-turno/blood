@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.12", 
+    version="3.3.14", 
     redirect_slashes=True
 )
 
@@ -35,7 +35,7 @@ supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_UR
 
 # 2. Database Turni
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
-TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
+TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_URL", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
 
 # Importazione dell'agente di equità (se presente in app/)
@@ -55,7 +55,7 @@ def root():
     return {
         "status": "online",
         "service": "Emoteca & Turni Unified Engine",
-        "version": "3.3.12",
+        "version": "3.3.14",
         "endpoints_disponibili": [
             "/api-status",
             "/genera-turni",
@@ -319,21 +319,28 @@ async def genera_turni(request: Request):
                 except Exception:
                     is_custom_range = False
 
-            # MAPPIAMO ESCLUSIVAMENTE LE FERIE/ASSENZE APPROVATE (stato eq. Approvato)
+            # LETTURA CORRETTA DALLA TABELLA "assenze" (proprio come fa turni.php)
             assenze_map = {}
             if getattr(data, "rispetta_ferie", True) or getattr(data, "rispetta_ferie_approvate", True):
-                url_assenze = f"{TURNI_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
+                url_assenze = f"{TURNI_URL}/rest/v1/assenze?data_inizio=lte.{data_fine_mese_str}&data_fine=gte.{data_inizio_mese_str}&select=utente_id,data_inizio,data_fine"
                 resp_assenze = await client.get(url_assenze, headers=headers)
                 if resp_assenze.status_code == 200:
                     for row in resp_assenze.json():
                         u_id = row.get("utente_id")
-                        d_str = str(row.get("data_inizio", ""))[:10]
-                        t_ev = row.get("tipo_evento")
-                        # Filtriamo per assicurarci che sia effettivamente una ferie o evento approvato non generato da IA
-                        if u_id and d_str and t_ev and t_ev != "Generato da AI":
-                            if u_id not in assenze_map:
-                                assenze_map[u_id] = {}
-                            assenze_map[u_id][d_str] = t_ev
+                        d_in = str(row.get("data_inizio", ""))[:10]
+                        d_fi = str(row.get("data_fine") or row.get("data_inizio", ""))[:10]
+                        
+                        if u_id and d_in:
+                            try:
+                                cur_t = datetime.strptime(d_in, "%Y-%m-%d")
+                                end_t = datetime.strptime(d_fi, "%Y-%m-%d")
+                                if u_id not in assenze_map:
+                                    assenze_map[u_id] = set()
+                                while cur_t <= end_t:
+                                    assenze_map[u_id].add(cur_t.strftime("%Y-%m-%d"))
+                                    cur_t += timedelta(days=1)
+                            except Exception:
+                                pass
 
             payload_inserimento = []
 
@@ -363,7 +370,7 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # SE ESISTE UNA FERIA/ASSENZA APPROVATA IN QUESTO GIORNO, NON GENERIAMO NESSUN TURNO STANDARD
+                        # SE ESISTE UNA FERIA NELLA TABELLA ASSENZE, SALTIAMO IL GIORNO
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             current_date_iter += timedelta(days=1)
                             continue
@@ -396,7 +403,7 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # SE ESISTE UNA FERIA/ASSENZA APPROVATA IN QUESTO GIORNO, NON GENERIAMO NESSUN TURNO STANDARD
+                        # SE ESISTE UNA FERIA NELLA TABELLA ASSENZE, SALTIAMO IL GIORNO
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             continue
 
@@ -433,7 +440,7 @@ async def genera_turni(request: Request):
             if resp_upsert.status_code not in [200, 201, 204]:
                 raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
-            modo_str = " (con ferie protette e nessun turno sovrapposto)"
+            modo_str = " (con sincronizzazione ferie dalla tabella assenze)"
             return {
                 "success": True,
                 "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
