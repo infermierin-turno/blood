@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.0", 
+    version="3.3.1", 
     redirect_slashes=True
 )
 
@@ -130,7 +130,6 @@ async def salva_singolo_turno(payload: ModificaTurnoRequest):
     }
 
     async with httpx.AsyncClient() as client:
-        # Se viene passato un ID specifico, facciamo un update, altrimenti un upsert/insert
         url = f"{TURNI_URL}/rest/v1/pianificazione"
         if payload.id:
             url_edit = f"{url}?id=eq.{payload.id}"
@@ -220,7 +219,6 @@ async def genera_turni(request: Request):
     t_iniziale = getattr(data, "turno_iniziale", None) or getattr(data, "turno_partenza", None)
     riposo_dom = bool(getattr(data, "riposo_domenicale", False) or getattr(data, "modalita_mattinieri", False))
     
-    # Gestione rigorosa della sequenza turni ricevuta dal frontend
     seq_raw = getattr(data, "sequenza_turni", ["M", "P", "N", "S", "R"])
     sequenza_turni = seq_raw if (seq_raw and isinstance(seq_raw, list) and len(seq_raw) > 0) else ["M", "P", "N", "S", "R"]
 
@@ -335,7 +333,6 @@ async def genera_turni(request: Request):
                 if not utente_id:
                     continue
                 
-                # Rispetto rigoroso del turno iniziale/partenza fornito o offset basato sulla sequenza esatta
                 if t_iniziale and t_iniziale in sequenza_turni:
                     indice_seq = sequenza_turni.index(t_iniziale)
                 else:
@@ -348,15 +345,17 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
+                        # CORRETTO: Se c'è ferie/assenza, registriamo l'evento (es. 'F') ma la sequenza avanza regolarmente senza saltare turni futuri
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
-                            current_date_iter += timedelta(days=1)
-                            continue
-
-                        if riposo_dom and current_date_iter.weekday() == 6:
-                            turno_assegnato = "R"
+                            turno_assegnato = assenze_map[utente_id][data_str]
+                            note_turno = "Ferie/Assenza approvata rispettata"
                         else:
-                            turno_assegnato = sequenza_turni[indice_seq]
-                            indice_seq = (indice_seq + 1) % len(sequenza_turni)
+                            if riposo_dom and current_date_iter.weekday() == 6:
+                                turno_assegnato = "R"
+                            else:
+                                turno_assegnato = sequenza_turni[indice_seq]
+                                indice_seq = (indice_seq + 1) % len(sequenza_turni)
+                            note_turno = "Generato rigorosamente da sequenza personalizzata"
 
                         payload_inserimento.append({
                             "organizzazione_id": org_operatore,
@@ -368,7 +367,7 @@ async def genera_turni(request: Request):
                             "stato": "Generato da AI",
                             "creato_da": autore_uuid,
                             "modificato_da": autore_uuid,
-                            "note": "Generato rigorosamente da sequenza personalizzata"
+                            "note": note_turno
                         })
                         current_date_iter += timedelta(days=1)
                 else:
@@ -378,14 +377,17 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
+                        # CORRETTO: Gestione ferie senza alterare il passo del ciclo della sequenza
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
-                            continue
-
-                        if riposo_dom and current_date_iter.weekday() == 6:
-                            turno_assegnato = "R"
+                            turno_assegnato = assenze_map[utente_id][data_str]
+                            note_turno = "Ferie/Assenza approvata rispettata"
                         else:
-                            turno_assegnato = sequenza_turni[indice_seq]
-                            indice_seq = (indice_seq + 1) % len(sequenza_turni)
+                            if riposo_dom and current_date_iter.weekday() == 6:
+                                turno_assegnato = "R"
+                            else:
+                                turno_assegnato = sequenza_turni[indice_seq]
+                                indice_seq = (indice_seq + 1) % len(sequenza_turni)
+                            note_turno = "Generato rigorosamente da sequenza personalizzata"
 
                         payload_inserimento.append({
                             "organizzazione_id": org_operatore,
@@ -397,7 +399,7 @@ async def genera_turni(request: Request):
                             "stato": "Generato da AI",
                             "creato_da": autore_uuid,
                             "modificato_da": autore_uuid,
-                            "note": "Generato rigorosamente da sequenza personalizzata"
+                            "note": note_turno
                         })
 
             if not payload_inserimento:
@@ -412,7 +414,7 @@ async def genera_turni(request: Request):
             if resp_upsert.status_code not in [200, 201, 204]:
                 raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
-            modo_str = " (con rispetto rigoroso della sequenza e domeniche di riposo)" if riposo_dom else " (rispettando la sequenza scelta)"
+            modo_str = " (con ferie inserite senza alterare la sequenza)"
             return {
                 "success": True,
                 "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
