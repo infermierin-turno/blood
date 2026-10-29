@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.1", 
+    version="3.3.2", 
     redirect_slashes=True
 )
 
@@ -345,10 +345,11 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Se c'è ferie/assenza, registriamo l'evento (es. 'F') ma la sequenza avanza regolarmente senza saltare turni futuri
+                        # CORRETTO: Se c'è ferie, inseriamo la ferie ma NON facciamo avanzare l'indice della sequenza
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
-                            note_turno = "Ferie/Assenza approvata rispettata"
+                            note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
+                            # NON incrementiamo indice_seq in modo che il turno lavorativo successivo rimanga intatto
                         else:
                             if riposo_dom and current_date_iter.weekday() == 6:
                                 turno_assegnato = "R"
@@ -377,10 +378,10 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Gestione ferie senza alterare il passo del ciclo della sequenza
+                        # CORRETTO: Se c'è ferie, inseriamo la ferie SENZA incrementare l'indice della sequenza
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
-                            note_turno = "Ferie/Assenza approvata rispettata"
+                            note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
                         else:
                             if riposo_dom and current_date_iter.weekday() == 6:
                                 turno_assegnato = "R"
@@ -414,7 +415,7 @@ async def genera_turni(request: Request):
             if resp_upsert.status_code not in [200, 201, 204]:
                 raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
-            modo_str = " (con ferie inserite senza alterare la sequenza)"
+            modo_str = " (con ferie gestite senza scartare i turni della sequenza)"
             return {
                 "success": True,
                 "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
