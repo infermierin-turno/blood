@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.3.9", 
+    version="3.3.10", 
     redirect_slashes=True
 )
 
@@ -55,7 +55,7 @@ def root():
     return {
         "status": "online",
         "service": "Emoteca & Turni Unified Engine",
-        "version": "3.3.9",
+        "version": "3.3.10",
         "endpoints_disponibili": [
             "/api-status",
             "/genera-turni",
@@ -361,10 +361,23 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Se c'è ferie, inseriamo SOLO la ferie ed evitiamo di sovrapporre il turno di sequenza
+                        # SE ESISTE UNA FERIA IN QUESTO GIORNO, SCRIVIAMO SOLO QUELLA E NON AGGIUNGIAMO ALCUN TURNO DI SEQUENZA
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
+                            
+                            payload_inserimento.append({
+                                "organizzazione_id": org_operatore,
+                                "reparto_id": rep_operatore,
+                                "utente_id": utente_id,
+                                "data_inizio": data_inizio_ts,
+                                "data_fine": data_fine_ts,
+                                "tipo_evento": turno_assegnato,
+                                "stato": "Approvato",
+                                "creato_da": autore_uuid,
+                                "modificato_da": autore_uuid,
+                                "note": note_turno
+                            })
                         else:
                             if riposo_dom and current_date_iter.weekday() == 6:
                                 turno_assegnato = "R"
@@ -393,10 +406,23 @@ async def genera_turni(request: Request):
                         data_inizio_ts = f"{data_str} 00:00:00+00"
                         data_fine_ts = f"{data_str} 23:59:59+00"
 
-                        # CORRETTO: Se c'è ferie, non scriviamo il turno standard, lasciando pulita la cella con la sola ferie
+                        # SE ESISTE UNA FERIA IN QUESTO GIORNO, SCRIVIAMO SOLO QUELLA E NON AGGIUNGIAMO ALCUN TURNO DI SEQUENZA
                         if utente_id in assenze_map and data_str in assenze_map[utente_id]:
                             turno_assegnato = assenze_map[utente_id][data_str]
                             note_turno = "Ferie/Assenza inserita senza alterare la sequenza"
+                            
+                            payload_inserimento.append({
+                                "organizzazione_id": org_operatore,
+                                "reparto_id": rep_operatore,
+                                "utente_id": utente_id,
+                                "data_inizio": data_inizio_ts,
+                                "data_fine": data_fine_ts,
+                                "tipo_evento": turno_assegnato,
+                                "stato": "Approvato",
+                                "creato_da": autore_uuid,
+                                "modificato_da": autore_uuid,
+                                "note": note_turno
+                            })
                         else:
                             if riposo_dom and current_date_iter.weekday() == 6:
                                 turno_assegnato = "R"
@@ -430,7 +456,7 @@ async def genera_turni(request: Request):
             if resp_upsert.status_code not in [200, 201, 204]:
                 raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
-            modo_str = " (con ferie gestite senza sovrapposizioni e sequenza protetta)"
+            modo_str = " (con ferie gestite pulite e sequenza isolata)"
             return {
                 "success": True,
                 "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
