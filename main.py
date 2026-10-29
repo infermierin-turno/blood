@@ -150,9 +150,8 @@ async def genera_turni(request: Request):
     if not TURNI_URL or not TURNI_KEY:
         raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nelle variabili d'ambiente di Render.")
 
-    headers = {
+headers = {
         "apikey": TURNI_KEY,
-        "Authorization": f"Bearer {TURNI_KEY}",
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,on_conflict=utente_id,data_inizio"
     }
