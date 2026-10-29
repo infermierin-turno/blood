@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import os
-re = __import__('re')
+import re
 from fastapi import FastAPI, HTTPException, Response, Request, Query
 from pydantic import BaseModel, ConfigDict
 import httpx
@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.2.2", 
+    version="3.2.3", 
     redirect_slashes=True
 )
 
@@ -33,7 +33,7 @@ EMOTECA_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 EMOTECA_KEY = os.getenv("SUPABASE_KEY", "").strip()
 supabase_emoteca: Client = create_client(EMOTECA_URL, EMOTECA_KEY) if EMOTECA_URL and EMOTECA_KEY else None
 
-# 2. Database Turni (Legge in modo sicuro dalle variabili dedicate su Render)
+# 2. Database Turni
 TURNI_URL = (os.getenv("TURNI_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")).strip().rstrip("/")
 TURNI_KEY = (os.getenv("TURNI_SUPABASE_KEY") or os.getenv("SUPABASE_KEY", "")).strip()
 supabase_turni: Client = create_client(TURNI_URL, TURNI_KEY) if TURNI_URL and TURNI_KEY else None
@@ -150,7 +150,8 @@ async def genera_turni(request: Request):
     if not TURNI_URL or not TURNI_KEY:
         raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nelle variabili d'ambiente di Render.")
 
-headers = {
+    # Header corretto per le chiavi segrete sb_secret_ (senza Authorization Bearer)
+    headers = {
         "apikey": TURNI_KEY,
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,on_conflict=utente_id,data_inizio"
