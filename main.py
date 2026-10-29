@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.2.3", 
+    version="3.2.4", 
     redirect_slashes=True
 )
 
@@ -150,9 +150,10 @@ async def genera_turni(request: Request):
     if not TURNI_URL or not TURNI_KEY:
         raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nelle variabili d'ambiente di Render.")
 
-    # Header corretto per le chiavi segrete sb_secret_ (senza Authorization Bearer)
+    # Header corretto per le chiavi di Supabase
     headers = {
         "apikey": TURNI_KEY,
+        "Authorization": f"Bearer {TURNI_KEY}",
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,on_conflict=utente_id,data_inizio"
     }
@@ -207,12 +208,18 @@ async def genera_turni(request: Request):
             operatori = []
             if target_ids:
                 for o in tutti_operatori:
-                    o_id_str = str(o.get('id') or o.get('utente_id'))
+                    o_id_str = str(
+                        o.get('id') or 
+                        o.get('utente_id') or 
+                        o.get('user_id') or 
+                        o.get('uuid') or 
+                        o.get('dipendente_id') or ''
+                    )
                     if o_id_str in [str(t) for t in target_ids]:
                         operatori.append(o)
             
             if not operatori and rep_id and str(rep_id).strip() != "" and str(rep_id).lower() != "null":
-                operatori = [o for o in tutti_operatori if str(o.get('reparto_id')) == str(rep_id)]
+                operatori = [o for o in tutti_operatori if str(o.get('reparto_id') or o.get('reparto')) == str(rep_id)]
 
             if not operatori:
                 operatori = tutti_operatori
@@ -262,8 +269,14 @@ async def genera_turni(request: Request):
             payload_inserimento = []
 
             for index_op, op in enumerate(operatori):
-                utente_id = op.get("id") or op.get("utente_id")
-                rep_operatore = op.get("reparto_id") or rep_id
+                utente_id = (
+                    op.get("id") or 
+                    op.get("utente_id") or 
+                    op.get("user_id") or 
+                    op.get("uuid") or 
+                    op.get("dipendente_id")
+                )
+                rep_operatore = op.get("reparto_id") or op.get("reparto") or rep_id
                 org_operatore = op.get("organizzazione_id") or org_id
 
                 if not utente_id:
