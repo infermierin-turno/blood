@@ -7,17 +7,27 @@ from pydantic import BaseModel
 from supabase import Client, create_client
 from typing import List, Optional, Union, Any
 
-# Importiamo l'app di Shopify dal file separato
+# Importiamo l'app di Shopify dal file separato (se necessario)
 from main_shopify import app as shopify_app
 
 app = FastAPI(
-    title="Emoteca & Shopify Backend Engine", 
-    version="2.9.5", 
+    title="Emoteca & Turni Unified Engine", 
+    version="3.0.1", 
     redirect_slashes=True
 )
 
 # Montiamo l'applicazione Shopify sotto il prefisso /shopify
 app.mount("/shopify", shopify_app)
+
+# Integrazione sicura del motore dei turni dalla cartella 'app'
+try:
+    from app.main import app as turni_app
+    app.mount("/turni", turni_app)
+    print("DEBUG: Motore turni caricato e montato con successo da /app")
+except ImportError as e:
+    print(f"DEBUG: Impossibile importare il modulo dei turni da app.main: {e}")
+except Exception as e:
+    print(f"DEBUG: Errore imprevisto durante il caricamento dei turni: {e}")
 
 # Leggiamo le chiavi in modo sicuro dalle variabili d'ambiente di Render
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -28,7 +38,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.get("/api-status")
 def home():
-    return {"status": "online", "message": "Shopify Coffee Agent & Emoteca Backend online"}
+    return {"status": "online", "message": "Emoteca & Turni Backend online"}
 
 
 @app.get("/debug-rotte")
