@@ -16,7 +16,7 @@ except ImportError:
 
 app = FastAPI(
     title="Emoteca & Turni Unified Engine", 
-    version="3.2.4", 
+    version="3.3.0", 
     redirect_slashes=True
 )
 
@@ -67,7 +67,7 @@ def debug_rotte():
 
 
 # ==========================================
-# SEZIONE MOTORE TURNI (Generazione AI)
+# SEZIONE MOTORE TURNI & GESTIONE MODALE
 # ==========================================
 
 class GenerazioneRequest(BaseModel):
@@ -91,6 +91,58 @@ class GenerazioneRequest(BaseModel):
     riposo_domenicale: Optional[bool] = False
     modalita_mattinieri: Optional[bool] = False
     ferie_approvate: Optional[List[Dict[str, Any]]] = []
+
+class ModificaTurnoRequest(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    id: Optional[str] = None
+    organizzazione_id: Optional[str] = None
+    reparto_id: Optional[str] = None
+    utente_id: Optional[str] = None
+    data_inizio: Optional[str] = None
+    data_fine: Optional[str] = None
+    tipo_evento: Optional[str] = None
+    stato: Optional[str] = "Confermato"
+    note: Optional[str] = "Inserito/Modificato da Modale"
+
+@app.post("/api/turni/salva-singolo")
+@app.post("/salva-singolo-turno")
+async def salva_singolo_turno(payload: ModificaTurnoRequest):
+    """Endpoint dedicato alla modale per aggiungere o modificare un singolo turno nel DB Turni"""
+    if not TURNI_URL or not TURNI_KEY:
+        raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante.")
+
+    headers = {
+        "apikey": TURNI_KEY,
+        "Authorization": f"Bearer {TURNI_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+
+    dati_turno = {
+        "organizzazione_id": payload.organizzazione_id,
+        "reparto_id": payload.reparto_id,
+        "utente_id": payload.utente_id,
+        "data_inizio": payload.data_inizio,
+        "data_fine": payload.data_fine or payload.data_inizio,
+        "tipo_evento": payload.tipo_evento,
+        "stato": payload.stato,
+        "note": payload.note
+    }
+
+    async with httpx.AsyncClient() as client:
+        # Se viene passato un ID specifico, facciamo un update, altrimenti un upsert/insert
+        url = f"{TURNI_URL}/rest/v1/pianificazione"
+        if payload.id:
+            url_edit = f"{url}?id=eq.{payload.id}"
+            resp = await client.patch(url_edit, headers=headers, json=dati_turno)
+        else:
+            resp = await client.post(url, headers=headers, json=[dati_turno])
+
+        if resp.status_code not in [200, 201, 204]:
+            raise HTTPException(status_code=500, detail=f"Errore salvataggio turno su Supabase: {resp.text}")
+
+        return {"success": True, "message": "Turno salvato con successo tramite modale."}
+
 
 @app.get("/api/equita/reperibilita")
 async def api_verifica_equita(
@@ -139,7 +191,7 @@ async def genera_turni(request: Request):
         data.utente_id = body_json.get("utente_id")
         data.operatori_ids = body_json.get("operatori_ids", [])
         data.utenti_ids = body_json.get("utenti_ids", [])
-        data.turno_iniziale = body_json.get("turno_iniziale")
+        data.turno_iniziale = body_json.get("turno_iniziale") or body_json.get("turno_partenza")
         data.turno_partenza = body_json.get("turno_partenza")
         data.sequenza_turni = body_json.get("sequenza_turni", ["M", "P", "N", "S", "R"])
         data.rispetta_ferie = bool(body_json.get("rispetta_ferie", True))
@@ -150,7 +202,6 @@ async def genera_turni(request: Request):
     if not TURNI_URL or not TURNI_KEY:
         raise HTTPException(status_code=500, detail="Configurazione Supabase Turni mancante nelle variabili d'ambiente di Render.")
 
-    # Header corretto per le chiavi di Supabase
     headers = {
         "apikey": TURNI_KEY,
         "Authorization": f"Bearer {TURNI_KEY}",
@@ -168,8 +219,10 @@ async def genera_turni(request: Request):
 
     t_iniziale = getattr(data, "turno_iniziale", None) or getattr(data, "turno_partenza", None)
     riposo_dom = bool(getattr(data, "riposo_domenicale", False) or getattr(data, "modalita_mattinieri", False))
+    
+    # Gestione rigorosa della sequenza turni ricevuta dal frontend
     seq_raw = getattr(data, "sequenza_turni", ["M", "P", "N", "S", "R"])
-    sequenza_turni = seq_raw if (seq_raw and len(seq_raw) > 0) else ["M", "P", "N", "S", "R"]
+    sequenza_turni = seq_raw if (seq_raw and isinstance(seq_raw, list) and len(seq_raw) > 0) else ["M", "P", "N", "S", "R"]
 
     autore_uuid = op_id if op_id else (target_ids[0] if target_ids else None)
 
@@ -282,10 +335,11 @@ async def genera_turni(request: Request):
                 if not utente_id:
                     continue
                 
+                # Rispetto rigoroso del turno iniziale/partenza fornito o offset basato sulla sequenza esatta
                 if t_iniziale and t_iniziale in sequenza_turni:
                     indice_seq = sequenza_turni.index(t_iniziale)
                 else:
-                    indice_seq = (index_op * 2) % len(sequenza_turni)
+                    indice_seq = (index_op * 1) % len(sequenza_turni)
 
                 if is_custom_range and d_start_dt and d_end_dt:
                     current_date_iter = d_start_dt
@@ -300,8 +354,6 @@ async def genera_turni(request: Request):
 
                         if riposo_dom and current_date_iter.weekday() == 6:
                             turno_assegnato = "R"
-                        elif riposo_dom:
-                            turno_assegnato = "M"
                         else:
                             turno_assegnato = sequenza_turni[indice_seq]
                             indice_seq = (indice_seq + 1) % len(sequenza_turni)
@@ -316,7 +368,7 @@ async def genera_turni(request: Request):
                             "stato": "Generato da AI",
                             "creato_da": autore_uuid,
                             "modificato_da": autore_uuid,
-                            "note": "Generato automaticamente da Motore AI"
+                            "note": "Generato rigorosamente da sequenza personalizzata"
                         })
                         current_date_iter += timedelta(days=1)
                 else:
@@ -331,8 +383,6 @@ async def genera_turni(request: Request):
 
                         if riposo_dom and current_date_iter.weekday() == 6:
                             turno_assegnato = "R"
-                        elif riposo_dom:
-                            turno_assegnato = "M"
                         else:
                             turno_assegnato = sequenza_turni[indice_seq]
                             indice_seq = (indice_seq + 1) % len(sequenza_turni)
@@ -347,7 +397,7 @@ async def genera_turni(request: Request):
                             "stato": "Generato da AI",
                             "creato_da": autore_uuid,
                             "modificato_da": autore_uuid,
-                            "note": "Generato automaticamente da Motore AI"
+                            "note": "Generato rigorosamente da sequenza personalizzata"
                         })
 
             if not payload_inserimento:
@@ -362,7 +412,7 @@ async def genera_turni(request: Request):
             if resp_upsert.status_code not in [200, 201, 204]:
                 raise HTTPException(status_code=500, detail=f"Errore Supabase Turni salvataggio: {resp_upsert.text}")
 
-            modo_str = " (con domeniche di riposo garantite)" if riposo_dom else ""
+            modo_str = " (con rispetto rigoroso della sequenza e domeniche di riposo)" if riposo_dom else " (rispettando la sequenza scelta)"
             return {
                 "success": True,
                 "message": f"Turni generati con successo per {len(operatori)} operatore/i{modo_str}"
