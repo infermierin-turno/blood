@@ -6,7 +6,12 @@ import httpx
 from typing import Optional, List, Dict, Any
 
 # Importazione dell'agente di equità e suggerimento sostituti per la reperibilità
-from app.engine_rep_equita import verifica_equita_e_suggerisci_sostituti
+try:
+    from app.engine_rep_equita import verifica_equita_e_suggerisci_sostituti
+except ImportError:
+    # Fallback nel caso in cui il modulo venga eseguito da contesti differenti
+    async def verifica_equita_e_suggerisci_sostituti(*args, **kwargs):
+        return {"message": "Modulo equità non disponibile"}
 
 app = FastAPI(title="TurnoMed Python Engine", version="2.8.17")
 
@@ -39,6 +44,11 @@ class GenerazioneRequest(BaseModel):
 def read_root():
     return {"status": "online", "message": "TurnoMed Python Engine attivo!"}
 
+@app.get("/debug-rotte-attive")
+def debug_rotte_attive():
+    routes = [{"path": route.path, "name": route.name} for route in app.routes]
+    return {"status": "ok", "totale_rotte": len(routes), "rotte": routes}
+
 @app.get("/api/equita/reperibilita")
 async def api_verifica_equita(
     utente_id: str = Query(..., description="ID del dipendente"),
@@ -47,10 +57,6 @@ async def api_verifica_equita(
     tipo_reperibilita: str = Query("REP", description="Tipo o fascia di reperibilità"),
     organizzazione_id: str = Query(None, description="ID organizzazione opzionale")
 ):
-    """
-    Endpoint per il controllo semestrale dell'equità di reperibilità 
-    e il suggerimento intelligente dei sostituti basato su squadra e turni complementari.
-    """
     try:
         risultato = await verifica_equita_e_suggerisci_sostituti(
             utente_id=utente_id,
@@ -80,7 +86,6 @@ async def genera_turni(data: GenerazioneRequest):
     rep_id = data.reparto_id
     op_id = data.operatore_id or data.utente_id
     
-    # Raccogliamo gli ID target passati dalla modale PHP (operatori_ids o utenti_ids)
     target_ids = data.operatori_ids or data.utenti_ids or []
     if op_id and op_id not in target_ids:
         target_ids.append(op_id)
@@ -109,7 +114,6 @@ async def genera_turni(data: GenerazioneRequest):
 
     async with httpx.AsyncClient() as client:
         try:
-            # Interrogazione pulita della tabella staging_utenti
             url_all = f"{SUPABASE_URL}/rest/v1/staging_utenti?select=*"
             resp_all = await client.get(url_all, headers=headers)
             
@@ -160,7 +164,6 @@ async def genera_turni(data: GenerazioneRequest):
                 except:
                     is_custom_range = False
 
-            # Recupero ferie/assenze approvate se richiesto
             assenze_map = {}
             if data.rispetta_ferie or data.rispetta_ferie_approvate:
                 url_assenze = f"{SUPABASE_URL}/rest/v1/pianificazione?data_inizio=gte.{data_inizio_mese_str} 00:00:00&data_inizio=lte.{data_fine_mese_str} 23:59:59&stato=eq.Approvato&select=utente_id,data_inizio,tipo_evento"
