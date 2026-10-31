@@ -116,14 +116,12 @@ if (!empty($reparto_selezionato_filtro)) {
 $messaggio = '';
 $tipo_alert = '';
 
-// Gestione eliminazione collaboratore corretta
+// Gestione eliminazione collaboratore
 if (isset($_GET['elimina'])) {
     $id_da_eliminare = trim($_GET['elimina']);
     
-    // Eseguiamo la richiesta di eliminazione su Supabase
     $respDel = supabase_request('staging_utenti', "?id=eq." . urlencode($id_da_eliminare), 'DELETE');
     
-    // Controlliamo se Supabase ha restituito un errore (es. vincoli di chiave esterna con turni o altre tabelle)
     if (!empty($respDel) && isset($respDel['code'])) {
         $messaggio = "Impossibile eliminare il collaboratore (Errore " . $respDel['code'] . "): " . ($respDel['message'] ?? 'Verifica che non ci siano turni o dati associati.');
         $tipo_alert = "danger";
@@ -153,7 +151,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && ($_POST[
     $squadraCollab = trim($_POST['squadra'] ?? '');
     
     $repartoDestinazione = trim($_POST['reparto_id'] ?? $reparto_selezionato_filtro);
-    organizzazioneDestinazione = $org_id_utente;
     $organizzazioneDestinazione = $org_id_utente;
 
     if (!in_array($repartoDestinazione, $id_reparti_consentiti)) {
