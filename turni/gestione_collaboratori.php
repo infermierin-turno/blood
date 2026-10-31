@@ -116,20 +116,23 @@ if (!empty($reparto_selezionato_filtro)) {
 $messaggio = '';
 $tipo_alert = '';
 
-// Gestione eliminazione collaboratore (con pulizia preventiva di tutti i vincoli FK su pianificazione)
+// Gestione eliminazione collaboratore (con pulizia preventiva di tutti i vincoli FK correlati)
 if (isset($_GET['elimina'])) {
     $id_da_eliminare = trim($_GET['elimina']);
     
-    // 1. Puliamo/rimuoviamo tutti i riferimenti nella tabella pianificazione (utente_id, creato_da, modificato_da)
+    // 1. Puliamo/rimuoviamo tutti i riferimenti in tutte le tabelle collegate
     supabase_request('pianificazione', "?utente_id=eq." . urlencode($id_da_eliminare), 'DELETE');
     supabase_request('pianificazione', "?creato_da=eq." . urlencode($id_da_eliminare), 'PATCH', ['creato_da' => null]);
     supabase_request('pianificazione', "?modificato_da=eq." . urlencode($id_da_eliminare), 'PATCH', ['modificato_da' => null]);
+    supabase_request('assenze', "?utente_id=eq." . urlencode($id_da_eliminare), 'DELETE');
+    supabase_request('reperibilita', "?utente_id=eq." . urlencode($id_da_eliminare), 'DELETE');
+    supabase_request('preferenze', "?utente_id=eq." . urlencode($id_da_eliminare), 'DELETE');
     
     // 2. Eseguiamo l'eliminazione del collaboratore
     $respDel = supabase_request('staging_utenti', "?id=eq." . urlencode($id_da_eliminare), 'DELETE');
     
     if (!empty($respDel) && isset($respDel['code'])) {
-        $messaggio = "Impossibile eliminare il collaboratore (Errore " . $respDel['code'] . "): " . ($respDel['message'] ?? 'Verifica che non ci siano turni o dati associati.');
+        $messaggio = "Impossibile eliminare il collaboratore (Errore " . $respDel['code'] . "): " . ($respDel['message'] ?? 'Verifica che non ci siano dati associati.');
         $tipo_alert = "danger";
     } else {
         header("Location: gestione_collaboratori.php?reparto_filtro=" . urlencode($reparto_selezionato_filtro) . "&msg=eliminato");
