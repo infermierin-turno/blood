@@ -116,12 +116,13 @@ if (!empty($reparto_selezionato_filtro)) {
 $messaggio = '';
 $tipo_alert = '';
 
-// Gestione eliminazione collaboratore (con pulizia preventiva dei vincoli di chiave esterna)
+// Gestione eliminazione collaboratore (con pulizia preventiva dei vincoli FK su pianificazione)
 if (isset($_GET['elimina'])) {
     $id_da_eliminare = trim($_GET['elimina']);
     
-    // 1. Rimuoviamo/scolleghiamo i riferimenti nella tabella pianificazione (creato_da) per evitare violazioni FK
+    // 1. Rimuoviamo/scolleghiamo i riferimenti nella tabella pianificazione (creato_da e modificato_da)
     supabase_request('pianificazione', "?creato_da=eq." . urlencode($id_da_eliminare), 'PATCH', ['creato_da' => null]);
+    supabase_request('pianificazione', "?modificato_da=eq." . urlencode($id_da_eliminare), 'PATCH', ['modificato_da' => null]);
     
     // 2. Eseguiamo l'eliminazione del collaboratore
     $respDel = supabase_request('staging_utenti', "?id=eq." . urlencode($id_da_eliminare), 'DELETE');
