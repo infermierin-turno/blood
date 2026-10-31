@@ -51,16 +51,13 @@ if ($is_capo_personale) {
         }
     }
 } else {
-    // Il Coordinatore vede SOLO i reparti a lui assegnati (es. i suoi due reparti)
-    // Cerchiamo nella tabella di associazione o dal campo reparto_id / tabelle di coordinamento
+    // Il Coordinatore vede SOLO i reparti a lui assegnati
     $reparti_assegnati_ids = [];
     
-    // 1. Controllo se l'utente ha un reparto principale diretto
     if (!empty($reparto_id_utente)) {
         $reparti_assegnati_ids[] = $reparto_id_utente;
     }
     
-    // 2. Controllo se esiste una tabella di legame coordinatori-reparti o se è associato ad altri reparti
     $res_coord_rep = supabase_request('coordinatori_reparti', "?utente_id=eq.$utente_id&select=reparto_id");
     if (!empty($res_coord_rep) && is_array($res_coord_rep) && !isset($res_coord_rep['code'])) {
         foreach ($res_coord_rep as $cr) {
@@ -70,9 +67,7 @@ if ($is_capo_personale) {
         }
     }
 
-    // Se per qualche motivo ha ruoli di coordinatore ma nessun legame esplicito, fallback sul suo reparto_id o su tutti i reparti della sua org se gestisce tutto il plesso
     if (empty($reparti_assegnati_ids) && !empty($org_id_utente)) {
-        // Fallback: se è coordinatore ma non ha record specifici, gli mostriamo i reparti della sua organizzazione o verifichiamo
         $res_rep_fallback = supabase_request('reparti', "?organizzazione_id=eq.$org_id_utente&select=id,nome_reparto&order=nome_reparto.asc");
         if (!empty($res_rep_fallback) && is_array($res_rep_fallback) && !isset($res_rep_fallback['code'])) {
             foreach($res_rep_fallback as $rf) {
@@ -81,7 +76,6 @@ if ($is_capo_personale) {
         }
     }
 
-    // Carichiamo i dettagli dei reparti consentiti al coordinatore
     if (!empty($reparti_assegnati_ids)) {
         $in_list = implode(',', $reparti_assegnati_ids);
         $res_rep_coord = supabase_request('reparti', "?id=in.($in_list)&select=id,nome_reparto&order=nome_reparto.asc");
@@ -94,7 +88,6 @@ if ($is_capo_personale) {
 // Gestione della selezione attuale tramite GET o default
 $reparto_selezionato_filtro = $_GET['reparto_filtro'] ?? '';
 
-// Verifica che il reparto selezionato rientri tra quelli autorizzati per questo utente
 $id_reparti_consentiti = array_column($lista_reparti_struttura, 'id');
 if (empty($reparto_selezionato_filtro) || !in_array($reparto_selezionato_filtro, $id_reparti_consentiti)) {
     if (!empty($lista_reparti_struttura)) {
@@ -123,12 +116,21 @@ if (!empty($reparto_selezionato_filtro)) {
 $messaggio = '';
 $tipo_alert = '';
 
-// Gestione eliminazione collaboratore
+// Gestione eliminazione collaboratore corretta
 if (isset($_GET['elimina'])) {
     $id_da_eliminare = trim($_GET['elimina']);
+    
+    // Eseguiamo la richiesta di eliminazione su Supabase
     $respDel = supabase_request('staging_utenti', "?id=eq." . urlencode($id_da_eliminare), 'DELETE');
-    header("Location: gestione_collaboratori.php?reparto_filtro=" . urlencode($reparto_selezionato_filtro) . "&msg=eliminato");
-    exit;
+    
+    // Controlliamo se Supabase ha restituito un errore (es. vincoli di chiave esterna con turni o altre tabelle)
+    if (!empty($respDel) && isset($respDel['code'])) {
+        $messaggio = "Impossibile eliminare il collaboratore (Errore " . $respDel['code'] . "): " . ($respDel['message'] ?? 'Verifica che non ci siano turni o dati associati.');
+        $tipo_alert = "danger";
+    } else {
+        header("Location: gestione_collaboratori.php?reparto_filtro=" . urlencode($reparto_selezionato_filtro) . "&msg=eliminato");
+        exit;
+    }
 }
 
 // Funzione generazione UUID v4
@@ -151,9 +153,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && ($_POST[
     $squadraCollab = trim($_POST['squadra'] ?? '');
     
     $repartoDestinazione = trim($_POST['reparto_id'] ?? $reparto_selezionato_filtro);
+    organizzazioneDestinazione = $org_id_utente;
     $organizzazioneDestinazione = $org_id_utente;
 
-    // Controllo sicurezza: il reparto di destinazione deve essere tra quelli consentiti all'utente
     if (!in_array($repartoDestinazione, $id_reparti_consentiti)) {
         $messaggio = "Non hai i permessi per operare su questo reparto.";
         $tipo_alert = "danger";
