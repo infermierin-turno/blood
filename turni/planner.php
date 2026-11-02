@@ -204,28 +204,24 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Estrazione sequenza turni per ciascuna squadra (es. R M P N S...)
-$sequenzeSquadraMese = [];
+// Estrazione della sequenza esatta giorno per giorno per ciascuna squadra
+$turniSquadraPerGiorno = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = strtoupper(trim($collab['squadra'] ?? ''));
     $uId = $collab['id'];
     if (empty($sq)) continue;
     
-    $seqTemp = [];
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-        $turni = $matricePianificazione[$uId][$g] ?? [];
-        $tTrovato = '';
-        foreach ($turni as $t) {
-            $tC = strtoupper(trim($t));
-            if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
-                $tTrovato = $tC;
-                break;
+        if (!isset($turniSquadraPerGiorno[$sq][$g])) {
+            $turni = $matricePianificazione[$uId][$g] ?? [];
+            foreach ($turni as $t) {
+                $tC = strtoupper(trim($t));
+                if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
+                    $turniSquadraPerGiorno[$sq][$g] = $tC;
+                    break;
+                }
             }
         }
-        $seqTemp[] = ($tTrovato !== '') ? $tTrovato : '-';
-    }
-    if (empty($sequenzeSquadraMese[$sq])) {
-        $sequenzeSquadraMese[$sq] = implode('', $seqTemp);
     }
 }
 
@@ -498,25 +494,22 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
 
-                                    // Formato stile ASL Napoli 1: intestazione TURNO A, TURNO B... con sequenza in linea
+                                    // Riga di intestazione stile "TURNO A" con sequenza esatta giorno per giorno in colonna
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
                                         $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
-                                        
-                                        $seqStringa = $sequenzeSquadraMese[$squadraCorrente] ?? '';
                             ?>
                                         <tr class="table-secondary">
-                                            <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold py-1 px-3 small text-dark bg-light d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <i class="bi bi-hospital me-1 text-primary"></i> <span class="text-uppercase">TURNO <?php echo $nomeSquadraPulito; ?></span>
-                                                    <span class="text-muted fw-normal ms-3" style="font-size: 0.68rem;">(Turni standard M, P, N, S, R omessi in griglia)</span>
-                                                </div>
-                                                <?php if (!empty($seqStringa)) { ?>
-                                                    <div class="font-monospace text-primary bg-white px-2 py-0 border rounded small" style="letter-spacing: 2px; font-size: 0.72rem;">
-                                                        <?php echo htmlspecialchars($seqStringa); ?>
-                                                    </div>
-                                                <?php } ?>
+                                            <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light" style="font-size: 0.75rem;">
+                                                <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $nomeSquadraPulito; ?>
                                             </td>
+                                            <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
+                                                $turnoGiornoSq = $turniSquadraPerGiorno[$squadraCorrente][$g] ?? '-';
+                                            ?>
+                                                <td class="fw-bold text-dark bg-light" style="font-size: 0.65rem; padding: 2px 0;">
+                                                    <?php echo htmlspecialchars($turnoGiornoSq); ?>
+                                                </td>
+                                            <?php } ?>
                                         </tr>
                             <?php 
                                     }
@@ -535,10 +528,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             $numGiornoSettimana = date('N', $timestampGiorno);
                                             $isWeekend = ($numGiornoSettimana >= 6);
                                             
-                                            // Raccogliamo eventuali ferie/assenze registrate
+                                            // Eventuali ferie/assenze registrate
                                             $tipoAssenzaGiorno = $assenzeMese[$uId][$g] ?? null;
                                             
-                                            // Raccogliamo i turni pianificati nella cella
+                                            // Turni pianificati nella cella
                                             $turniCella = $matricePianificazione[$uId][$g] ?? [];
                                         ?>
                                             <td class="<?php echo $isWeekend ? 'weekend-col' : ''; ?>">
@@ -551,7 +544,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         $mostraQualcosa = false;
                                                         foreach ($turniCella as $tSingolo) {
                                                             $tClean = strtoupper(trim($tSingolo));
-                                                            // Filtro: mostriamo tutto tranne M, P, N, S, R
+                                                            // Mostriamo tutto tranne i turni standard M, P, N, S, R (già riepilogati in alto nella riga TURNO)
                                                             if (!in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
                                                                 $mostraQualcosa = true;
                                                                 $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
