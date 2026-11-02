@@ -192,11 +192,12 @@ if (!empty($idsUtenti)) {
             if (!isset($mappaUtenti[$uIdAss])) continue;
             $dInzAss = $ass['data_inizio'] ?? '';
             $dFinAss = $ass['data_fine'] ?? '';
+            $tipoAss = strtoupper(trim($ass['tipo_evento'] ?? $ass['tipo_assenza'] ?? 'F'));
             if (!empty($uIdAss) && !empty($dInzAss) && !empty($dFinAss)) {
                 $gInz = max(1, intval(substr($dInzAss, 8, 2)));
                 $gFin = min($giorni_nel_mese, intval(substr($dFinAss, 8, 2)));
                 for ($gg = $gInz; $gg <= $gFin; $gg++) {
-                    $assenzeMese[$uIdAss][$gg] = true;
+                    $assenzeMese[$uIdAss][$gg] = $tipoAss;
                 }
             }
         }
@@ -350,7 +351,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="turni.php">Assegnazione Turni</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="riepilogo_ore.php">Ore Totali Mensili</a></li>
+                    <li class="nav-item"><a class="nav-link" href="riepilogo_ore.php">Ore Totali Mensili</a></li>
                     <li class="nav-item"><a class="nav-link" href="ferie.php">Ferie e Assenze</a></li>
                     <li class="nav-item"><a class="nav-link text-danger" href="logout.php">Logout</a></li>
                 </ul>
@@ -414,21 +415,12 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         <!-- Legenda Turni Dinamica -->
         <div class="card shadow-sm mb-3 p-2 px-3 print-hide">
             <div class="d-flex align-items-center flex-wrap gap-3">
-                <span class="small fw-bold text-muted"><i class="bi bi-info-circle"></i> Legenda:</span>
-                <?php foreach ($elencoTipologieTurno as $tLeg) { 
-                    $cBreve = strtoupper(trim($tLeg['codice_breve'] ?? ''));
-                    $nTurno = $tLeg['nome_turno'] ?? $cBreve;
-                    $colHex = $tLeg['colore'] ?? '#64748b';
-                ?>
-                    <div class="d-flex align-items-center gap-1">
-                        <span class="badge-turno" style="background-color: <?php echo htmlspecialchars($colHex); ?>; color: #fff;"><?php echo htmlspecialchars($cBreve); ?></span>
-                        <span class="small text-secondary"><?php echo htmlspecialchars($nTurno); ?></span>
-                    </div>
-                <?php } ?>
-                <div class="d-flex align-items-center gap-1">
-                    <span class="badge-turno bg-secondary text-white">F</span>
-                    <span class="small text-secondary">Ferie / Assenza</span>
-                </div>
+                <span class="small fw-bold text-muted"><i class="bi bi-info-circle"></i> Legenda Eccezioni / Assenze:</span>
+                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #20c997; color: #fff;">F</span><span class="small text-secondary">Ferie</span></div>
+                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #fd7e14; color: #fff;">PE</span><span class="small text-secondary">Permessi</span></div>
+                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #6610f2; color: #fff;">FOR</span><span class="small text-secondary">Formazione</span></div>
+                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #d63384; color: #fff;">104</span><span class="small text-secondary">Legge 104</span></div>
+                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #dc3545; color: #fff;">MAL</span><span class="small text-secondary">Malattia</span></div>
             </div>
         </div>
 
@@ -481,12 +473,15 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
 
+                                    // Se cambia la squadra, stampiamo un'unica riga di intestazione chiara con il turno di riferimento
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
+                                        $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
                             ?>
-                                        <tr class="table-secondary print-hide">
+                                        <tr class="table-secondary">
                                             <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold py-1 px-3 small text-uppercase text-dark bg-light">
-                                                <i class="bi bi-people-fill me-1"></i> Squadra: <?php echo !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata'; ?>
+                                                <i class="bi bi-people-fill me-1 text-primary"></i> Squadra: <?php echo $nomeSquadraPulito; ?> 
+                                                <span class="text-muted fw-normal ms-2" style="font-size: 0.7rem;">(Visualizzazione pulita: i turni standard M, P, N, S, R sono omessi; vengono mostrate solo le variazioni, le ferie e le assenze)</span>
                                             </td>
                                         </tr>
                             <?php 
@@ -509,21 +504,37 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             $numGiornoSettimana = date('N', $timestampGiorno);
                                             $isWeekend = ($numGiornoSettimana >= 6);
                                             
-                                            $haAssenza = isset($assenzeMese[$uId][$g]);
+                                            // Raccogliamo eventuali ferie/assenze registrate
+                                            $tipoAssenzaGiorno = $assenzeMese[$uId][$g] ?? null;
+                                            
+                                            // Raccogliamo i turni pianificati nella cella
                                             $turniCella = $matricePianificazione[$uId][$g] ?? [];
                                         ?>
                                             <td class="<?php echo $isWeekend ? 'weekend-col' : ''; ?>">
                                                 <div class="cell-container">
-                                                    <?php if ($haAssenza) { ?>
-                                                        <span class="badge-turno bg-secondary text-white" title="Ferie / Assenza Approvata">F</span>
-                                                    <?php } elseif (!empty($turniCella)) { ?>
-                                                        <?php foreach ($turniCella as $tSingolo) {
+                                                    <?php if (!empty($tipoAssenzaGiorno)) { 
+                                                        $coloreAss = $mappaColoriTurni[$tipoAssenzaGiorno] ?? '#6c757d';
+                                                    ?>
+                                                        <span class="badge-turno" style="background-color: <?php echo htmlspecialchars($coloreAss); ?>; color: #fff;" title="Assenza: <?php echo htmlspecialchars($tipoAssenzaGiorno); ?>"><?php echo htmlspecialchars($tipoAssenzaGiorno); ?></span>
+                                                    <?php } elseif (!empty($turniCella)) { 
+                                                        $mostraQualcosa = false;
+                                                        foreach ($turniCella as $tSingolo) {
                                                             $tClean = strtoupper(trim($tSingolo));
-                                                            $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
-                                                        ?>
-                                                            <span class="badge-turno" style="background-color: <?php echo htmlspecialchars($coloreBadge); ?>; color: #fff;" title="<?php echo htmlspecialchars($tClean); ?>"><?php echo htmlspecialchars($tClean); ?></span>
-                                                        <?php } ?>
-                                                    <?php } else { ?>
+                                                            // FILTRO DI SNELLIMENTO: Mostriamo tutto TRANNE M, P, N, S, R (i turni standard)
+                                                            if (!in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
+                                                                $mostraQualcosa = true;
+                                                                $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
+                                                    ?>
+                                                                <span class="badge-turno" style="background-color: <?php echo htmlspecialchars($coloreBadge); ?>; color: #fff;" title="<?php echo htmlspecialchars($tClean); ?>"><?php echo htmlspecialchars($tClean); ?></span>
+                                                    <?php 
+                                                            }
+                                                        }
+                                                        if (!$mostraQualcosa) {
+                                                    ?>
+                                                            <span class="text-muted opacity-25" style="font-size: 0.6rem;">·</span>
+                                                    <?php 
+                                                        }
+                                                    } else { ?>
                                                         <span class="text-muted opacity-25" style="font-size: 0.6rem;">·</span>
                                                     <?php } ?>
                                                 </div>
