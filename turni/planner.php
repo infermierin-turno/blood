@@ -204,7 +204,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Estrazione della sequenza esatta giorno per giorno per ciascuna squadra
+// Estrazione della sequenza turno giorno per giorno per le squadre standard
 $turniSquadraPerGiorno = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = strtoupper(trim($collab['squadra'] ?? ''));
@@ -494,7 +494,11 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
 
-                                    // Riga di intestazione stile "TURNO A" con sequenza esatta giorno per giorno in colonna
+                                    // Riconoscimento del personale Mattiniero (puoi personalizzare la parola chiave in base al nome squadra o qualifica)
+                                    $isMattiniero = (strpos(strtolower($squadraCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false || strpos(strtolower($squadraCollab), 'm') !== false && strlen($squadraCollab) > 1);
+                                    // Nota: se i mattinieri hanno una squadra specifica (es. "MATTINIERI" o simile), il controllo qui sopra li intercetta.
+
+                                    // Riga di intestazione turno squadra
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
                                         $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
@@ -505,8 +509,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             </td>
                                             <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
                                                 $turnoGiornoSq = $turniSquadraPerGiorno[$squadraCorrente][$g] ?? '-';
+                                                $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
+                                                $isWeekendSq = (date('N', $timestampGiorno) >= 6);
                                             ?>
-                                                <td class="fw-bold text-dark bg-light" style="font-size: 0.65rem; padding: 2px 0;">
+                                                <td class="fw-bold text-dark bg-light <?php echo $isWeekendSq ? 'weekend-col' : ''; ?>" style="font-size: 0.65rem; padding: 2px 0;">
                                                     <?php echo htmlspecialchars($turnoGiornoSq); ?>
                                                 </td>
                                             <?php } ?>
@@ -544,8 +550,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         $mostraQualcosa = false;
                                                         foreach ($turniCella as $tSingolo) {
                                                             $tClean = strtoupper(trim($tSingolo));
-                                                            // Mostriamo tutto tranne i turni standard M, P, N, S, R (già riepilogati in alto nella riga TURNO)
-                                                            if (!in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
+                                                            
+                                                            // REGOLA: Se è un mattiniero mostriamo TUTTO, altrimenti filtriamo M, P, N, S, R
+                                                            if ($isMattiniero || !in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
                                                                 $mostraQualcosa = true;
                                                                 $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
                                                     ?>
