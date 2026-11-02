@@ -146,7 +146,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 6. Recupero Assenze Approvate (Ferie, Malattia, 104, ecc.)
+// 6. Recupero Assenze Approvate
 $assenzeMese = [];
 if (!empty($idsUtenti)) {
     $resAss = supabase_request("assenze?stato=eq.approvato&data_inizio=lte.$d_fine&data_fine=gte.$d_inizio&select=*");
@@ -164,7 +164,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 7. Calcolo della Sequenza Orizzontale per Squadra (A, B, C, D, E)
+// 7. Calcolo della Sequenza Dinamica per TUTTE le 5 squadre (A, B, C, D, E)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $c) {
     $sq = $c['squadra_norm'];
@@ -189,7 +189,7 @@ foreach ($utentiPerSquadra as $sq => $idsMembri) {
             }
         }
     }
-    // Fallback automatico rotazione se necessario
+    // Fallback automatico rotazione dinamica continua a 5 turni
     if ($primoTurno !== null) {
         $idxBase = array_search($primoTurno, $cicloRotazione);
         if ($idxBase !== false) {
@@ -314,7 +314,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $isRotazione = in_array($sqNorma, ['A', 'B', 'C', 'D', 'E']);
                                     $isMattiniero = ($sqNorma === 'MATTINIERO');
 
-                                    // 1. Mostra la riga della sequenza UNA SOLA VOLTA per ogni squadra
+                                    // 1. Mostra la riga della sequenza dinamica UNA SOLA VOLTA per ciascuna squadra (A, B, C, D, E)
                                     if ($sqNorma !== $squadraCorrente) {
                                         $squadraCorrente = $sqNorma;
                                         if ($isRotazione) {
