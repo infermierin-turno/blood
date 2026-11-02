@@ -204,7 +204,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Estrazione della sequenza turno giorno per giorno per le squadre standard
+// Estrazione puntuale della sequenza turno per ciascuna squadra giorno per giorno
 $turniSquadraPerGiorno = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = strtoupper(trim($collab['squadra'] ?? ''));
@@ -212,6 +212,7 @@ foreach ($listaCollaboratori as $collab) {
     if (empty($sq)) continue;
     
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+        // Se non abbiamo ancora trovato un turno per questa squadra in questo giorno, cerchiamo tra i suoi membri
         if (!isset($turniSquadraPerGiorno[$sq][$g])) {
             $turni = $matricePianificazione[$uId][$g] ?? [];
             foreach ($turni as $t) {
@@ -494,11 +495,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
 
-                                    // Riconoscimento del personale Mattiniero (puoi personalizzare la parola chiave in base al nome squadra o qualifica)
-                                    $isMattiniero = (strpos(strtolower($squadraCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false || strpos(strtolower($squadraCollab), 'm') !== false && strlen($squadraCollab) > 1);
-                                    // Nota: se i mattinieri hanno una squadra specifica (es. "MATTINIERI" o simile), il controllo qui sopra li intercetta.
+                                    $isMattiniero = (strpos(strtolower($squadraCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false);
 
-                                    // Riga di intestazione turno squadra
+                                    // Questa riga viene stampata ogni volta che cambia la squadra (TURNO A, TURNO B, TURNO C, TURNO D, TURNO E...)
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
                                         $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
