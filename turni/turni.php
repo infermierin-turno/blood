@@ -332,7 +332,7 @@ $ultimo_giorno_tab = sprintf('%04d-%02d-%d', $anno_selezionato, $mese_selezionat
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $azione = $_POST['azione'] ?? '';
 
-    // AZIONE: Cancella tutti i turni del mese tranne Ferie, 104, Permessi e Corsi (FOR)
+    // AZIONE: Cancella tutti i turni del mese tranne Ferie, 104, Permessi (PE), e Corsi (FOR)
     if ($azione === 'cancella_turni_tranne_ferie') {
         if (!empty($idsUtentiReparto)) {
             $urlGetMese = "pianificazione?data_inizio=gte." . $primo_giorno_tab . "&data_inizio=lte." . $ultimo_giorno_tab . "&utente_id=in.(" . implode(',', $idsUtentiReparto) . ")&select=id,tipo_evento";
@@ -343,8 +343,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($turniDaValutare as $t) {
                     $tipoEv = strtoupper(trim($t['tipo_evento']));
                     
-                    // Elenco codici protetti da NON cancellare
-                    $codiciProtetto = ['F', 'FERIE', '104', 'P', 'PER', 'PERMESSO', 'FOR', 'CORSO'];
+                    // Elenco codici protetti da NON cancellare (inclusi Ferie, 104, PE e FOR)
+                    $codiciProtetto = ['F', 'FERIE', '104', 'PE', 'P', 'PER', 'PERMESSO', 'FOR', 'CORSO'];
                     
                     if (!in_array($tipoEv, $codiciProtetto)) {
                         $tId = $t['id'];
@@ -355,7 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-            $messaggio = "Pulizia completata: eliminati $cancellatiCount turni (Ferie, 104, Permessi e FOR sono stati mantenuti).";
+            $messaggio = "Pulizia completata: eliminati $cancellatiCount turni (Ferie, 104, PE, Permessi e FOR sono stati mantenuti).";
             $tipo_alert = "success";
         } else {
             $messaggio = "Nessun operatore valido trovato per la pulizia dei turni.";
@@ -765,9 +765,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 <div class="card h-100 bg-white p-3">
                     <div class="card-header bg-white pb-2 px-0 border-bottom d-flex justify-content-between align-items-center">
                         <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-cpu-fill text-primary"></i> Generazione Automatica Turni (AI Engine)</h5>
-                        <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" onsubmit="return confirm('ATTENZIONE: Verranno eliminati tutti i turni programmati per questo mese (tranne Ferie, 104, Permessi e FOR). Vuoi procedere?');">
+                        <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" onsubmit="return confirm('ATTENZIONE: Verranno eliminati tutti i turni programmati per questo mese (tranne Ferie, 104, PE, Permessi e FOR). Vuoi procedere?');">
                             <input type="hidden" name="azione" value="cancella_turni_tranne_ferie">
-                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Cancella tutti i turni del mese tranne ferie, 104, permessi e FOR"><i class="bi bi-trash3"></i> Pulisci Mese (Keep Ferie/104/FOR)</button>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Cancella tutti i turni del mese tranne ferie, 104, PE e FOR"><i class="bi bi-trash3"></i> Pulisci Mese (Keep Ferie/104/PE/FOR)</button>
                         </form>
                     </div>
                     <div class="card-body px-0">
