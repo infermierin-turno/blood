@@ -164,7 +164,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 7. Calcolo della Sequenza Dinamica per TUTTE le 5 squadre (A, B, C, D, E)
+// 7. Calcolo della Sequenza Dinamica Robusta per TUTTE le 5 squadre (A, B, C, D, E)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $c) {
     $sq = $c['squadra_norm'];
@@ -175,29 +175,41 @@ foreach ($listaCollaboratori as $c) {
 
 $cicloRotazione = ['M', 'P', 'N', 'S', 'R'];
 $turniSquadraPerGiorno = [];
-foreach ($utentiPerSquadra as $sq => $idsMembri) {
-    $primoTurno = null; $giornoPrimo = null;
+
+// Sfasamenti standard di default nel ciclo 5 giorni se una squadra non ha turni espliciti iniziali
+$sfasamentoDefault = ['A' => 0, 'B' => 1, 'C' => 2, 'D' => 3, 'E' => 4];
+
+foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
+    $idsMembri = $utentiPerSquadra[$sq] ?? [];
+    $primoTurno = null; 
+    $giornoPrimo = null;
+
+    // Cerca il primo turno valido (M, P, N, S, R) tra i membri della squadra nel mese
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
         foreach ($idsMembri as $uId) {
             foreach ($matricePianificazione[$uId][$g] ?? [] as $t) {
                 $tC = strtoupper(trim($t));
-                if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
-                    $turniSquadraPerGiorno[$sq][$g] = $tC;
-                    if ($primoTurno === null) { $primoTurno = $tC; $giornoPrimo = $g; }
-                    break 2;
+                if (in_array($tC, $cicloRotazione)) {
+                    $primoTurno = $tC;
+                    $giornoPrimo = $g;
+                    break 3;
                 }
             }
         }
     }
-    // Fallback automatico rotazione dinamica continua a 5 turni
+
+    // Se troviamo un turno di riferimento, costruiamo la sequenza dinamica continua
     if ($primoTurno !== null) {
         $idxBase = array_search($primoTurno, $cicloRotazione);
-        if ($idxBase !== false) {
-            for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-                if (empty($turniSquadraPerGiorno[$sq][$g])) {
-                    $turniSquadraPerGiorno[$sq][$g] = $cicloRotazione[($idxBase + ($g - $giornoPrimo)) % 5];
-                }
-            }
+        for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+            $diff = $g - $giornoPrimo;
+            $turniSquadraPerGiorno[$sq][$g] = $cicloRotazione[($idxBase + $diff) % 5];
+        }
+    } else {
+        // Fallback intelligente basato sullo sfasamento standard di squadra
+        $idxBase = $sfasamentoDefault[$sq] ?? 0;
+        for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+            $turniSquadraPerGiorno[$sq][$g] = $cicloRotazione[($idxBase + ($g - 1)) % 5];
         }
     }
 }
