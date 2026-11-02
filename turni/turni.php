@@ -216,24 +216,19 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
         });
     }
 
-    $haSmontoOggi = false;
+    $haNotteOSmontoOggi = false;
     foreach ($turniGiorno as $tg) {
         $tipoEsistente = strtoupper(trim($tg['tipo_evento']));
-        if ($tipoEsistente === 'S' || $tipoEsistente === 'SMONTO') {
-            $haSmontoOggi = true;
+        if ($tipoEsistente === 'N' || $tipoEsistente === 'NOTTE' || $tipoEsistente === 'S' || $tipoEsistente === 'SMONTO') {
+            $haNotteOSmontoOggi = true;
             break;
         }
     }
 
     $nuovoCodiceUpper = strtoupper(trim($nuovo_codice));
-    if ($haSmontoOggi) {
-        if ($nuovoCodiceUpper === 'M' || $nuovoCodiceUpper === 'MATTINA' || $nuovoCodiceUpper === 'P' || $nuovoCodiceUpper === 'POMERIGGIO') {
-            return "ATTENZIONE: Impossibile assegnare turno richiesto, stai violando la regola che prevede il riposo minimo di 11 ore dopo la notte!.";
-        }
-    }
-
-    if (count($turniGiorno) >= 2) {
-        return "Errore: L'operatore ha già raggiunto il limite massimo di 2 turni in questa data.";
+    
+    if ($haNotteOSmontoOggi && ($nuovoCodiceUpper === 'M' || $nuovoCodiceUpper === 'P' || $nuovoCodiceUpper === 'N')) {
+        return "ATTENZIONE: Impossibile assegnare il turno, è già presente un turno di Notte o Smonto in questa giornata.";
     }
 
     return true;
@@ -293,7 +288,6 @@ usort($listaCollaboratori, function($a, $b) {
         return strcasecmp($sqA, $sqB);
     }
     
-    // Funzione di peso per il ruolo
     $getPesoRuolo = function($collab) {
         $ruolo = strtolower(trim($collab['ruolo'] ?? $collab['qualifica'] ?? ''));
         $squadra = strtolower(trim($collab['squadra'] ?? ''));
@@ -307,7 +301,7 @@ usort($listaCollaboratori, function($a, $b) {
         if (strpos($ruolo, 'coordinat') !== false) {
             return 3;
         }
-        return 4; // Infermieri, Medici o altri ruoli generici
+        return 4;
     };
     
     $pesoA = $getPesoRuolo($a);
@@ -317,11 +311,9 @@ usort($listaCollaboratori, function($a, $b) {
         return $pesoA - $pesoB;
     }
     
-    // Infine ordinamento alfabetico per nome
     return strcasecmp($a['nome'] ?? '', $b['nome'] ?? '');
 });
 
-// Ricostruiamo la mappa e gli ID ordinati
 $mappaUtentiOrdinata = [];
 $idsUtentiReparto = [];
 foreach ($listaCollaboratori as $collab) {
@@ -921,30 +913,39 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         <input type="hidden" name="data" id="modaleData">
                         <input type="hidden" name="turno_id" id="modaleTurnoId">
 
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">Seleziona Tipologia Turno / Evento</label>
-                            <select name="valore" id="modaleValore" class="form-select" required>
-                                <option value="">Scegli turno...</option>
-                                <?php foreach ($tipologieTurni as $t) { 
-                                    $codT = $t['codice_breve'] ?? '';
-                                    $nomT = $t['nome_turno'] ?? '';
-                                ?>
-                                    <option value="<?php echo $codT; ?>"><?php echo htmlspecialchars("$nomT ($codT)"); ?></option>
-                                <?php } ?>
-                            </select>
+                        <div id="sezioneEsistenti" class="mb-3 d-none">
+                            <label class="form-label small fw-bold text-muted">Turni già presenti in questa giornata:</label>
+                            <div id="listaTurniEsistenti" class="d-flex flex-column gap-2 mb-3"></div>
+                            <hr>
+                            <button type="button" class="btn btn-outline-success btn-sm w-100 fw-bold" onclick="passaAdAggiungi()"><i class="bi bi-plus-circle"></i> Aggiungi un altro turno in questa data</button>
                         </div>
 
-                        <div id="containerStato" class="mb-3 d-none">
-                            <label class="form-label small fw-bold">Stato Turno</label>
-                            <select name="stato" id="modaleStato" class="form-select">
-                                <option value="Approvato">Approvato</option>
-                                <option value="In attesa">In attesa</option>
-                            </select>
-                        </div>
+                        <div id="sezioneFormInput">
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold" id="labelSelectTurno">Seleziona Tipologia Turno / Evento</label>
+                                <select name="valore" id="modaleValore" class="form-select" required>
+                                    <option value="">Scegli turno...</option>
+                                    <?php foreach ($tipologieTurni as $t) { 
+                                        $codT = $t['codice_breve'] ?? '';
+                                        $nomT = $t['nome_turno'] ?? '';
+                                    ?>
+                                        <option value="<?php echo $codT; ?>"><?php echo htmlspecialchars("$nomT ($codT)"); ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
 
-                        <div class="d-flex justify-content-between">
-                            <button type="submit" id="btnSalvaCella" class="btn btn-primary btn-sm fw-bold">Salva Turno</button>
-                            <button type="button" id="btnCancellaCella" class="btn btn-danger btn-sm fw-bold d-none" onclick="cancellaTurnoCella()"><i class="bi bi-trash"></i> Elimina Turno</button>
+                            <div id="containerStato" class="mb-3 d-none">
+                                <label class="form-label small fw-bold">Stato Turno</label>
+                                <select name="stato" id="modaleStato" class="form-select">
+                                    <option value="Approvato">Approvato</option>
+                                    <option value="In attesa">In attesa</option>
+                                </select>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center">
+                                <button type="submit" id="btnSalvaCella" class="btn btn-primary btn-sm fw-bold">Salva Turno</button>
+                                <button type="button" id="btnAnnullaModificaEsistente" class="btn btn-secondary btn-sm d-none" onclick="tornaAIlencaEsistenti()">Annulla</button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -967,38 +968,85 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
             document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataIso + ")";
             
-            let btnCancella = document.getElementById('btnCancellaCella');
+            let sezioneEsistenti = document.getElementById('sezioneEsistenti');
+            let listaEsistentiDiv = document.getElementById('listaTurniEsistenti');
             let containerStato = document.getElementById('containerStato');
+            let btnAnnulla = document.getElementById('btnAnnullaModificaEsistente');
+
+            listaEsistentiDiv.innerHTML = '';
 
             if (eventi.length > 0) {
-                // Modifica del primo evento trovato nella cella
-                document.getElementById('modaleAzione').value = 'modifica_turno_cella';
-                document.getElementById('modaleTurnoId').value = eventi[0].id;
-                document.getElementById('modaleValore').value = eventi[0].tipo_evento;
-                document.getElementById('modaleStato').value = eventi[0].stato || 'Approvato';
+                // Mostra i turni esistenti con opzioni per modificarli o eliminarli
+                sezioneEsistenti.classList.remove('d-none');
                 
-                btnCancella.classList.remove('d-none');
-                containerStato.classList.remove('d-none');
-                document.getElementById('btnSalvaCella').innerText = "Aggiorna Turno";
+                eventi.forEach(ev => {
+                    let item = document.createElement('div');
+                    item.className = 'd-flex justify-content-between align-items-center p-2 bg-light rounded border';
+                    item.innerHTML = `
+                        <span><strong>${ev.tipo_evento}</strong> <small class="text-muted">(${ev.stato || 'Approvato'})</small></span>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="passaAModifica('${ev.id}', '${ev.tipo_evento}', '${ev.stato || 'Approvato'}')"><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" onclick="cancellaTurnoSpecifico('${ev.id}')"><i class="bi bi-trash"></i></button>
+                        </div>
+                    `;
+                    listaEsistentiDiv.appendChild(item);
+                });
+
+                // Di default partiamo mostrando l'elenco e nascondendo il form principale finché non sceglie di aggiungere o modificare
+                document.getElementById('sezioneFormInput').classList.add('d-none');
             } else {
-                // Aggiunta nuovo turno
+                // Cella vuota: apri direttamente il form per aggiungere un nuovo turno
+                sezioneEsistenti.classList.add('d-none');
+                document.getElementById('sezioneFormInput').classList.remove('d-none');
                 document.getElementById('modaleAzione').value = 'aggiungi_turno_cella';
                 document.getElementById('modaleTurnoId').value = '';
                 document.getElementById('modaleValore').value = '';
                 document.getElementById('modaleStato').value = 'Approvato';
-                
-                btnCancella.classList.add('d-none');
                 containerStato.classList.add('d-none');
+                btnAnnulla.classList.add('d-none');
+                document.getElementById('labelSelectTurno').innerText = "Seleziona Tipologia Turno da Aggiungere";
                 document.getElementById('btnSalvaCella').innerText = "Aggiungi Turno";
             }
 
             myModal.show();
         }
 
-        function cancellaTurnoCella() {
+        function passaAdAggiungi() {
+            document.getElementById('sezioneEsistenti').classList.add('d-none');
+            document.getElementById('sezioneFormInput').classList.remove('d-none');
+            document.getElementById('modaleAzione').value = 'aggiungi_turno_cella';
+            document.getElementById('modaleTurnoId').value = '';
+            document.getElementById('modaleValore').value = '';
+            document.getElementById('modaleStato').value = 'Approvato';
+            document.getElementById('containerStato').classList.add('d-none');
+            document.getElementById('btnAnnullaModificaEsistente').classList.remove('d-none');
+            document.getElementById('labelSelectTurno').innerText = "Seleziona Tipologia Turno da Aggiungere";
+            document.getElementById('btnSalvaCella').innerText = "Aggiungi Turno";
+        }
+
+        function passaAModifica(turnoId, tipoEvento, stato) {
+            document.getElementById('sezioneEsistenti').classList.add('d-none');
+            document.getElementById('sezioneFormInput').classList.remove('d-none');
+            document.getElementById('modaleAzione').value = 'modifica_turno_cella';
+            document.getElementById('modaleTurnoId').value = turnoId;
+            document.getElementById('modaleValore').value = tipoEvento;
+            document.getElementById('modaleStato').value = stato;
+            document.getElementById('containerStato').classList.remove('d-none');
+            document.getElementById('btnAnnullaModificaEsistente').classList.remove('d-none');
+            document.getElementById('labelSelectTurno').innerText = "Modifica Tipologia Turno";
+            document.getElementById('btnSalvaCella').innerText = "Aggiorna Turno";
+        }
+
+        function tornaAIlencaEsistenti() {
+            document.getElementById('sezioneEsistenti').classList.remove('d-none');
+            document.getElementById('sezioneFormInput').classList.add('d-none');
+        }
+
+        function cancellaTurnoSpecifico(turnoId) {
             if (confirm("Sei sicuro di voler eliminare questo turno?")) {
                 let form = document.getElementById('formGestioneCella');
                 document.getElementById('modaleAzione').value = 'cancella_turno_cella';
+                document.getElementById('modaleTurnoId').value = turnoId;
                 form.submit();
             }
         }
