@@ -204,25 +204,31 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Estrazione puntuale della sequenza turno per ciascuna squadra giorno per giorno
-$turniSquadraPerGiorno = [];
+// Raggruppiamo gli utenti per squadra per estrarre con precisione la sequenza di ciascuna squadra
+$utentiPerSquadra = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = strtoupper(trim($collab['squadra'] ?? ''));
-    $uId = $collab['id'];
-    if (empty($sq)) continue;
-    
+    if (!empty($sq)) {
+        $utentiPerSquadra[$sq][] = $collab['id'];
+    }
+}
+
+// Estrazione puntuale della sequenza turno per ciascuna squadra giorno per giorno
+$turniSquadraPerGiorno = [];
+foreach ($utentiPerSquadra as $sq => $idsMembri) {
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-        // Se non abbiamo ancora trovato un turno per questa squadra in questo giorno, cerchiamo tra i suoi membri
-        if (!isset($turniSquadraPerGiorno[$sq][$g])) {
-            $turni = $matricePianificazione[$uId][$g] ?? [];
-            foreach ($turni as $t) {
+        $turnoTrovatoReparto = '';
+        foreach ($idsMembri as $uIdMembro) {
+            $turniMembro = $matricePianificazione[$uIdMembro][$g] ?? [];
+            foreach ($turniMembro as $t) {
                 $tC = strtoupper(trim($t));
                 if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
-                    $turniSquadraPerGiorno[$sq][$g] = $tC;
-                    break;
+                    $turnoTrovatoReparto = $tC;
+                    break 2;
                 }
             }
         }
+        $turniSquadraPerGiorno[$sq][$g] = ($turnoTrovatoReparto !== '') ? $turnoTrovatoReparto : '-';
     }
 }
 
@@ -497,7 +503,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
                                     $isMattiniero = (strpos(strtolower($squadraCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false);
 
-                                    // Questa riga viene stampata ogni volta che cambia la squadra (TURNO A, TURNO B, TURNO C, TURNO D, TURNO E...)
+                                    // Stampa la riga di intestazione TURNO A, TURNO B, TURNO C, TURNO D, TURNO E con la sequenza per ogni squadra
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
                                         $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
