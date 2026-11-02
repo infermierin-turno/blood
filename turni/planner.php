@@ -62,7 +62,7 @@ if ($reparto_selezionato !== '') {
             break;
         }
     }
-    if ($nome_reparto_selezionato === "Reparto non assigned") {
+    if ($nome_reparto_selezionato === "Reparto non assegnato") {
         $resSingleRep = supabase_request("reparti?id=eq." . urlencode($reparto_selezionato) . "&select=nome_reparto");
         if (is_array($resSingleRep) && count($resSingleRep) > 0) {
             $nome_reparto_selezionato = $resSingleRep[0]['nome_reparto'] ?? $resSingleRep[0]['nome'] ?? 'Reparto';
@@ -100,18 +100,33 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
         if ($reparto_selezionato !== '' && (string)$repCollabId !== (string)$reparto_selezionato) {
             continue;
         }
+        
+        $rawSq = trim($c['squadra'] ?? '');
+        $qualificaC = trim($c['qualifica'] ?? '') !== '' ? $c['qualifica'] : ($c['ruolo'] ?? '');
+        $isMattiniero = (strpos(strtolower($rawSq), 'mattin') !== false || strpos(strtolower($qualificaC), 'mattin') !== false);
+
+        if ($isMattiniero) {
+            $c['squadra_norm'] = 'MATTINIERO';
+        } elseif ($rawSq !== '') {
+            $cleanSq = strtoupper(str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSq));
+            $c['squadra_norm'] = (strlen($cleanSq) === 1) ? $cleanSq : strtoupper($rawSq);
+        } else {
+            $c['squadra_norm'] = 'Z';
+        }
+
         $c['reparto_id'] = $repCollabId;
         $mappaUtenti[$c['id']] = $c;
     }
 }
 
-// 6. Ordinamento collaboratori basato su qualifica/ruolo e squadra
+// 6. Ordinamento collaboratori: prima le squadre standard (A, B, C, D, E...) e in fondo i Mattinieri
 $listaCollaboratoriGrezzi = array_values($mappaUtenti);
 usort($listaCollaboratoriGrezzi, function($a, $b) {
-    $squadraA = strtoupper(trim($a['squadra'] ?? 'Z'));
-    $squadraB = strtoupper(trim($b['squadra'] ?? 'Z'));
-    if ($squadraA === '') $squadraA = 'Z';
-    if ($squadraB === '') $squadraB = 'Z';
+    $squadraA = $a['squadra_norm'];
+    $squadraB = $b['squadra_norm'];
+
+    if ($squadraA === 'MATTINIERO' && $squadraB !== 'MATTINIERO') return 1;
+    if ($squadraA !== 'MATTINIERO' && $squadraB === 'MATTINIERO') return -1;
 
     $cmpSquadra = strcmp($squadraA, $squadraB);
     if ($cmpSquadra !== 0) return $cmpSquadra;
@@ -204,21 +219,19 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Raggruppiamo gli utenti per squadra (normata in maiuscolo e senza prefissi inutili)
+// Raggruppamento utenti per squadra normalizzata (escludendo i mattinieri dal calcolo della sequenza ciclica)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $collab) {
-    $rawSq = strtoupper(trim($collab['squadra'] ?? ''));
-    // Normalizziamo le squadre "SQUADRA A" o "TURNO A" in "A", "B", "C", "D", "E"
-    $sq = str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSq);
-    if (!empty($sq)) {
+    $sq = $collab['squadra_norm'];
+    if (!empty($sq) && $sq !== 'Z' && $sq !== 'MATTINIERO') {
         $utentiPerSquadra[$sq][] = $collab['id'];
     }
 }
 
-// Ciclo di rotazione standard a 5 elementi per ricostruzione automatica dei turni
+// Ciclo di rotazione standard a 5 elementi
 $cicloRotazioneStandard = ['M', 'P', 'N', 'S', 'R'];
 
-// Estrazione infallibile della sequenza giorno per giorno per TUTTE le squadre (A, B, C, D, E...)
+// Estrazione della sequenza turno giorno per giorno per le sole squadre a rotazione
 $turniSquadraPerGiorno = [];
 foreach ($utentiPerSquadra as $sq => $idsMembri) {
     $primoTurnoNote = null;
@@ -243,7 +256,6 @@ foreach ($utentiPerSquadra as $sq => $idsMembri) {
         $turniSquadraPerGiorno[$sq][$g] = $turnoTrovato;
     }
 
-    // Ricostruzione sequenziale dinamica se alcuni giorni risultano scoperti per via di assenze/ferie generali
     if ($primoTurnoNote !== null) {
         $idxBase = array_search($primoTurnoNote, $cicloRotazioneStandard);
         if ($idxBase !== false) {
@@ -497,7 +509,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     </div>
                 </div>
 
-                <div class="table-responsive" style="max-height: 70vh;">
+                <div class="table-responsive">
                     <table class="table table-bordered table-hover-custom table-planner mb-0">
                         <thead>
                             <tr>
@@ -527,31 +539,33 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $nomeCollab = $collab['nome'] ?? 'Utente';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     
-                                    $rawSqCollab = strtoupper(trim($collab['squadra'] ?? ''));
-                                    $sqNorma = str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSqCollab);
+                                    $rawSqCollab = trim($collab['squadra'] ?? '');
+                                    $sqNorma = $collab['squadra_norm'];
                                     
-                                    $isMattiniero = (strpos(strtolower($rawSqCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false);
+                                    $isMattiniero = ($sqNorma === 'MATTINIERO');
 
-                                    // Stampa la riga di intestazione TURNO A, TURNO B, TURNO C, TURNO D, TURNO E per TUTTE le squadre
-                                    if ($rawSqCollab !== $squadraCorrente) {
-                                        $squadraCorrente = $rawSqCollab;
-                                        $labelSquadra = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
+                                    // Stampa la riga di intestazione TURNO A, B, C, D, E SOLO se NON è un mattiniero
+                                    if ($sqNorma !== $squadraCorrente) {
+                                        $squadraCorrente = $sqNorma;
+                                        if (!$isMattiniero) {
+                                            $labelSquadra = !empty($rawSqCollab) ? htmlspecialchars(strtoupper($rawSqCollab)) : 'NON ASSEGNATA';
                             ?>
-                                        <tr class="table-secondary">
-                                            <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light" style="font-size: 0.75rem;">
-                                                <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $labelSquadra; ?>
-                                            </td>
-                                            <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
-                                                $turnoGiornoSq = $turniSquadraPerGiorno[$sqNorma][$g] ?? '-';
-                                                $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
-                                                $isWeekendSq = (date('N', $timestampGiorno) >= 6);
-                                            ?>
-                                                <td class="fw-bold text-dark bg-light <?php echo $isWeekendSq ? 'weekend-col' : ''; ?>" style="font-size: 0.65rem; padding: 2px 0;">
-                                                    <?php echo htmlspecialchars($turnoGiornoSq); ?>
+                                            <tr class="table-secondary">
+                                                <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light" style="font-size: 0.75rem;">
+                                                    <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $labelSquadra; ?>
                                                 </td>
-                                            <?php } ?>
-                                        </tr>
+                                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
+                                                    $turnoGiornoSq = $turniSquadraPerGiorno[$sqNorma][$g] ?? '-';
+                                                    $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
+                                                    $isWeekendSq = (date('N', $timestampGiorno) >= 6);
+                                                ?>
+                                                    <td class="fw-bold text-dark bg-light <?php echo $isWeekendSq ? 'weekend-col' : ''; ?>" style="font-size: 0.65rem; padding: 2px 0;">
+                                                        <?php echo htmlspecialchars($turnoGiornoSq); ?>
+                                                    </td>
+                                                <?php } ?>
+                                            </tr>
                             <?php 
+                                        }
                                     }
                             ?>
                                     <tr>
