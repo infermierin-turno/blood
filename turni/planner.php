@@ -204,24 +204,28 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Calcoliamo i turni standard o sequenze per ogni squadra per mostrarli nell'intestazione
-$turniSquadraMese = [];
+// Estrazione sequenza turni per ciascuna squadra (es. R M P N S...)
+$sequenzeSquadraMese = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = strtoupper(trim($collab['squadra'] ?? ''));
     $uId = $collab['id'];
     if (empty($sq)) continue;
     
-    // Raccogliamo i primi turni del mese per questa squadra (es. primi 5 giorni) per dedurre il turno base
-    for ($g = 1; $g <= min(5, $giorni_nel_mese); $g++) {
+    $seqTemp = [];
+    for ($g = 1; $g <= $giorni_nel_mese; $g++) {
         $turni = $matricePianificazione[$uId][$g] ?? [];
+        $tTrovato = '';
         foreach ($turni as $t) {
             $tC = strtoupper(trim($t));
             if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
-                if (!isset($turniSquadraMese[$sq][$g])) {
-                    $turniSquadraMese[$sq][$g] = $tC;
-                }
+                $tTrovato = $tC;
+                break;
             }
         }
+        $seqTemp[] = ($tTrovato !== '') ? $tTrovato : '-';
+    }
+    if (empty($sequenzeSquadraMese[$sq])) {
+        $sequenzeSquadraMese[$sq] = implode('', $seqTemp);
     }
 }
 
@@ -364,7 +368,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 print-hide">
         <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR</a>
+            <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR | ASL Napoli 1 Centro</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -467,7 +471,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <table class="table table-bordered table-hover-custom table-planner mb-0">
                         <thead>
                             <tr>
-                                <th class="col-collaboratore">Collaboratore</th>
+                                <th class="col-collaboratore">Nominativo</th>
                                 <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
                                     $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
                                     $numGiornoSettimana = date('N', $timestampGiorno); // 1 (Lun) - 7 (Dom)
@@ -494,32 +498,24 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
 
-                                    // Se cambia la squadra, stampiamo un'unica riga di intestazione chiara con il turno della squadra
+                                    // Formato stile ASL Napoli 1: intestazione TURNO A, TURNO B... con sequenza in linea
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
                                         $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
                                         
-                                        // Estraiamo i turni pianificati per i primi giorni della squadra per mostrarli come "Turno Mensile"
-                                        $stringaTurniSquadra = "";
-                                        if (!empty($squadraCorrente) && isset($turniSquadraMese[$squadraCorrente])) {
-                                            $turniUniciSq = array_unique(array_values($turniSquadraMese[$squadraCorrente]));
-                                            if (!empty($turniUniciSq)) {
-                                                $stringaTurniSquadra = implode(' / ', $turniUniciSq);
-                                            }
-                                        }
-                                        if (empty($stringaTurniSquadra)) {
-                                            $stringaTurniSquadra = "M / P / N / S / R";
-                                        }
+                                        $seqStringa = $sequenzeSquadraMese[$squadraCorrente] ?? '';
                             ?>
                                         <tr class="table-secondary">
                                             <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold py-1 px-3 small text-dark bg-light d-flex justify-content-between align-items-center">
                                                 <div>
-                                                    <i class="bi bi-people-fill me-1 text-primary"></i> Squadra: <span class="text-uppercase"><?php echo $nomeSquadraPulito; ?></span>
-                                                    <span class="text-muted fw-normal ms-3" style="font-size: 0.7rem;">(Visualizzazione pulita: i turni standard sono omessi in griglia)</span>
+                                                    <i class="bi bi-hospital me-1 text-primary"></i> <span class="text-uppercase">TURNO <?php echo $nomeSquadraPulito; ?></span>
+                                                    <span class="text-muted fw-normal ms-3" style="font-size: 0.68rem;">(Turni standard M, P, N, S, R omessi in griglia)</span>
                                                 </div>
-                                                <div class="badge bg-primary text-white px-2 py-1" style="font-size: 0.72rem;">
-                                                    <i class="bi bi-calendar-check me-1"></i> Turno Squadra: <?php echo htmlspecialchars($stringaTurniSquadra); ?>
-                                                </div>
+                                                <?php if (!empty($seqStringa)) { ?>
+                                                    <div class="font-monospace text-primary bg-white px-2 py-0 border rounded small" style="letter-spacing: 2px; font-size: 0.72rem;">
+                                                        <?php echo htmlspecialchars($seqStringa); ?>
+                                                    </div>
+                                                <?php } ?>
                                             </td>
                                         </tr>
                             <?php 
@@ -532,9 +528,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             </div>
                                             <div class="text-muted text-truncate" style="font-size: 0.62rem;">
                                                 <?php echo htmlspecialchars($qualificaCollab); ?>
-                                                <?php if (!empty($squadraCollab)) { ?>
-                                                    <span class="badge bg-light text-dark border ms-1" style="font-size: 0.55rem;"><?php echo htmlspecialchars($squadraCollab); ?></span>
-                                                <?php } ?>
                                             </div>
                                         </td>
                                         <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
@@ -558,7 +551,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         $mostraQualcosa = false;
                                                         foreach ($turniCella as $tSingolo) {
                                                             $tClean = strtoupper(trim($tSingolo));
-                                                            // FILTRO DI SNELLIMENTO: Mostriamo tutto TRANNE M, P, N, S, R (i turni standard)
+                                                            // Filtro: mostriamo tutto tranne M, P, N, S, R
                                                             if (!in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
                                                                 $mostraQualcosa = true;
                                                                 $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
