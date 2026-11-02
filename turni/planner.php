@@ -62,7 +62,7 @@ if ($reparto_selezionato !== '') {
             break;
         }
     }
-    if ($nome_reparto_selezionato === "Reparto non assegnato") {
+    if ($nome_reparto_selezionato === "Reparto non assigned") {
         $resSingleRep = supabase_request("reparti?id=eq." . urlencode($reparto_selezionato) . "&select=nome_reparto");
         if (is_array($resSingleRep) && count($resSingleRep) > 0) {
             $nome_reparto_selezionato = $resSingleRep[0]['nome_reparto'] ?? $resSingleRep[0]['nome'] ?? 'Reparto';
@@ -204,31 +204,58 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Raggruppiamo gli utenti per squadra per estrarre con precisione la sequenza di ciascuna squadra
+// Raggruppiamo gli utenti per squadra (normata in maiuscolo e senza prefissi inutili)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $collab) {
-    $sq = strtoupper(trim($collab['squadra'] ?? ''));
+    $rawSq = strtoupper(trim($collab['squadra'] ?? ''));
+    // Normalizziamo le squadre "SQUADRA A" o "TURNO A" in "A", "B", "C", "D", "E"
+    $sq = str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSq);
     if (!empty($sq)) {
         $utentiPerSquadra[$sq][] = $collab['id'];
     }
 }
 
-// Estrazione puntuale della sequenza turno per ciascuna squadra giorno per giorno
+// Ciclo di rotazione standard a 5 elementi per ricostruzione automatica dei turni
+$cicloRotazioneStandard = ['M', 'P', 'N', 'S', 'R'];
+
+// Estrazione infallibile della sequenza giorno per giorno per TUTTE le squadre (A, B, C, D, E...)
 $turniSquadraPerGiorno = [];
 foreach ($utentiPerSquadra as $sq => $idsMembri) {
+    $primoTurnoNote = null;
+    $giornoPrimoTurno = null;
+
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-        $turnoTrovatoReparto = '';
+        $turnoTrovato = '';
         foreach ($idsMembri as $uIdMembro) {
             $turniMembro = $matricePianificazione[$uIdMembro][$g] ?? [];
             foreach ($turniMembro as $t) {
                 $tC = strtoupper(trim($t));
                 if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
-                    $turnoTrovatoReparto = $tC;
+                    $turnoTrovato = $tC;
+                    if ($primoTurnoNote === null) {
+                        $primoTurnoNote = $tC;
+                        $giornoPrimoTurno = $g;
+                    }
                     break 2;
                 }
             }
         }
-        $turniSquadraPerGiorno[$sq][$g] = ($turnoTrovatoReparto !== '') ? $turnoTrovatoReparto : '-';
+        $turniSquadraPerGiorno[$sq][$g] = $turnoTrovato;
+    }
+
+    // Ricostruzione sequenziale dinamica se alcuni giorni risultano scoperti per via di assenze/ferie generali
+    if ($primoTurnoNote !== null) {
+        $idxBase = array_search($primoTurnoNote, $cicloRotazioneStandard);
+        if ($idxBase !== false) {
+            for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                if (empty($turniSquadraPerGiorno[$sq][$g])) {
+                    $diffGiorni = $g - $giornoPrimoTurno;
+                    $idxCalcolato = ($idxBase + $diffGiorni) % 5;
+                    if ($idxCalcolato < 0) $idxCalcolato += 5;
+                    $turniSquadraPerGiorno[$sq][$g] = $cicloRotazioneStandard[$idxCalcolato];
+                }
+            }
+        }
     }
 }
 
@@ -499,21 +526,23 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $uId = $collab['id'];
                                     $nomeCollab = $collab['nome'] ?? 'Utente';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
-                                    $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
+                                    
+                                    $rawSqCollab = strtoupper(trim($collab['squadra'] ?? ''));
+                                    $sqNorma = str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSqCollab);
+                                    
+                                    $isMattiniero = (strpos(strtolower($rawSqCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false);
 
-                                    $isMattiniero = (strpos(strtolower($squadraCollab), 'mattin') !== false || strpos(strtolower($qualificaCollab), 'mattin') !== false);
-
-                                    // Stampa la riga di intestazione TURNO A, TURNO B, TURNO C, TURNO D, TURNO E con la sequenza per ogni squadra
-                                    if ($squadraCollab !== $squadraCorrente) {
-                                        $squadraCorrente = $squadraCollab;
-                                        $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
+                                    // Stampa la riga di intestazione TURNO A, TURNO B, TURNO C, TURNO D, TURNO E per TUTTE le squadre
+                                    if ($rawSqCollab !== $squadraCorrente) {
+                                        $squadraCorrente = $rawSqCollab;
+                                        $labelSquadra = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
                             ?>
                                         <tr class="table-secondary">
                                             <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light" style="font-size: 0.75rem;">
-                                                <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $nomeSquadraPulito; ?>
+                                                <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $labelSquadra; ?>
                                             </td>
                                             <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
-                                                $turnoGiornoSq = $turniSquadraPerGiorno[$squadraCorrente][$g] ?? '-';
+                                                $turnoGiornoSq = $turniSquadraPerGiorno[$sqNorma][$g] ?? '-';
                                                 $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
                                                 $isWeekendSq = (date('N', $timestampGiorno) >= 6);
                                             ?>
@@ -556,7 +585,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         foreach ($turniCella as $tSingolo) {
                                                             $tClean = strtoupper(trim($tSingolo));
                                                             
-                                                            // REGOLA: Se è un mattiniero mostriamo TUTTO, altrimenti filtriamo M, P, N, S, R
+                                                            // REGOLA: Se è mattiniero mostra tutto, altrimenti nascondi M, P, N, S, R
                                                             if ($isMattiniero || !in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
                                                                 $mostraQualcosa = true;
                                                                 $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
