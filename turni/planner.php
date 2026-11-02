@@ -119,7 +119,7 @@ usort($listaCollaboratori, function($a, $b) {
 
 $idsUtenti = array_keys($mappaUtenti);
 
-// 5. Recupero Pianificazione (Turni reali creati in turni.php)
+// 5. Recupero Pianificazione
 $matricePianificazione = [];
 if (!empty($idsUtenti)) {
     $d_inizio = sprintf('%04d-%02d-01', $anno_selezionato, $mese_selezionato);
@@ -164,7 +164,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 7. Calcolo della Sequenza Dinamica Robusta per TUTTE le 5 squadre (A, B, C, D, E)
+// 7. Calcolo della Sequenza Dinamica per TUTTE le 5 squadre (A, B, C, D, E)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $c) {
     $sq = $c['squadra_norm'];
@@ -175,8 +175,6 @@ foreach ($listaCollaboratori as $c) {
 
 $cicloRotazione = ['M', 'P', 'N', 'S', 'R'];
 $turniSquadraPerGiorno = [];
-
-// Sfasamenti standard di default nel ciclo 5 giorni se una squadra non ha turni espliciti iniziali
 $sfasamentoDefault = ['A' => 0, 'B' => 1, 'C' => 2, 'D' => 3, 'E' => 4];
 
 foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
@@ -184,7 +182,6 @@ foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
     $primoTurno = null; 
     $giornoPrimo = null;
 
-    // Cerca il primo turno valido (M, P, N, S, R) tra i membri della squadra nel mese
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
         foreach ($idsMembri as $uId) {
             foreach ($matricePianificazione[$uId][$g] ?? [] as $t) {
@@ -198,7 +195,6 @@ foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
         }
     }
 
-    // Se troviamo un turno di riferimento, costruiamo la sequenza dinamica continua
     if ($primoTurno !== null) {
         $idxBase = array_search($primoTurno, $cicloRotazione);
         for ($g = 1; $g <= $giorni_nel_mese; $g++) {
@@ -206,7 +202,6 @@ foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
             $turniSquadraPerGiorno[$sq][$g] = $cicloRotazione[($idxBase + $diff) % 5];
         }
     } else {
-        // Fallback intelligente basato sullo sfasamento standard di squadra
         $idxBase = $sfasamentoDefault[$sq] ?? 0;
         for ($g = 1; $g <= $giorni_nel_mese; $g++) {
             $turniSquadraPerGiorno[$sq][$g] = $cicloRotazione[($idxBase + ($g - 1)) % 5];
@@ -235,13 +230,42 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .th-giorno.weekend { background-color: #0f172a !important; color: #94a3b8 !important; }
         .weekend-col { background-color: #f1f5f9 !important; }
         .badge-turno { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px; font-size: 0.65rem; font-weight: 700; border-radius: 4px; }
+        
+        /* Sezioni di stampa e firme */
+        .print-header-info { display: none; }
+        .print-footer-signatures { display: none; }
+
         @media print {
             @page { size: A4 landscape; margin: 6mm; }
             .print-hide { display: none !important; }
-            body { background: #fff !important; font-size: 7pt !important; }
+            body { background: #fff !important; font-size: 8pt !important; color: #000 !important; }
             .card { box-shadow: none !important; border: none !important; }
             .table-planner th, .table-planner td { padding: 2px 1px !important; font-size: 6.5pt !important; border: 1px solid #94a3b8 !important; }
             .col-collaboratore { position: static !important; width: 120px !important; }
+
+            .print-header-info {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                margin-bottom: 15px !important;
+                border-bottom: 2px solid #0f172a;
+                padding-bottom: 8px;
+            }
+
+            .print-footer-signatures {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: flex-end !important;
+                margin-top: 25mm !important;
+                font-size: 9pt !important;
+                page-break-inside: avoid;
+            }
+            .signature-box {
+                width: 250px;
+                text-align: center;
+                border-top: 1px solid #000;
+                padding-top: 5px;
+            }
         }
     </style>
 </head>
@@ -296,6 +320,19 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         <!-- Tabella Planner Excel Style -->
         <div class="card">
             <div class="card-body p-0">
+                
+                <!-- Intestazione visibile solo in STAMPA -->
+                <div class="print-header-info">
+                    <div>
+                        <h4 class="fw-bold mb-1" style="font-size: 12pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
+                        <div style="font-size: 10pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-bold" style="font-size: 12pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
+                        <div style="font-size: 9pt;" class="text-muted">Pianificazione Turni Mensile</div>
+                    </div>
+                </div>
+
                 <div class="table-responsive">
                     <table class="table table-bordered table-planner mb-0">
                         <thead>
@@ -318,6 +355,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 <tr><td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">Nessun collaboratore trovato per questo reparto.</td></tr>
                             <?php } else {
                                 $squadraCorrente = null;
+                                $separatoreMattinieriStampato = false;
+
                                 foreach ($listaCollaboratori as $collab) {
                                     $uId = $collab['id'];
                                     $nome = $collab['nome'] ?? '';
@@ -325,6 +364,18 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $sqNorma = $collab['squadra_norm'];
                                     $isRotazione = in_array($sqNorma, ['A', 'B', 'C', 'D', 'E']);
                                     $isMattiniero = ($sqNorma === 'MATTINIERO');
+
+                                    // Inserimento riga di separazione prima dei Mattinieri / Senza Squadra
+                                    if (($isMattiniero || $sqNorma === 'SENZA_SQUADRA') && !$separatoreMattinieriStampato) {
+                                        $separatoreMattinieriStampato = true;
+                            ?>
+                                        <tr class="table-dark">
+                                            <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold text-uppercase ps-3 py-1" style="font-size: 0.7rem; letter-spacing: 0.5px;">
+                                                <i class="bi bi-person-badge me-1"></i> Personale Mattiniero / Altri Operatori
+                                            </td>
+                                        </tr>
+                            <?php
+                                    }
 
                                     // 1. Mostra la riga della sequenza dinamica UNA SOLA VOLTA per ciascuna squadra (A, B, C, D, E)
                                     if ($sqNorma !== $squadraCorrente) {
@@ -389,6 +440,19 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Sezione Firme visibile solo in STAMPA -->
+                <div class="print-footer-signatures">
+                    <div class="signature-box">
+                        <div class="fw-bold">Il Coordinatore</div>
+                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 20px;">(Firma)</div>
+                    </div>
+                    <div class="signature-box">
+                        <div class="fw-bold">Il Direttore UOC</div>
+                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 20px;">(Firma e Timbro)</div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
