@@ -109,9 +109,14 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
             $c['squadra_norm'] = 'MATTINIERO';
         } elseif ($rawSq !== '') {
             $cleanSq = strtoupper(str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSq));
-            $c['squadra_norm'] = (strlen($cleanSq) === 1) ? $cleanSq : strtoupper($rawSq);
+            // Riconoscimento rigoroso delle squadre a rotazione A, B, C, D, E
+            if (in_array($cleanSq, ['A', 'B', 'C', 'D', 'E'])) {
+                $c['squadra_norm'] = $cleanSq;
+            } else {
+                $c['squadra_norm'] = strtoupper($rawSq);
+            }
         } else {
-            $c['squadra_norm'] = 'Z';
+            $c['squadra_norm'] = 'SENZA_SQUADRA';
         }
 
         $c['reparto_id'] = $repCollabId;
@@ -119,17 +124,18 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
     }
 }
 
-// 6. Ordinamento collaboratori: prima le squadre standard (A, B, C, D, E...) e in fondo i Mattinieri
+// 6. Ordinamento collaboratori: prima A, B, C, D, E, poi Mattinieri e infine Senza Squadra
 $listaCollaboratoriGrezzi = array_values($mappaUtenti);
 usort($listaCollaboratoriGrezzi, function($a, $b) {
     $squadraA = $a['squadra_norm'];
     $squadraB = $b['squadra_norm'];
 
-    if ($squadraA === 'MATTINIERO' && $squadraB !== 'MATTINIERO') return 1;
-    if ($squadraA !== 'MATTINIERO' && $squadraB === 'MATTINIERO') return -1;
+    $ordineSquadre = ['A' => 1, 'B' => 2, 'C' => 3, 'D' => 4, 'E' => 5];
+    $pesoA = $ordineSquadre[$squadraA] ?? ($squadraA === 'MATTINIERO' ? 10 : 20);
+    $pesoB = $ordineSquadre[$squadraB] ?? ($squadraB === 'MATTINIERO' ? 10 : 20);
 
-    $cmpSquadra = strcmp($squadraA, $squadraB);
-    if ($cmpSquadra !== 0) return $cmpSquadra;
+    if ($pesoA !== $pesoB) return $pesoA - $pesoB;
+    if ($squadraA !== $squadraB) return strcmp($squadraA, $squadraB);
 
     $ruoloA = strtolower(trim($a['qualifica'] ?? $a['ruolo'] ?? ''));
     $ruoloB = strtolower(trim($b['qualifica'] ?? $b['ruolo'] ?? ''));
@@ -141,10 +147,10 @@ usort($listaCollaboratoriGrezzi, function($a, $b) {
         return 4;
     };
 
-    $pesoA = $getPesoRuolo($ruoloA);
-    $pesoB = $getPesoRuolo($ruoloB);
+    $pA = $getPesoRuolo($ruoloA);
+    $pB = $getPesoRuolo($ruoloB);
 
-    if ($pesoA !== $pesoB) return $pesoA - $pesoB;
+    if ($pA !== $pB) return $pA - $pB;
     return strcmp($a['nome'] ?? '', $b['nome'] ?? '');
 });
 
@@ -219,19 +225,18 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Raggruppamento utenti per squadra normalizzata (escludendo i mattinieri dal calcolo della sequenza ciclica)
+// Raggruppamento utenti esclusivamente per le squadre a rotazione (A, B, C, D, E)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = $collab['squadra_norm'];
-    if (!empty($sq) && $sq !== 'Z' && $sq !== 'MATTINIERO') {
+    if (in_array($sq, ['A', 'B', 'C', 'D', 'E'])) {
         $utentiPerSquadra[$sq][] = $collab['id'];
     }
 }
 
-// Ciclo di rotazione standard a 5 elementi
 $cicloRotazioneStandard = ['M', 'P', 'N', 'S', 'R'];
 
-// Estrazione della sequenza turno giorno per giorno per le sole squadre a rotazione
+// Estrazione della sequenza turno giorno per giorno per A, B, C, D, E
 $turniSquadraPerGiorno = [];
 foreach ($utentiPerSquadra as $sq => $idsMembri) {
     $primoTurnoNote = null;
@@ -539,20 +544,18 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $nomeCollab = $collab['nome'] ?? 'Utente';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     
-                                    $rawSqCollab = trim($collab['squadra'] ?? '');
                                     $sqNorma = $collab['squadra_norm'];
-                                    
+                                    $isRotazione = in_array($sqNorma, ['A', 'B', 'C', 'D', 'E']);
                                     $isMattiniero = ($sqNorma === 'MATTINIERO');
 
-                                    // Stampa la riga di intestazione TURNO A, B, C, D, E SOLO se NON è un mattiniero
+                                    // Stampa la riga di intestazione TURNO A, B, C, D, E SOLO per le squadre a rotazione
                                     if ($sqNorma !== $squadraCorrente) {
                                         $squadraCorrente = $sqNorma;
-                                        if (!$isMattiniero) {
-                                            $labelSquadra = !empty($rawSqCollab) ? htmlspecialchars(strtoupper($rawSqCollab)) : 'NON ASSEGNATA';
+                                        if ($isRotazione) {
                             ?>
                                             <tr class="table-secondary">
                                                 <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light" style="font-size: 0.75rem;">
-                                                    <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $labelSquadra; ?>
+                                                    <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $sqNorma; ?>
                                                 </td>
                                                 <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
                                                     $turnoGiornoSq = $turniSquadraPerGiorno[$sqNorma][$g] ?? '-';
@@ -599,8 +602,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         foreach ($turniCella as $tSingolo) {
                                                             $tClean = strtoupper(trim($tSingolo));
                                                             
-                                                            // REGOLA: Se è mattiniero mostra tutto, altrimenti nascondi M, P, N, S, R
-                                                            if ($isMattiniero || !in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
+                                                            // REGOLA: Se è mattiniero o senza squadra mostra tutto, altrimenti nascondi M, P, N, S, R
+                                                            if ($isMattiniero || !$isRotazione || !in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
                                                                 $mostraQualcosa = true;
                                                                 $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
                                                     ?>
