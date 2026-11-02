@@ -11,26 +11,19 @@ $utente_id = $_SESSION['utente_id'] ?? $_SESSION['utente']['id'] ?? null;
 $org_id_utente = $_SESSION['organizzazione_id'] ?? $_SESSION['utente']['organizzazione_id'] ?? null;
 $reparto_id_utente = $_SESSION['reparto_id'] ?? $_SESSION['utente']['reparto_id'] ?? null;
 
-// Ruoli e permessi
 $ruolo_raw = trim($_SESSION['ruolo'] ?? $_SESSION['utente']['ruolo'] ?? '');
 $ruolo_lower = strtolower(str_replace([' ', '-'], '_', $ruolo_raw));
-
-$is_super_admin = $_SESSION['is_super_admin'] ?? $_SESSION['utente']['is_super_admin'] ?? false;
-if (!$is_super_admin && in_array($ruolo_lower, ['super_admin', 'admin', 'superadmin'])) {
-    $is_super_admin = true;
-}
-
+$is_super_admin = ($_SESSION['is_super_admin'] ?? $_SESSION['utente']['is_super_admin'] ?? false) || in_array($ruolo_lower, ['super_admin', 'admin', 'superadmin']);
 $is_capo_personale = in_array($ruolo_lower, ['capo_personale', 'capopersonale']);
-$is_coordinatore = ($ruolo_lower === 'coordinatore');
 
-// 2. Recupero di tutti i reparti per popolare il menu a tendina
+// 2. Reparti disponibili
 $reparti_disponibili = [];
 $resReparti = supabase_request("reparti?select=id,nome_reparto&order=nome_reparto.asc");
 if (is_array($resReparti) && !isset($resReparti['error'])) {
     $reparti_disponibili = $resReparti;
 }
 
-// 3. Gestione Reparto Selezionato
+// 3. Reparto Selezionato
 $reparto_selezionato = '';
 if ($is_super_admin || $is_capo_personale) {
     if (isset($_GET['reparto_id']) && $_GET['reparto_id'] !== '') {
@@ -44,7 +37,6 @@ if ($is_super_admin || $is_capo_personale) {
     $reparto_selezionato = $reparto_id_utente;
 }
 
-// 4. Determinazione del nome del reparto e della struttura da mostrare a schermo
 $nome_reparto_selezionato = ($is_super_admin || ($is_capo_personale && $reparto_selezionato === '')) ? "Tutti i Reparti" : "Reparto non assegnato";
 $nome_struttura_corrente = "Azienda Sanitaria / Struttura";
 
@@ -62,35 +54,25 @@ if ($reparto_selezionato !== '') {
             break;
         }
     }
-    if ($nome_reparto_selezionato === "Reparto non assegnato") {
-        $resSingleRep = supabase_request("reparti?id=eq." . urlencode($reparto_selezionato) . "&select=nome_reparto");
-        if (is_array($resSingleRep) && count($resSingleRep) > 0) {
-            $nome_reparto_selezionato = $resSingleRep[0]['nome_reparto'] ?? $resSingleRep[0]['nome'] ?? 'Reparto';
-        }
-    }
 }
 
-// Gestione mese e anno
+// Gestione Mese e Anno
 $mese_selezionato = isset($_GET['mese']) ? intval($_GET['mese']) : intval(date('m'));
 $anno_selezionato = isset($_GET['anno']) ? intval($_GET['anno']) : intval(date('Y'));
 $giorni_nel_mese = cal_days_in_month(CAL_GREGORIAN, $mese_selezionato, $anno_selezionato);
 
-// 4.1. Recupero dinamico delle tipologie di turno e dei colori da Supabase
+// Colori Turni da Supabase
 $mappaColoriTurni = [];
-$elencoTipologieTurno = [];
-$resTipologie = supabase_request("tipologie_turno?select=codice_breve,nome_turno,colore");
+$resTipologie = supabase_request("tipologie_turno?select=codice_breve,colore");
 if (is_array($resTipologie) && !isset($resTipologie['error'])) {
-    $elencoTipologieTurno = $resTipologie;
     foreach ($resTipologie as $t) {
-        $codiceBreve = strtoupper(trim($t['codice_breve'] ?? ''));
-        $colore = trim($t['colore'] ?? '');
-        if (!empty($codiceBreve) && !empty($colore)) {
-            $mappaColoriTurni[$codiceBreve] = $colore;
-        }
+        $cod = strtoupper(trim($t['codice_breve'] ?? ''));
+        $col = trim($t['colore'] ?? '');
+        if (!empty($cod) && !empty($col)) $mappaColoriTurni[$cod] = $col;
     }
 }
 
-// 5. Recupero collaboratori
+// 4. Recupero Collaboratori e Normalizzazione Squadre
 $mappaUtenti = [];
 $resCollab = supabase_request("staging_utenti?select=id,nome,ruolo,qualifica,reparto_id,squadra&order=nome.asc");
 
@@ -100,7 +82,7 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
         if ($reparto_selezionato !== '' && (string)$repCollabId !== (string)$reparto_selezionato) {
             continue;
         }
-        
+
         $rawSq = trim($c['squadra'] ?? '');
         $qualificaC = trim($c['qualifica'] ?? '') !== '' ? $c['qualifica'] : ($c['ruolo'] ?? '');
         $isMattiniero = (strpos(strtolower($rawSq), 'mattin') !== false || strpos(strtolower($qualificaC), 'mattin') !== false);
@@ -109,11 +91,7 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
             $c['squadra_norm'] = 'MATTINIERO';
         } elseif ($rawSq !== '') {
             $cleanSq = strtoupper(str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSq));
-            if (in_array($cleanSq, ['A', 'B', 'C', 'D', 'E'])) {
-                $c['squadra_norm'] = $cleanSq;
-            } else {
-                $c['squadra_norm'] = strtoupper($rawSq);
-            }
+            $c['squadra_norm'] = in_array($cleanSq, ['A', 'B', 'C', 'D', 'E']) ? $cleanSq : strtoupper($rawSq);
         } else {
             $c['squadra_norm'] = 'SENZA_SQUADRA';
         }
@@ -123,76 +101,44 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
     }
 }
 
-// 6. Ordinamento collaboratori: A, B, C, D, E, poi Mattinieri e Senza Squadra
-$listaCollaboratoriGrezzi = array_values($mappaUtenti);
-usort($listaCollaboratoriGrezzi, function($a, $b) {
-    $squadraA = $a['squadra_norm'];
-    $squadraB = $b['squadra_norm'];
+// Ordinamento: prima A, B, C, D, E, poi Mattinieri, poi Senza Squadra
+usort($resCollab, function($a, $b) use ($mappaUtenti) {
+    if (!isset($mappaUtenti[$a['id']]) || !isset($mappaUtenti[$b['id']])) return 0;
+    $sqA = $mappaUtenti[$a['id']]['squadra_norm'];
+    $sqB = $mappaUtenti[$b['id']]['squadra_norm'];
 
-    $ordineSquadre = ['A' => 1, 'B' => 2, 'C' => 3, 'D' => 4, 'E' => 5];
-    $pesoA = $ordineSquadre[$squadraA] ?? ($squadraA === 'MATTINIERO' ? 10 : 20);
-    $pesoB = $ordineSquadre[$squadraB] ?? ($squadraB === 'MATTINIERO' ? 10 : 20);
-
-    if ($pesoA !== $pesoB) return $pesoA - $pesoB;
-    if ($squadraA !== $squadraB) return strcmp($squadraA, $squadraB);
-
-    $ruoloA = strtolower(trim($a['qualifica'] ?? $a['ruolo'] ?? ''));
-    $ruoloB = strtolower(trim($b['qualifica'] ?? $b['ruolo'] ?? ''));
-
-    $getPesoRuolo = function($r) {
-        if (strpos($r, 'coordinatore') !== false) return 1;
-        if (strpos($r, 'infermiere') !== false || strpos($r, 'infermieristica') !== false || strpos($r, 'cpsi') !== false) return 2;
-        if (strpos($r, 'oss') !== false || strpos($r, 'operatore socio') !== false) return 3;
-        return 4;
-    };
-
-    $pA = $getPesoRuolo($ruoloA);
-    $pB = $getPesoRuolo($ruoloB);
+    $ordine = ['A' => 1, 'B' => 2, 'C' => 3, 'D' => 4, 'E' => 5];
+    $pA = $ordine[$sqA] ?? ($sqA === 'MATTINIERO' ? 10 : 20);
+    $pB = $ordine[$sqB] ?? ($sqB === 'MATTINIERO' ? 10 : 20);
 
     if ($pA !== $pB) return $pA - $pB;
+    if ($sqA !== $sqB) return strcmp($sqA, $sqB);
     return strcmp($a['nome'] ?? '', $b['nome'] ?? '');
 });
 
-$listaCollaboratori = $listaCollaboratoriGrezzi;
+$listaCollaboratori = array_values(array_intersect_key($resCollab, array_flip(array_keys($mappaUtenti))));
 $idsUtenti = array_keys($mappaUtenti);
 
-// 8. Recupero pianificazione esistente
-$matricePianificazione = []; 
+// 5. Recupero Pianificazione (Turni reali creati in turni.php)
+$matricePianificazione = [];
 if (!empty($idsUtenti)) {
-    $data_inizio_mese = sprintf('%04d-%02d-01', $anno_selezionato, $mese_selezionato);
-    $data_fine_mese = sprintf('%04d-%02d-%d', $anno_selezionato, $mese_selezionato, $giorni_nel_mese);
+    $d_inizio = sprintf('%04d-%02d-01', $anno_selezionato, $mese_selezionato);
+    $d_fine = sprintf('%04d-%02d-%d', $anno_selezionato, $mese_selezionato, $giorni_nel_mese);
+    $resPian = supabase_request("pianificazione?data_inizio=lte.$d_fine&data_fine=gte.$d_inizio&select=*");
 
-    $resPian = supabase_request("pianificazione?data_inizio=lte." . $data_fine_mese . "&data_fine=gte." . $data_inizio_mese . "&select=*");
-    
     if (is_array($resPian) && !isset($resPian['error'])) {
         foreach ($resPian as $p) {
             $uId = $p['utente_id'] ?? '';
-            if (!isset($mappaUtenti[$uId])) continue;
+            if (!isset($mappaUtenti[$uId]) || ($p['stato'] ?? '') === 'cancellato') continue;
             
-            if (($p['stato'] ?? '') === 'cancellato' || empty($p['tipo_evento'])) {
-                continue;
-            }
-
-            $dInizio = $p['data_inizio'] ?? '';
-            $dFine = $p['data_fine'] ?? '';
-            $tipoEv = $p['tipo_evento'] ?? 'T';
-
-            if (!empty($uId) && !empty($dInizio)) {
-                $giorno_inizio = intval(substr($dInizio, 8, 2));
-                $giorno_fine = !empty($dFine) ? intval(substr($dFine, 8, 2)) : $giorno_inizio;
-                $mese_evento = intval(substr($dInizio, 5, 2));
-                $anno_evento = intval(substr($dInizio, 0, 4));
-
-                if ($mese_evento === $mese_selezionato && $anno_evento === $anno_selezionato) {
-                    for ($g = $giorno_inizio; $g <= $giorno_fine; $g++) {
-                        if (!isset($matricePianificazione[$uId][$g])) $matricePianificazione[$uId][$g] = [];
-                        $partiTurni = explode(',', $tipoEv);
-                        foreach ($partiTurni as $pt) {
-                            $ptClean = trim($pt);
-                            if (!empty($ptClean) && !in_array($ptClean, $matricePianificazione[$uId][$g])) {
-                                $matricePianificazione[$uId][$g][] = $ptClean;
-                            }
-                        }
+            $gInizio = intval(substr($p['data_inizio'], 8, 2));
+            $gFine = !empty($p['data_fine']) ? intval(substr($p['data_fine'], 8, 2)) : $gInizio;
+            
+            for ($g = $gInizio; $g <= $gFine; $g++) {
+                foreach (explode(',', $p['tipo_evento'] ?? '') as $t) {
+                    $tC = trim($t);
+                    if (!empty($tC) && !in_array($tC, $matricePianificazione[$uId][$g] ?? [])) {
+                        $matricePianificazione[$uId][$g][] = $tC;
                     }
                 }
             }
@@ -200,75 +146,56 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 9. Recupero ferie/assenze approvate
+// 6. Recupero Assenze Approvate (Ferie, Malattia, 104, ecc.)
 $assenzeMese = [];
 if (!empty($idsUtenti)) {
-    $data_inizio_mese = sprintf('%04d-%02d-01', $anno_selezionato, $mese_selezionato);
-    $data_fine_mese = sprintf('%04d-%02d-%d', $anno_selezionato, $mese_selezionato, $giorni_nel_mese);
-    $resAss = supabase_request("assenze?stato=eq.approvato&data_inizio=lte." . $data_fine_mese . "&data_fine=gte." . $data_inizio_mese . "&select=*");
+    $resAss = supabase_request("assenze?stato=eq.approvato&data_inizio=lte.$d_fine&data_fine=gte.$d_inizio&select=*");
     if (is_array($resAss) && !isset($resAss['error'])) {
         foreach ($resAss as $ass) {
-            $uIdAss = $ass['utente_id'] ?? '';
-            if (!isset($mappaUtenti[$uIdAss])) continue;
-            $dInzAss = $ass['data_inizio'] ?? '';
-            $dFinAss = $ass['data_fine'] ?? '';
+            $uId = $ass['utente_id'] ?? '';
+            if (!isset($mappaUtenti[$uId])) continue;
+            $gInz = max(1, intval(substr($ass['data_inizio'], 8, 2)));
+            $gFin = min($giorni_nel_mese, intval(substr($ass['data_fine'], 8, 2)));
             $tipoAss = strtoupper(trim($ass['tipo_evento'] ?? $ass['tipo_assenza'] ?? 'F'));
-            if (!empty($uIdAss) && !empty($dInzAss) && !empty($dFinAss)) {
-                $gInz = max(1, intval(substr($dInzAss, 8, 2)));
-                $gFin = min($giorni_nel_mese, intval(substr($dFinAss, 8, 2)));
-                for ($gg = $gInz; $gg <= $gFin; $gg++) {
-                    $assenzeMese[$uIdAss][$gg] = $tipoAss;
-                }
+            for ($gg = $gInz; $gg <= $gFin; $gg++) {
+                $assenzeMese[$uId][$gg] = $tipoAss;
             }
         }
     }
 }
 
-// Raggruppamento utenti per le squadre a rotazione
+// 7. Calcolo della Sequenza Orizzontale per Squadra (A, B, C, D, E)
 $utentiPerSquadra = [];
-foreach ($listaCollaboratori as $collab) {
-    $sq = $collab['squadra_norm'];
+foreach ($listaCollaboratori as $c) {
+    $sq = $mappaUtenti[$c['id']]['squadra_norm'];
     if (in_array($sq, ['A', 'B', 'C', 'D', 'E'])) {
-        $utentiPerSquadra[$sq][] = $collab['id'];
+        $utentiPerSquadra[$sq][] = $c['id'];
     }
 }
 
-$cicloRotazioneStandard = ['M', 'P', 'N', 'S', 'R'];
-
-// Estrazione della sequenza turno giorno per giorno per A, B, C, D, E
+$cicloRotazione = ['M', 'P', 'N', 'S', 'R'];
 $turniSquadraPerGiorno = [];
 foreach ($utentiPerSquadra as $sq => $idsMembri) {
-    $primoTurnoNote = null;
-    $giornoPrimoTurno = null;
-
+    $primoTurno = null; $giornoPrimo = null;
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-        $turnoTrovato = '';
-        foreach ($idsMembri as $uIdMembro) {
-            $turniMembro = $matricePianificazione[$uIdMembro][$g] ?? [];
-            foreach ($turniMembro as $t) {
+        foreach ($idsMembri as $uId) {
+            foreach ($matricePianificazione[$uId][$g] ?? [] as $t) {
                 $tC = strtoupper(trim($t));
                 if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
-                    $turnoTrovato = $tC;
-                    if ($primoTurnoNote === null) {
-                        $primoTurnoNote = $tC;
-                        $giornoPrimoTurno = $g;
-                    }
+                    $turniSquadraPerGiorno[$sq][$g] = $tC;
+                    if ($primoTurno === null) { $primoTurno = $tC; $giornoPrimo = $g; }
                     break 2;
                 }
             }
         }
-        $turniSquadraPerGiorno[$sq][$g] = $turnoTrovato;
     }
-
-    if ($primoTurnoNote !== null) {
-        $idxBase = array_search($primoTurnoNote, $cicloRotazioneStandard);
+    // Fallback automatico rotazione se necessario
+    if ($primoTurno !== null) {
+        $idxBase = array_search($primoTurno, $cicloRotazione);
         if ($idxBase !== false) {
             for ($g = 1; $g <= $giorni_nel_mese; $g++) {
                 if (empty($turniSquadraPerGiorno[$sq][$g])) {
-                    $diffGiorni = $g - $giornoPrimoTurno;
-                    $idxCalcolato = ($idxBase + $diffGiorni) % 5;
-                    if ($idxCalcolato < 0) $idxCalcolato += 5;
-                    $turniSquadraPerGiorno[$sq][$g] = $cicloRotazioneStandard[$idxCalcolato];
+                    $turniSquadraPerGiorno[$sq][$g] = $cicloRotazione[($idxBase + ($g - $giornoPrimo)) % 5];
                 }
             }
         }
@@ -282,129 +209,27 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pro-Tur - Planner Mensile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro-Tur - Planner Excel Style</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
-        :root {
-            --primary-color: #0f172a;
-            --accent-color: #3b82f6;
-            --bg-body: #f8fafc;
-            --border-color: #cbd5e1;
-        }
-
-        body { background-color: var(--bg-body); padding-bottom: 70px; color: #334155; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-        
-        .card { border: none; border-radius: 10px; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05); background: #ffffff; }
-        
+        body { background-color: #f8fafc; color: #334155; font-family: system-ui, sans-serif; padding-bottom: 50px; }
+        .card { border: none; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.04); background: #fff; }
         .table-planner { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
-        .table-planner th, .table-planner td { text-align: center; vertical-align: middle; font-size: 0.75rem; padding: 4px 2px; border-color: var(--border-color); overflow: hidden; }
-        
-        .col-collaboratore {
-            text-align: left !important;
-            padding-left: 8px !important;
-            width: 170px !important;
-            min-width: 170px !important;
-            max-width: 170px !important;
-            background-color: #ffffff !important;
-            position: sticky;
-            left: 0;
-            z-index: 4;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.03);
-            border-right: 2px solid #94a3b8 !important;
-        }
-        .table-planner thead th.col-collaboratore {
-            z-index: 5;
-            background-color: var(--primary-color) !important;
-        }
-        
-        .th-giorno {
-            width: 32px !important;
-            min-width: 32px !important;
-            max-width: 32px !important;
-            background-color: #334155;
-            color: #fff;
-            border-bottom: 2px solid #1e293b;
-            position: sticky;
-            top: 0;
-            z-index: 3;
-        }
+        .table-planner th, .table-planner td { text-align: center; vertical-align: middle; font-size: 0.75rem; padding: 4px 2px; border: 1px solid #cbd5e1; }
+        .col-collaboratore { text-align: left !important; padding-left: 8px !important; width: 170px !important; background: #fff !important; position: sticky; left: 0; z-index: 4; }
+        .th-giorno { width: 32px !important; background-color: #334155; color: #fff; position: sticky; top: 0; z-index: 3; }
         .th-giorno.weekend { background-color: #0f172a !important; color: #94a3b8 !important; }
-        .giorno-num { font-size: 0.75rem; font-weight: 700; line-height: 1.1; }
-        .giorno-lettera { font-size: 0.55rem; text-transform: uppercase; opacity: 0.85; font-weight: 600; }
         .weekend-col { background-color: #f1f5f9 !important; }
-
-        .cell-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 2px;
-            min-height: 38px;
-        }
-        .badge-turno {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 24px;
-            height: 20px;
-            font-size: 0.65rem;
-            font-weight: 700;
-            border-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            margin: 0 auto;
-        }
-
-        .table-hover-custom tbody tr:hover td.col-collaboratore {
-            background-color: #e2e8f0 !important;
-        }
-
-        .print-header-section { display: none; }
-        .print-footer-signature { display: none; }
-
+        .badge-turno { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px; font-size: 0.65rem; font-weight: 700; border-radius: 4px; }
         @media print {
-            @page { size: A4 landscape; margin: 8mm; }
-            body { background-color: #ffffff !important; padding-bottom: 0 !important; font-size: 8pt !important; color: #000 !important; }
-            .navbar, .btn, form, .alert, .card-header, .print-hide { display: none !important; }
-            .card { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; background: transparent !important; }
-            .container-fluid { width: 100% !important; max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
-            .table-responsive { overflow: visible !important; max-height: none !important; }
-            
-            .print-header-section {
-                display: block !important;
-                margin-bottom: 12px !important;
-                border-bottom: 2px solid #0f172a;
-                padding-bottom: 8px;
-            }
-
-            .table-planner { width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
-            .table-planner th, .table-planner td { font-size: 7pt !important; padding: 2px 1px !important; border: 1px solid #94a3b8 !important; color: #000 !important; }
-            
-            .col-collaboratore { position: static !important; box-shadow: none !important; background-color: #ffffff !important; width: 130px !important; min-width: 130px !important; max-width: 130px !important; text-align: left !important; padding-left: 4px !important; }
-            
-            .th-giorno { width: auto !important; background-color: #334155 !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .th-giorno .giorno-num, .th-giorno .giorno-lettera { color: #ffffff !important; opacity: 1 !important; }
-            .th-giorno.weekend { background-color: #1e293b !important; color: #e2e8f0 !important; }
-            
-            .badge-turno { width: 18px; height: 16px; font-size: 6pt; border: 1px solid #475569 !important; border-radius: 2px !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0 auto; box-shadow: none !important; }
-            .cell-container { min-height: 20px; gap: 1px; }
-            .weekend-col { background-color: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-            .print-footer-signature {
-                display: flex !important;
-                justify-content: space-between !important;
-                align-items: flex-end !important;
-                margin-top: 15mm !important;
-                font-size: 9pt !important;
-                page-break-inside: avoid;
-            }
-            .signature-box {
-                width: 250px;
-                text-align: center;
-                border-top: 1px solid #000;
-                padding-top: 5px;
-            }
+            @page { size: A4 landscape; margin: 6mm; }
+            .print-hide { display: none !important; }
+            body { background: #fff !important; font-size: 7pt !important; }
+            .card { box-shadow: none !important; border: none !important; }
+            .table-planner th, .table-planner td { padding: 2px 1px !important; font-size: 6.5pt !important; border: 1px solid #94a3b8 !important; }
+            .col-collaboratore { position: static !important; width: 120px !important; }
         }
     </style>
 </head>
@@ -412,210 +237,137 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 print-hide">
         <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR | ASL Napoli 1 Centro</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link" href="turni.php">Assegnazione Turni</a></li>
-                    <li class="nav-item"><a class="nav-link" href="riepilogo_ore.php">Ore Totali Mensili</a></li>
-                    <li class="nav-item"><a class="nav-link" href="ferie.php">Ferie e Assenze</a></li>
-                    <li class="nav-item"><a class="nav-link text-danger" href="logout.php">Logout</a></li>
-                </ul>
+            <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR | Planner</a>
+            <div class="ms-auto">
+                <a href="dashboard.php" class="btn btn-outline-light btn-sm">Dashboard</a>
+                <a href="turni.php" class="btn btn-outline-light btn-sm">Gestione Turni</a>
+                <a href="logout.php" class="btn btn-danger btn-sm">Logout</a>
             </div>
         </div>
     </nav>
 
     <div class="container-fluid px-4">
-        
-        <!-- Header Filtri e Azioni -->
-        <div class="card shadow-sm mb-3 p-3 print-hide">
-            <div class="row align-items-center g-3">
-                <div class="col-md-5">
-                    <h4 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-                        <i class="bi bi-calendar-range text-primary"></i> 
-                        <span><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></span>
-                    </h4>
-                    <span class="small text-muted">
-                        <i class="bi bi-building"></i> Reparto: <strong class="text-dark"><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong>
-                    </span>
-                </div>
+        <!-- Filtri e Stampa -->
+        <div class="card p-3 mb-3 print-hide">
+            <form method="GET" action="planner.php" class="row g-3 align-items-center">
                 <div class="col-md-4">
-                    <form method="GET" action="planner.php" class="row g-2">
-                        <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
-                            <div class="col-12">
-                                <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                                    <option value="">Tutti i Reparti</option>
-                                    <?php foreach ($reparti_disponibili as $rep) { 
-                                        $labelRep = $rep['nome_reparto'] ?? $rep['nome'] ?? 'Reparto';
-                                    ?>
-                                        <option value="<?php echo $rep['id']; ?>" <?php echo ($reparto_selezionato !== '' && (string)$rep['id'] === (string)$reparto_selezionato) ? 'selected' : ''; ?>><?php echo htmlspecialchars($labelRep); ?></option>
-                                    <?php } ?>
-                                </select>
-                            </div>
+                    <h5 class="fw-bold mb-0"><i class="bi bi-calendar3 text-primary"></i> <?php echo "$nomeMeseCorrente $anno_selezionato"; ?></h5>
+                    <small class="text-muted">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></small>
+                </div>
+                <div class="col-md-6 d-flex gap-2">
+                    <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
+                        <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Tutti i Reparti</option>
+                            <?php foreach ($reparti_disponibili as $rep) { ?>
+                                <option value="<?php echo $rep['id']; ?>" <?php echo ($reparto_selezionato == $rep['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rep['nome_reparto']); ?></option>
+                            <?php } ?>
+                        </select>
+                    <?php } ?>
+                    <select name="mese" class="form-select form-select-sm">
+                        <?php foreach ($mesiNomi as $numM => $strM) { ?>
+                            <option value="<?php echo $numM; ?>" <?php echo ($numM === $mese_selezionato) ? 'selected' : ''; ?>><?php echo $strM; ?></option>
                         <?php } ?>
-                        <div class="col-6">
-                            <select name="mese" class="form-select form-select-sm">
-                                <?php foreach ($mesiNomi as $numM => $strM) { ?>
-                                    <option value="<?php echo $numM; ?>" <?php echo ($numM === $mese_selezionato) ? 'selected' : ''; ?>><?php echo $strM; ?></option>
-                                <?php } ?>
-                            </select>
-                        </div>
-                        <div class="col-3">
-                            <select name="anno" class="form-select form-select-sm">
-                                <?php for ($a = 2024; $a <= 2030; $a++) { ?>
-                                    <option value="<?php echo $a; ?>" <?php echo ($a === $anno_selezionato) ? 'selected' : ''; ?>><?php echo $a; ?></option>
-                                <?php } ?>
-                            </select>
-                        </div>
-                        <div class="col-3">
-                            <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold"><i class="bi bi-filter"></i> Filtra</button>
-                        </div>
-                    </form>
+                    </select>
+                    <select name="anno" class="form-select form-select-sm">
+                        <?php for ($a = 2024; $a <= 2030; $a++) { ?>
+                            <option value="<?php echo $a; ?>" <?php echo ($a === $anno_selezionato) ? 'selected' : ''; ?>><?php echo $a; ?></option>
+                        <?php } ?>
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Filtra</button>
                 </div>
-                <div class="col-md-3 text-end">
-                    <button onclick="window.print();" class="btn btn-secondary btn-sm fw-bold shadow-sm"><i class="bi bi-printer"></i> Stampa Mese Intero</button>
+                <div class="col-md-2 text-end">
+                    <button onclick="window.print();" class="btn btn-secondary btn-sm fw-bold"><i class="bi bi-printer"></i> Stampa</button>
                 </div>
-            </div>
+            </form>
         </div>
 
-        <!-- Legenda Turni Dinamica -->
-        <div class="card shadow-sm mb-3 p-2 px-3 print-hide">
-            <div class="d-flex align-items-center flex-wrap gap-3">
-                <span class="small fw-bold text-muted"><i class="bi bi-info-circle"></i> Legenda Eccezioni / Assenze:</span>
-                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #20c997; color: #fff;">F</span><span class="small text-secondary">Ferie</span></div>
-                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #fd7e14; color: #fff;">PE</span><span class="small text-secondary">Permessi</span></div>
-                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #6610f2; color: #fff;">FOR</span><span class="small text-secondary">Formazione</span></div>
-                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #d63384; color: #fff;">104</span><span class="small text-secondary">Legge 104</span></div>
-                <div class="d-flex align-items-center gap-1"><span class="badge-turno" style="background-color: #dc3545; color: #fff;">MAL</span><span class="small text-secondary">Malattia</span></div>
-            </div>
-        </div>
-
-        <!-- CONTENITORE PRINCIPALE PLANNER INTERO MESE -->
-        <div class="card shadow-sm mb-4">
+        <!-- Tabella Planner Excel Style -->
+        <div class="card">
             <div class="card-body p-0">
-                
-                <!-- Intestazione formale esclusiva per la Stampa -->
-                <div class="print-header-section">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h5 class="fw-bold mb-1" style="font-size: 11pt; color: #0f172a;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h5>
-                            <div class="text-muted" style="font-size: 9pt;">Unità Operativa / Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></div>
-                        </div>
-                        <div class="text-end">
-                            <h4 class="fw-bold mb-0" style="font-size: 13pt; color: #0f172a;">PIANIFICAZIONE TURNI MENSILE</h4>
-                            <div class="text-uppercase fw-semibold text-primary" style="font-size: 10pt;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="table-responsive">
-                    <table class="table table-bordered table-hover-custom table-planner mb-0">
+                    <table class="table table-bordered table-planner mb-0">
                         <thead>
                             <tr>
                                 <th class="col-collaboratore">Nominativo</th>
                                 <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-                                    $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
-                                    $numGiornoSettimana = date('N', $timestampGiorno); // 1 (Lun) - 7 (Dom)
-                                    $letteraGiorno = ['1'=>'L', '2'=>'M', '3'=>'M', '4'=>'G', '5'=>'V', '6'=>'S', '7'=>'D'][$numGiornoSettimana];
-                                    $isWeekend = ($numGiornoSettimana >= 6);
+                                    $w = date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato));
+                                    $let = ['1'=>'L','2'=>'M','3'=>'M','4'=>'G','5'=>'V','6'=>'S','7'=>'D'][$w];
+                                    $isWk = ($w >= 6);
                                 ?>
-                                    <th class="th-giorno <?php echo $isWeekend ? 'weekend' : ''; ?>">
-                                        <div class="giorno-num"><?php echo $g; ?></div>
-                                        <div class="giorno-lettera"><?php echo $letteraGiorno; ?></div>
+                                    <th class="th-giorno <?php echo $isWk ? 'weekend' : ''; ?>">
+                                        <div><?php echo $g; ?></div>
+                                        <div style="font-size:0.55rem; opacity:0.8;"><?php echo $let; ?></div>
                                     </th>
                                 <?php } ?>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($listaCollaboratori)) { ?>
-                                <tr>
-                                    <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">Nessun collaboratore trovato per i filtri selezionati.</td>
-                                </tr>
-                            <?php } else { 
+                                <tr><td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">Nessun collaboratore trovato.</td></tr>
+                            <?php } else {
                                 $squadraCorrente = null;
                                 foreach ($listaCollaboratori as $collab) {
                                     $uId = $collab['id'];
-                                    $nomeCollab = $collab['nome'] ?? 'Utente';
-                                    $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
-                                    
-                                    $sqNorma = $collab['squadra_norm'];
+                                    $nome = $collab['nome'] ?? '';
+                                    $qualifica = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
+                                    $sqNorma = $mappaUtenti[$uId]['squadra_norm'];
                                     $isRotazione = in_array($sqNorma, ['A', 'B', 'C', 'D', 'E']);
                                     $isMattiniero = ($sqNorma === 'MATTINIERO');
 
-                                    // Stampa la riga di intestazione TURNO A, B, C, D, E SOLO per le squadre a rotazione
+                                    // 1. Mostra la riga della sequenza UNA SOLA VOLTA per ogni squadra
                                     if ($sqNorma !== $squadraCorrente) {
                                         $squadraCorrente = $sqNorma;
                                         if ($isRotazione) {
                             ?>
                                             <tr class="table-secondary">
-                                                <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light" style="font-size: 0.75rem;">
-                                                    <i class="bi bi-hospital text-primary me-1"></i> TURNO <?php echo $sqNorma; ?>
+                                                <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light">
+                                                    <i class="bi bi-grid-3x3 text-primary me-1"></i> TURNO <?php echo $sqNorma; ?>
                                                 </td>
-                                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
-                                                    $turnoGiornoSq = $turniSquadraPerGiorno[$sqNorma][$g] ?? '-';
-                                                    $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
-                                                    $isWeekendSq = (date('N', $timestampGiorno) >= 6);
+                                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                                                    $tSq = $turniSquadraPerGiorno[$sqNorma][$g] ?? '-';
+                                                    $isWkSq = (date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato)) >= 6);
                                                 ?>
-                                                    <td class="fw-bold text-dark bg-light <?php echo $isWeekendSq ? 'weekend-col' : ''; ?>" style="font-size: 0.65rem; padding: 2px 0;">
-                                                        <?php echo htmlspecialchars($turnoGiornoSq); ?>
-                                                    </td>
+                                                    <td class="fw-bold text-dark bg-light <?php echo $isWkSq ? 'weekend-col' : ''; ?>"><?php echo htmlspecialchars($tSq); ?></td>
                                                 <?php } ?>
                                             </tr>
                             <?php 
                                         }
                                     }
                             ?>
+                                    <!-- 2. Riga Nominativo -->
                                     <tr>
                                         <td class="col-collaboratore">
-                                            <div class="fw-bold text-dark text-truncate" style="font-size: 0.78rem;" title="<?php echo htmlspecialchars($nomeCollab); ?>">
-                                                <?php echo htmlspecialchars($nomeCollab); ?>
-                                            </div>
-                                            <div class="text-muted text-truncate" style="font-size: 0.62rem;">
-                                                <?php echo htmlspecialchars($qualificaCollab); ?>
-                                            </div>
+                                            <div class="fw-bold text-dark text-truncate" title="<?php echo htmlspecialchars($nome); ?>"><?php echo htmlspecialchars($nome); ?></div>
+                                            <div class="text-muted text-truncate" style="font-size: 0.6rem;"><?php echo htmlspecialchars($qualifica); ?></div>
                                         </td>
                                         <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-                                            $timestampGiorno = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
-                                            $numGiornoSettimana = date('N', $timestampGiorno);
-                                            $isWeekend = ($numGiornoSettimana >= 6);
-                                            
-                                            // Eventuali ferie/assenze registrate
-                                            $tipoAssenzaGiorno = $assenzeMese[$uId][$g] ?? null;
-                                            
-                                            // Turni pianificati nella cella
-                                            $turniCella = $matricePianificazione[$uId][$g] ?? [];
+                                            $isWk = (date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato)) >= 6);
+                                            $ass = $assenzeMese[$uId][$g] ?? null;
+                                            $turni = $matricePianificazione[$uId][$g] ?? [];
                                         ?>
-                                            <td class="<?php echo $isWeekend ? 'weekend-col' : ''; ?>">
+                                            <td class="<?php echo $isWk ? 'weekend-col' : ''; ?>">
                                                 <div class="cell-container">
-                                                    <?php if (!empty($tipoAssenzaGiorno)) { 
-                                                        $coloreAss = $mappaColoriTurni[$tipoAssenzaGiorno] ?? '#6c757d';
+                                                    <?php if (!empty($ass)) { 
+                                                        $colAss = $mappaColoriTurni[$ass] ?? '#6c757d';
                                                     ?>
-                                                        <span class="badge-turno" style="background-color: <?php echo htmlspecialchars($coloreAss); ?>; color: #fff;" title="Assenza: <?php echo htmlspecialchars($tipoAssenzaGiorno); ?>"><?php echo htmlspecialchars($tipoAssenzaGiorno); ?></span>
-                                                    <?php } elseif (!empty($turniCella)) { 
-                                                        $mostraQualcosa = false;
-                                                        foreach ($turniCella as $tSingolo) {
-                                                            $tClean = strtoupper(trim($tSingolo));
-                                                            
-                                                            // REGOLA: Se è mattiniero o senza squadra mostra tutto, altrimenti nascondi M, P, N, S, R
-                                                            if ($isMattiniero || !$isRotazione || !in_array($tClean, ['M', 'P', 'N', 'S', 'R'])) {
-                                                                $mostraQualcosa = true;
-                                                                $coloreBadge = $mappaColoriTurni[$tClean] ?? '#3b82f6';
+                                                        <span class="badge-turno" style="background-color: <?php echo $colAss; ?>; color: #fff;"><?php echo htmlspecialchars($ass); ?></span>
+                                                    <?php } elseif (!empty($turni)) { 
+                                                        $mostra = false;
+                                                        foreach ($turni as $tSingolo) {
+                                                            $tC = strtoupper(trim($tSingolo));
+                                                            // Regola: Per mattinieri / senza squadra mostra tutto. Per turni a rotazione mostra solo eccezioni (escludendo M,P,N,S,R)
+                                                            if ($isMattiniero || !$isRotazione || !in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
+                                                                $mostra = true;
+                                                                $colT = $mappaColoriTurni[$tC] ?? '#3b82f6';
                                                     ?>
-                                                                <span class="badge-turno" style="background-color: <?php echo htmlspecialchars($coloreBadge); ?>; color: #fff;" title="<?php echo htmlspecialchars($tClean); ?>"><?php echo htmlspecialchars($tClean); ?></span>
+                                                                <span class="badge-turno" style="background-color: <?php echo $colT; ?>; color: #fff;"><?php echo htmlspecialchars($tC); ?></span>
                                                     <?php 
                                                             }
                                                         }
-                                                        if (!$mostraQualcosa) {
-                                                    ?>
-                                                            <span class="text-muted opacity-25" style="font-size: 0.6rem;">·</span>
-                                                    <?php 
-                                                        }
-                                                    } else { ?>
-                                                        <span class="text-muted opacity-25" style="font-size: 0.6rem;">·</span>
-                                                    <?php } ?>
+                                                        if (!$mostra) { echo '<span class="text-muted opacity-25">·</span>'; }
+                                                    } else { 
+                                                        echo '<span class="text-muted opacity-25">·</span>'; 
+                                                    } ?>
                                                 </div>
                                             </td>
                                         <?php } ?>
@@ -625,22 +377,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         </tbody>
                     </table>
                 </div>
-
-                <!-- Sezione Firma del Coordinatore (Visibile solo in stampa) -->
-                <div class="print-footer-signature">
-                    <div>
-                        <div class="text-muted" style="font-size: 8pt;">Documento generato automaticamente tramite sistema PRO-TUR</div>
-                        <div style="font-size: 8pt;">Data di stampa: <?php echo date('d/m/Y'); ?></div>
-                    </div>
-                    <div class="signature-box">
-                        <div class="fw-bold" style="font-size: 9pt;">Il Coordinatore Sanitario</div>
-                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 25px;">(Firma e Timbro)</div>
-                    </div>
-                </div>
-
             </div>
         </div>
-
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
