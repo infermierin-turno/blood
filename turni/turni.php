@@ -332,6 +332,7 @@ $ultimo_giorno_tab = sprintf('%04d-%02d-%d', $anno_selezionato, $mese_selezionat
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $azione = $_POST['azione'] ?? '';
 
+    // AZIONE: Cancella tutti i turni del mese tranne Ferie, 104, Permessi e Corsi (FOR)
     if ($azione === 'cancella_turni_tranne_ferie') {
         if (!empty($idsUtentiReparto)) {
             $urlGetMese = "pianificazione?data_inizio=gte." . $primo_giorno_tab . "&data_inizio=lte." . $ultimo_giorno_tab . "&utente_id=in.(" . implode(',', $idsUtentiReparto) . ")&select=id,tipo_evento";
@@ -341,7 +342,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (is_array($turniDaValutare)) {
                 foreach ($turniDaValutare as $t) {
                     $tipoEv = strtoupper(trim($t['tipo_evento']));
-                    if ($tipoEv !== 'F' && $tipoEv !== 'FERIE') {
+                    
+                    // Elenco codici protetti da NON cancellare
+                    $codiciProtetto = ['F', 'FERIE', '104', 'P', 'PER', 'PERMESSO', 'FOR', 'CORSO'];
+                    
+                    if (!in_array($tipoEv, $codiciProtetto)) {
                         $tId = $t['id'];
                         $resDel = supabase_turni_request("pianificazione?id=eq.$tId", 'DELETE');
                         if ($resDel !== false) {
@@ -350,7 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-            $messaggio = "Pulizia completata: eliminati $cancellatiCount turni (le ferie sono state mantenute).";
+            $messaggio = "Pulizia completata: eliminati $cancellatiCount turni (Ferie, 104, Permessi e FOR sono stati mantenuti).";
             $tipo_alert = "success";
         } else {
             $messaggio = "Nessun operatore valido trovato per la pulizia dei turni.";
@@ -760,9 +765,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 <div class="card h-100 bg-white p-3">
                     <div class="card-header bg-white pb-2 px-0 border-bottom d-flex justify-content-between align-items-center">
                         <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-cpu-fill text-primary"></i> Generazione Automatica Turni (AI Engine)</h5>
-                        <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" onsubmit="return confirm('ATTENZIONE: Verranno eliminati tutti i turni programmati per questo mese (tranne le ferie). Vuoi procedere?');">
+                        <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>" onsubmit="return confirm('ATTENZIONE: Verranno eliminati tutti i turni programmati per questo mese (tranne Ferie, 104, Permessi e FOR). Vuoi procedere?');">
                             <input type="hidden" name="azione" value="cancella_turni_tranne_ferie">
-                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Cancella tutti i turni del mese tranne le ferie"><i class="bi bi-trash3"></i> Pulisci Mese (Keep Ferie)</button>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Cancella tutti i turni del mese tranne ferie, 104, permessi e FOR"><i class="bi bi-trash3"></i> Pulisci Mese (Keep Ferie/104/FOR)</button>
                         </form>
                     </div>
                     <div class="card-body px-0">
@@ -976,7 +981,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             listaEsistentiDiv.innerHTML = '';
 
             if (eventi.length > 0) {
-                // Mostra i turni esistenti con opzioni per modificarli o eliminarli
                 sezioneEsistenti.classList.remove('d-none');
                 
                 eventi.forEach(ev => {
@@ -992,10 +996,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     listaEsistentiDiv.appendChild(item);
                 });
 
-                // Di default partiamo mostrando l'elenco e nascondendo il form principale finché non sceglie di aggiungere o modificare
                 document.getElementById('sezioneFormInput').classList.add('d-none');
             } else {
-                // Cella vuota: apri direttamente il form per aggiungere un nuovo turno
                 sezioneEsistenti.classList.add('d-none');
                 document.getElementById('sezioneFormInput').classList.remove('d-none');
                 document.getElementById('modaleAzione').value = 'aggiungi_turno_cella';
