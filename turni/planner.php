@@ -109,7 +109,6 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
             $c['squadra_norm'] = 'MATTINIERO';
         } elseif ($rawSq !== '') {
             $cleanSq = strtoupper(str_replace(['SQUADRA', 'TURNO', ' '], '', $rawSq));
-            // Riconoscimento rigoroso delle squadre a rotazione A, B, C, D, E
             if (in_array($cleanSq, ['A', 'B', 'C', 'D', 'E'])) {
                 $c['squadra_norm'] = $cleanSq;
             } else {
@@ -124,7 +123,7 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
     }
 }
 
-// 6. Ordinamento collaboratori: prima A, B, C, D, E, poi Mattinieri e infine Senza Squadra
+// 6. Ordinamento collaboratori: A, B, C, D, E, poi Mattinieri e Senza Squadra
 $listaCollaboratoriGrezzi = array_values($mappaUtenti);
 usort($listaCollaboratoriGrezzi, function($a, $b) {
     $squadraA = $a['squadra_norm'];
@@ -225,7 +224,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// Raggruppamento utenti esclusivamente per le squadre a rotazione (A, B, C, D, E)
+// Raggruppamento utenti per le squadre a rotazione
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $collab) {
     $sq = $collab['squadra_norm'];
@@ -299,7 +298,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         
         .card { border: none; border-radius: 10px; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05); background: #ffffff; }
         
-        /* Tabella Planner Video */
         .table-planner { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
         .table-planner th, .table-planner td { text-align: center; vertical-align: middle; font-size: 0.75rem; padding: 4px 2px; border-color: var(--border-color); overflow: hidden; }
         
@@ -362,7 +360,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             background-color: #e2e8f0 !important;
         }
 
-        /* Stampa Professionale */
         .print-header-section { display: none; }
         .print-footer-signature { display: none; }
 
