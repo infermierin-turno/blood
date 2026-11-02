@@ -204,6 +204,27 @@ if (!empty($idsUtenti)) {
     }
 }
 
+// Calcoliamo i turni standard o sequenze per ogni squadra per mostrarli nell'intestazione
+$turniSquadraMese = [];
+foreach ($listaCollaboratori as $collab) {
+    $sq = strtoupper(trim($collab['squadra'] ?? ''));
+    $uId = $collab['id'];
+    if (empty($sq)) continue;
+    
+    // Raccogliamo i primi turni del mese per questa squadra (es. primi 5 giorni) per dedurre il turno base
+    for ($g = 1; $g <= min(5, $giorni_nel_mese); $g++) {
+        $turni = $matricePianificazione[$uId][$g] ?? [];
+        foreach ($turni as $t) {
+            $tC = strtoupper(trim($t));
+            if (in_array($tC, ['M', 'P', 'N', 'S', 'R'])) {
+                if (!isset($turniSquadraMese[$sq][$g])) {
+                    $turniSquadraMese[$sq][$g] = $tC;
+                }
+            }
+        }
+    }
+}
+
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
 $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 ?>
@@ -473,15 +494,32 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $qualificaCollab = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
                                     $squadraCollab = strtoupper(trim($collab['squadra'] ?? ''));
 
-                                    // Se cambia la squadra, stampiamo un'unica riga di intestazione chiara con il turno di riferimento
+                                    // Se cambia la squadra, stampiamo un'unica riga di intestazione chiara con il turno della squadra
                                     if ($squadraCollab !== $squadraCorrente) {
                                         $squadraCorrente = $squadraCollab;
                                         $nomeSquadraPulito = !empty($squadraCorrente) ? htmlspecialchars($squadraCorrente) : 'Non Assegnata';
+                                        
+                                        // Estraiamo i turni pianificati per i primi giorni della squadra per mostrarli come "Turno Mensile"
+                                        $stringaTurniSquadra = "";
+                                        if (!empty($squadraCorrente) && isset($turniSquadraMese[$squadraCorrente])) {
+                                            $turniUniciSq = array_unique(array_values($turniSquadraMese[$squadraCorrente]));
+                                            if (!empty($turniUniciSq)) {
+                                                $stringaTurniSquadra = implode(' / ', $turniUniciSq);
+                                            }
+                                        }
+                                        if (empty($stringaTurniSquadra)) {
+                                            $stringaTurniSquadra = "M / P / N / S / R";
+                                        }
                             ?>
                                         <tr class="table-secondary">
-                                            <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold py-1 px-3 small text-uppercase text-dark bg-light">
-                                                <i class="bi bi-people-fill me-1 text-primary"></i> Squadra: <?php echo $nomeSquadraPulito; ?> 
-                                                <span class="text-muted fw-normal ms-2" style="font-size: 0.7rem;">(Visualizzazione pulita: i turni standard M, P, N, S, R sono omessi; vengono mostrate solo le variazioni, le ferie e le assenze)</span>
+                                            <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold py-1 px-3 small text-dark bg-light d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <i class="bi bi-people-fill me-1 text-primary"></i> Squadra: <span class="text-uppercase"><?php echo $nomeSquadraPulito; ?></span>
+                                                    <span class="text-muted fw-normal ms-3" style="font-size: 0.7rem;">(Visualizzazione pulita: i turni standard sono omessi in griglia)</span>
+                                                </div>
+                                                <div class="badge bg-primary text-white px-2 py-1" style="font-size: 0.72rem;">
+                                                    <i class="bi bi-calendar-check me-1"></i> Turno Squadra: <?php echo htmlspecialchars($stringaTurniSquadra); ?>
+                                                </div>
                                             </td>
                                         </tr>
                             <?php 
