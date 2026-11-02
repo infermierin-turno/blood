@@ -72,8 +72,9 @@ if (is_array($resTipologie) && !isset($resTipologie['error'])) {
     }
 }
 
-// 4. Recupero Collaboratori e Normalizzazione Squadre
+// 4. Recupero Collaboratori e Filtraggio per Reparto
 $mappaUtenti = [];
+$listaCollaboratori = [];
 $resCollab = supabase_request("staging_utenti?select=id,nome,ruolo,qualifica,reparto_id,squadra&order=nome.asc");
 
 if (is_array($resCollab) && !isset($resCollab['error'])) {
@@ -98,14 +99,14 @@ if (is_array($resCollab) && !isset($resCollab['error'])) {
 
         $c['reparto_id'] = $repCollabId;
         $mappaUtenti[$c['id']] = $c;
+        $listaCollaboratori[] = $c;
     }
 }
 
 // Ordinamento: prima A, B, C, D, E, poi Mattinieri, poi Senza Squadra
-usort($resCollab, function($a, $b) use ($mappaUtenti) {
-    if (!isset($mappaUtenti[$a['id']]) || !isset($mappaUtenti[$b['id']])) return 0;
-    $sqA = $mappaUtenti[$a['id']]['squadra_norm'];
-    $sqB = $mappaUtenti[$b['id']]['squadra_norm'];
+usort($listaCollaboratori, function($a, $b) {
+    $sqA = $a['squadra_norm'];
+    $sqB = $b['squadra_norm'];
 
     $ordine = ['A' => 1, 'B' => 2, 'C' => 3, 'D' => 4, 'E' => 5];
     $pA = $ordine[$sqA] ?? ($sqA === 'MATTINIERO' ? 10 : 20);
@@ -116,7 +117,6 @@ usort($resCollab, function($a, $b) use ($mappaUtenti) {
     return strcmp($a['nome'] ?? '', $b['nome'] ?? '');
 });
 
-$listaCollaboratori = array_values(array_intersect_key($resCollab, array_flip(array_keys($mappaUtenti))));
 $idsUtenti = array_keys($mappaUtenti);
 
 // 5. Recupero Pianificazione (Turni reali creati in turni.php)
@@ -167,7 +167,7 @@ if (!empty($idsUtenti)) {
 // 7. Calcolo della Sequenza Orizzontale per Squadra (A, B, C, D, E)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $c) {
-    $sq = $mappaUtenti[$c['id']]['squadra_norm'];
+    $sq = $c['squadra_norm'];
     if (in_array($sq, ['A', 'B', 'C', 'D', 'E'])) {
         $utentiPerSquadra[$sq][] = $c['id'];
     }
@@ -303,14 +303,14 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         </thead>
                         <tbody>
                             <?php if (empty($listaCollaboratori)) { ?>
-                                <tr><td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">Nessun collaboratore trovato.</td></tr>
+                                <tr><td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">Nessun collaboratore trovato per questo reparto.</td></tr>
                             <?php } else {
                                 $squadraCorrente = null;
                                 foreach ($listaCollaboratori as $collab) {
                                     $uId = $collab['id'];
                                     $nome = $collab['nome'] ?? '';
                                     $qualifica = trim($collab['qualifica'] ?? '') !== '' ? $collab['qualifica'] : ($collab['ruolo'] ?? '');
-                                    $sqNorma = $mappaUtenti[$uId]['squadra_norm'];
+                                    $sqNorma = $collab['squadra_norm'];
                                     $isRotazione = in_array($sqNorma, ['A', 'B', 'C', 'D', 'E']);
                                     $isMattiniero = ($sqNorma === 'MATTINIERO');
 
