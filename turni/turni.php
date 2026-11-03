@@ -112,6 +112,7 @@ if (empty($utente_id)) {
     exit;
 }
 
+// Se in sessione manca l'organizzazione_id o il reparto_id, li recuperiamo dal DB
 if (empty($org_id_utente) || empty($reparto_id_utente)) {
     $resUCorr = supabase_turni_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id");
     if (!empty($resUCorr) && is_array($resUCorr)) {
@@ -609,17 +610,20 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         body { background-color: #f1f5f9; padding-bottom: 70px; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
         .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); background: #ffffff; }
         
+        /* Tabella pulita e spaziosa */
         .table-turni { border-collapse: separate; border-spacing: 0; }
         .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.75rem; padding: 6px 4px; border-color: #e2e8f0 !important; }
         .table-turni tbody tr { transition: background-color 0.15s ease; }
         .table-turni tbody tr:hover { background-color: #f8fafc !important; }
         .table-turni tbody tr:hover td.col-operatore-sticky { background-color: #f1f5f9 !important; }
         
-        .cella-interattiva { cursor: pointer; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 42px; gap: 2px; }
+        /* Cella interattiva impostata a colonna per impilare i doppi turni verticalmente */
+        .cella-interattiva { cursor: pointer; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 38px; gap: 2px; }
         .cella-interattiva:hover { background-color: #e2e8f0 !important; }
         
-        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 180px; max-width: 180px; font-weight: 650; padding-left: 10px !important; border-right: 2px solid #cbd5e1 !important; }
+        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 180px; max-width: 180px; font-weight: 600; padding-left: 10px !important; border-right: 2px solid #cbd5e1 !important; }
         
+        /* Badge minimali ed eleganti verticali */
         .badge-turno {
             display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 18px; font-size: 0.65rem; font-weight: 700; color: #fff;
             border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); letter-spacing: -0.5px; margin: 0 auto;
@@ -627,19 +631,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .badge-in-attesa {
             border: 2px dashed #f59e0b !important;
             opacity: 0.9;
-        }
-        /* Testo di supporto intelligente per il collega in coperta (solo infermieri) */
-        .collega-copertura {
-            font-size: 0.55rem;
-            color: #475569;
-            background-color: #e2e8f0;
-            padding: 1px 3px;
-            border-radius: 3px;
-            max-width: 32px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-weight: 600;
         }
     </style>
 </head>
@@ -741,7 +732,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $w = date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato));
                                     $isWk = ($w >= 6);
                                 ?>
-                                    <th class="<?php echo $isWk ? 'bg-secondary' : ''; ?>" style="min-width: 38px;">
+                                    <th class="<?php echo $isWk ? 'bg-secondary' : ''; ?>" style="min-width: 36px;">
                                         <div><?php echo $g; ?></div>
                                         <div style="font-size: 0.55rem; opacity: 0.8;"><?php echo ['1'=>'L','2'=>'M','3'=>'M','4'=>'G','5'=>'V','6'=>'S','7'=>'D'][$w]; ?></div>
                                     </th>
@@ -757,38 +748,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 $totOssMattina = array_fill(1, $giorni_nel_mese, 0);
                                 $totOssPomeriggio = array_fill(1, $giorni_nel_mese, 0);
 
-                                // 1. PRE-CALCOLO INTELLIGENTE: Per ogni giorno del mese, mappiamo i turni degli infermieri per incrociarli
-                                $mappaInfermieriGiorno = array_fill(1, $giorni_nel_mese, [
-                                    'M' => [], // Insieme dei cognomi/nomi brevi degli infermieri di Mattina
-                                    'P' => [], // Infermieri di Pomeriggio
-                                    'N' => [], // Infermieri di Notte
-                                    'S' => []  // Infermieri di Smonto
-                                ]);
-
-                                foreach ($listaCollaboratori as $c) {
-                                    $qC = strtolower($c['qualifica'] ?? $c['ruolo'] ?? '');
-                                    $isInf = (strpos($qC, 'oss') === false); // Se non è OSS lo consideriamo infermiere/sanitario
-                                    if ($isInf) {
-                                        $cId = $c['id'];
-                                        $nomeBreve = strtok($c['nome'] ?? 'Ops', ' '); // Prende solo il nome di battesimo o prima parola per brevità
-                                        for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-                                            $evs = $mappaTurniGriglia[$cId][$g] ?? [];
-                                            foreach ($evs as $ev) {
-                                                $tCod = strtoupper(trim($ev['tipo_evento']));
-                                                if ($tCod === 'M' || $tCod === 'MATTINA') {
-                                                    $mappaInfermieriGiorno[$g]['M'][] = $nomeBreve;
-                                                } elseif ($tCod === 'P' || $tCod === 'POMERIGGIO') {
-                                                    $mappaInfermieriGiorno[$g]['P'][] = $nomeBreve;
-                                                } elseif ($tCod === 'N' || $tCod === 'NOTTE') {
-                                                    $mappaInfermieriGiorno[$g]['N'][] = $nomeBreve;
-                                                } elseif ($tCod === 'S' || $tCod === 'SMONTO') {
-                                                    $mappaInfermieriGiorno[$g]['S'][] = $nomeBreve;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
                                 foreach ($listaCollaboratori as $collab) {
                                     $uId = $collab['id'];
                                     $nomeOp = $collab['nome'] ?? 'Operatore';
@@ -796,7 +755,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $squadraOp = trim($collab['squadra'] ?? '');
                                     
                                     $isOss = (strpos(strtolower($qualificaOp), 'oss') !== false || strpos(strtolower($collab['ruolo'] ?? ''), 'oss') !== false);
-                                    $isInfermiere = !$isOss;
                                     $classeTipoRow = $isOss ? 'riga-oss' : 'riga-infermiere';
                             ?>
                                     <tr class="<?php echo $classeTipoRow; ?>">
@@ -838,30 +796,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo $coloreBg; ?>;" title="<?php echo "$tCod ({$ev['stato']})"; ?>">
                                                             <?php echo $tCod; ?>
                                                         </span>
-
-                                                        <?php 
-                                                        // LOGICA INTELLIGENTE DI COPERTURA PER GLI INFERMIERI IN FERIE/ASSENZA
-                                                        if ($isInfermiere && ($tCod === 'F' || $tCod === 'FERIE' || $tCod === 'PE' || $tCod === 'PERMESSO')) {
-                                                            // Supponiamo che la ferie copra la fascia. Vediamo chi è presente in servizio quel giorno:
-                                                            // Se ci sono colleghi di pomeriggio, mostriamo chi fa il pomeriggio; altrimenti chi fa la mattina, ecc.
-                                                            $coperturaTesto = '';
-                                                            if (!empty($mappaInfermieriGiorno[$g]['P'])) {
-                                                                $coperturaTesto = 'P: ' . implode(',', $mappaInfermieriGiorno[$g]['P']);
-                                                            } elseif (!empty($mappaInfermieriGiorno[$g]['M'])) {
-                                                                $coperturaTesto = 'M: ' . implode(',', $mappaInfermieriGiorno[$g]['M']);
-                                                            } elseif (!empty($mappaInfermieriGiorno[$g]['S'])) {
-                                                                $coperturaTesto = 'S: ' . implode(',', $mappaInfermieriGiorno[$g]['S']);
-                                                            }
-                                                            if (!empty($coperturaTesto)) {
-                                                        ?>
-                                                                <span class="collega-copertura" title="Collega in servizio: <?php echo htmlspecialchars($coperturaTesto); ?>">
-                                                                    <?php echo htmlspecialchars($coperturaTesto); ?>
-                                                                </span>
-                                                        <?php 
-                                                            }
-                                                        } 
-                                                        ?>
-
                                                 <?php 
                                                     }
                                                 } else { ?>
@@ -1181,7 +1115,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             document.getElementById('selectCellaValore').value = '';
             document.getElementById('selectCellaStato').value = 'Approvato';
 
-            document.getElementById('divStatoTool').style.display = 'none'; // safe
             document.getElementById('divStatoTurno').style.display = 'none';
             document.getElementById('btnEliminaTurnoCella').style.display = 'none';
             document.getElementById('btnAggiungiAltra').style.display = 'none';
