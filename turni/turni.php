@@ -609,22 +609,25 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         body { background-color: #f1f5f9; padding-bottom: 70px; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
         .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); background: #ffffff; }
         
-        /* Tabella ultra-compatta */
-        .table-turni { border-collapse: separate; border-spacing: 0; }
-        .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.73rem; padding: 2px 2px !important; line-height: 1.1; border-color: #e2e8f0 !important; }
-        .table-turni tbody tr { transition: background-color 0.15s ease; height: 30px; }
+        /* Tabella ultra-compatta con celle a larghezza fissa per evitare lo sfasamento */
+        .table-turni { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; }
+        .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.73rem; padding: 2px 2px !important; line-height: 1.1; border-color: #e2e8f0 !important; overflow: hidden; }
+        .table-turni tbody tr { transition: background-color 0.15s ease; height: 32px; }
         .table-turni tbody tr:hover { background-color: #f8fafc !important; }
         .table-turni tbody tr:hover td.col-operatore-sticky { background-color: #f1f5f9 !important; }
         
-        /* Cella compatta per impilare i doppi turni senza allargare la riga */
-        .cella-interattiva { cursor: pointer; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 26px; }
+        /* Cella compatta per allineare correttamente i turni nella propria colonna giornaliera */
+        .cella-interattiva { cursor: pointer; white-space: nowrap; display: table-cell; vertical-align: middle; text-align: center; height: 32px; }
         .cella-interattiva:hover { background-color: #e2e8f0 !important; }
         
-        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
+        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
         
+        /* Contenitore interno dei badge per impilarli ordinatamente se doppi */
+        .badge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+
         /* Badge minimali ed eleganti */
         .badge-turno {
-            display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 16px; font-size: 0.62rem; font-weight: 700; color: #fff;
+            display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 15px; font-size: 0.6rem; font-weight: 700; color: #fff;
             border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,0.05); letter-spacing: -0.5px; margin: 0 auto;
         }
         .badge-in-attesa {
@@ -731,7 +734,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $w = date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato));
                                     $isWk = ($w >= 6);
                                 ?>
-                                    <th class="<?php echo $isWk ? 'bg-secondary' : ''; ?>" style="min-width: 32px;">
+                                    <th class="<?php echo $isWk ? 'bg-secondary' : ''; ?>" style="width: 32px;">
                                         <div><?php echo $g; ?></div>
                                         <div style="font-size: 0.5rem; opacity: 0.8;"><?php echo ['1'=>'L','2'=>'M','3'=>'M','4'=>'G','5'=>'V','6'=>'S','7'=>'D'][$w]; ?></div>
                                     </th>
@@ -790,7 +793,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             ?>
                                     <tr class="<?php echo $classeTipoRow; ?>">
                                         <td class="col-operatore-sticky">
-                                            <div class="text-truncate fw-bold text-dark" style="max-width: 165px;" title="<?php echo htmlspecialchars($nomeOp); ?>">
+                                            <div class="text-truncate fw-bold text-dark" style="max-width: 160px;" title="<?php echo htmlspecialchars($nomeOp); ?>">
                                                 <?php echo htmlspecialchars($nomeOp); ?>
                                             </div>
                                             <div class="d-flex justify-content-between align-items-center" style="font-size: 0.55rem;">
@@ -810,28 +813,30 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             <td class="cella-interattiva <?php echo $isWk ? 'bg-light' : ''; ?>" 
                                                 onclick="apriModaleCella('<?php echo $uId; ?>', '<?php echo htmlspecialchars($nomeOp, ENT_QUOTES); ?>', '<?php echo $dataIso; ?>', '<?php echo htmlspecialchars(json_encode($eventiCella), ENT_QUOTES); ?>')">
                                                 
-                                                <?php if (!empty($eventiCella)) {
-                                                    foreach ($eventiCella as $ev) {
-                                                        $tCod = strtoupper(trim($ev['tipo_evento']));
-                                                        $coloreBg = $mappaColoriTurni[$tCod] ?? '#6c757d';
-                                                        $isInAttesa = (strcasecmp($ev['stato'], 'Approvato') !== 0);
-                                                        
-                                                        if ($isOss) {
-                                                            if ($tCod === 'M' || $tCod === 'MATTINA') {
-                                                                $totOssMattina[$g]++;
-                                                            } elseif ($tCod === 'P' || $tCod === 'POMERIGGIO') {
-                                                                $totOssPomeriggio[$g]++;
+                                                <div class="badge-container">
+                                                    <?php if (!empty($eventiCella)) {
+                                                        foreach ($eventiCella as $ev) {
+                                                            $tCod = strtoupper(trim($ev['tipo_evento']));
+                                                            $coloreBg = $mappaColoriTurni[$tCod] ?? '#6c757d';
+                                                            $isInAttesa = (strcasecmp($ev['stato'], 'Approvato') !== 0);
+                                                            
+                                                            if ($isOss) {
+                                                                if ($tCod === 'M' || $tCod === 'MATTINA') {
+                                                                    $totOssMattina[$g]++;
+                                                                } elseif ($tCod === 'P' || $tCod === 'POMERIGGIO') {
+                                                                    $totOssPomeriggio[$g]++;
+                                                                }
                                                             }
+                                                    ?>
+                                                            <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo $coloreBg; ?>;" title="<?php echo "$tCod ({$ev['stato']})"; ?>">
+                                                                <?php echo $tCod; ?>
+                                                            </span>
+                                                    <?php 
                                                         }
-                                                ?>
-                                                        <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo $coloreBg; ?>;" title="<?php echo "$tCod ({$ev['stato']})"; ?>">
-                                                            <?php echo $tCod; ?>
-                                                        </span>
-                                                <?php 
-                                                    }
-                                                } else { ?>
-                                                    <span class="text-muted opacity-25" style="font-size: 0.5rem;">·</span>
-                                                <?php } ?>
+                                                    } else { ?>
+                                                        <span class="text-muted opacity-25" style="font-size: 0.5rem;">·</span>
+                                                    <?php } ?>
+                                                </div>
                                             </td>
                                         <?php } ?>
                                     </tr>
