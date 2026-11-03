@@ -61,10 +61,10 @@ $mese_selezionato = isset($_GET['mese']) ? intval($_GET['mese']) : intval(date('
 $anno_selezionato = isset($_GET['anno']) ? intval($_GET['anno']) : intval(date('Y'));
 $giorni_nel_mese = cal_days_in_month(CAL_GREGORIAN, $mese_selezionato, $anno_selezionato);
 
-// Colori e Nomi Turni da Supabase
+// 4. Colori e Descrizioni Dinamiche di TUTTE le Tipologie di Turno dal Database
 $mappaColoriTurni = [];
 $mappaNomiTurni = [];
-$resTipologie = supabase_request("tipologie_turno?select=codice_breve,nome_turno,colore");
+$resTipologie = supabase_request("tipologie_turno?select=codice_breve,nome_turno,colore&order=codice_breve.asc");
 if (is_array($resTipologie) && !isset($resTipologie['error'])) {
     foreach ($resTipologie as $t) {
         $cod = strtoupper(trim($t['codice_breve'] ?? ''));
@@ -77,7 +77,7 @@ if (is_array($resTipologie) && !isset($resTipologie['error'])) {
     }
 }
 
-// 4. Recupero Collaboratori e Filtraggio per Reparto
+// 5. Recupero Collaboratori e Filtraggio per Reparto
 $mappaUtenti = [];
 $listaCollaboratori = [];
 $resCollab = supabase_request("staging_utenti?select=id,nome,ruolo,qualifica,reparto_id,squadra&order=nome.asc");
@@ -124,7 +124,7 @@ usort($listaCollaboratori, function($a, $b) {
 
 $idsUtenti = array_keys($mappaUtenti);
 
-// 5. Recupero Pianificazione
+// 6. Recupero Pianificazione
 $matricePianificazione = [];
 if (!empty($idsUtenti)) {
     $d_inizio = sprintf('%04d-%02d-01', $anno_selezionato, $mese_selezionato);
@@ -151,7 +151,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 6. Recupero Assenze Approvate
+// 7. Recupero Assenze Approvate
 $assenzeMese = [];
 if (!empty($idsUtenti)) {
     $resAss = supabase_request("assenze?stato=eq.approvato&data_inizio=lte.$d_fine&data_fine=gte.$d_inizio&select=*");
@@ -169,7 +169,7 @@ if (!empty($idsUtenti)) {
     }
 }
 
-// 7. Calcolo della Sequenza Dinamica per TUTTE le 5 squadre (A, B, C, D, E)
+// 8. Calcolo della Sequenza Dinamica per TUTTE le 5 squadre (A, B, C, D, E)
 $utentiPerSquadra = [];
 foreach ($listaCollaboratori as $c) {
     $sq = $c['squadra_norm'];
@@ -236,7 +236,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .weekend-col { background-color: #f1f5f9 !important; }
         .badge-turno { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px; font-size: 0.65rem; font-weight: 700; border-radius: 4px; }
         
-        /* Sezioni di stampa e firme */
+        /* Sezioni di stampa, legenda e firme */
         .print-header-info { display: none; }
         .print-footer-signatures { display: none; }
         .print-legend { display: none; }
@@ -260,24 +260,30 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
             .print-legend {
                 display: block !important;
-                margin-top: 10mm !important;
-                font-size: 7.5pt !important;
+                margin-top: 6mm !important;
+                font-size: 7pt !important;
                 page-break-inside: avoid;
             }
-            .print-legend table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            .print-legend td {
+            .print-legend-grid {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 3px 10px;
                 border: 1px solid #cbd5e1;
-                padding: 3px 6px;
+                padding: 6px 8px;
+                border-radius: 4px;
+                background-color: #f8fafc;
+            }
+            .legend-item {
+                display: flex;
+                align-items: center;
+                gap: 4px;
             }
 
             .print-footer-signatures {
                 display: flex !important;
                 justify-content: space-between !important;
                 align-items: flex-end !important;
-                margin-top: 15mm !important;
+                margin-top: 12mm !important;
                 font-size: 9pt !important;
                 page-break-inside: avoid;
             }
@@ -461,22 +467,16 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     </table>
                 </div>
 
-                <!-- Legenda Turni visibile solo in STAMPA -->
+                <!-- Legenda Completa di TUTTE le 16 Tipologie di Turno visibile solo in STAMPA -->
                 <div class="print-legend">
-                    <div class="fw-bold mb-1" style="font-size: 8pt;">LEGENDA TURNI ED ACCEZIONI:</div>
-                    <table>
-                        <tr>
-                            <td><strong>M</strong>: Mattina</td>
-                            <td><strong>P</strong>: Pomeriggio</td>
-                            <td><strong>N</strong>: Notte</td>
-                            <td><strong>S</strong>: Smonto Notte</td>
-                            <td><strong>R</strong>: Riposo</td>
-                            <td><strong>F</strong>: Ferie</td>
-                            <td><strong>PE</strong>: Permesso</td>
-                            <td><strong>MAL</strong>: Malattia</td>
-                            <td><strong>104</strong>: Legge 104</td>
-                        </tr>
-                    </table>
+                    <div class="fw-bold mb-1" style="font-size: 8pt; text-transform: uppercase;">Legenda Tipologie Turni ed Eccezioni:</div>
+                    <div class="print-legend-grid">
+                        <?php foreach ($mappaNomiTurni as $codiceLeg => $nomeLeg) { ?>
+                            <div class="legend-item">
+                                <strong><?php echo htmlspecialchars($codiceLeg); ?></strong>: <span><?php echo htmlspecialchars($nomeLeg); ?></span>
+                            </div>
+                        <?php } ?>
+                    </div>
                 </div>
 
                 <!-- Sezione Firme visibile solo in STAMPA -->
