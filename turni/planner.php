@@ -276,7 +276,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR | Planner</a>
             <div class="ms-auto">
                 <a href="dashboard.php" class="btn btn-outline-light btn-sm">Dashboard</a>
-                <a href="turni.php" class="btn btn-outline-light btn-sm">Gestione Turni</a>
                 <a href="logout.php" class="btn btn-danger btn-sm">Logout</a>
             </div>
         </div>
