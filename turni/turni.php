@@ -112,7 +112,6 @@ if (empty($utente_id)) {
     exit;
 }
 
-// Se in sessione manca l'organizzazione_id o il reparto_id, li recuperiamo dal DB
 if (empty($org_id_utente) || empty($reparto_id_utente)) {
     $resUCorr = supabase_turni_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id");
     if (!empty($resUCorr) && is_array($resUCorr)) {
@@ -610,23 +609,23 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         body { background-color: #f1f5f9; padding-bottom: 70px; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
         .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); background: #ffffff; }
         
-        /* Tabella pulita e spaziosa */
+        /* Tabella ultra-compatta */
         .table-turni { border-collapse: separate; border-spacing: 0; }
-        .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.75rem; padding: 6px 4px; border-color: #e2e8f0 !important; }
-        .table-turni tbody tr { transition: background-color 0.15s ease; }
+        .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.73rem; padding: 2px 2px !important; line-height: 1.1; border-color: #e2e8f0 !important; }
+        .table-turni tbody tr { transition: background-color 0.15s ease; height: 30px; }
         .table-turni tbody tr:hover { background-color: #f8fafc !important; }
         .table-turni tbody tr:hover td.col-operatore-sticky { background-color: #f1f5f9 !important; }
         
-        /* Cella interattiva impostata a colonna per impilare i doppi turni verticalmente */
-        .cella-interattiva { cursor: pointer; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 38px; gap: 2px; }
+        /* Cella compatta per impilare i doppi turni senza allargare la riga */
+        .cella-interattiva { cursor: pointer; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 26px; }
         .cella-interattiva:hover { background-color: #e2e8f0 !important; }
         
-        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 180px; max-width: 180px; font-weight: 600; padding-left: 10px !important; border-right: 2px solid #cbd5e1 !important; }
+        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
         
-        /* Badge minimali ed eleganti verticali */
+        /* Badge minimali ed eleganti */
         .badge-turno {
-            display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 18px; font-size: 0.65rem; font-weight: 700; color: #fff;
-            border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); letter-spacing: -0.5px; margin: 0 auto;
+            display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 16px; font-size: 0.62rem; font-weight: 700; color: #fff;
+            border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,0.05); letter-spacing: -0.5px; margin: 0 auto;
         }
         .badge-in-attesa {
             border: 2px dashed #f59e0b !important;
@@ -732,9 +731,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $w = date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato));
                                     $isWk = ($w >= 6);
                                 ?>
-                                    <th class="<?php echo $isWk ? 'bg-secondary' : ''; ?>" style="min-width: 36px;">
+                                    <th class="<?php echo $isWk ? 'bg-secondary' : ''; ?>" style="min-width: 32px;">
                                         <div><?php echo $g; ?></div>
-                                        <div style="font-size: 0.55rem; opacity: 0.8;"><?php echo ['1'=>'L','2'=>'M','3'=>'M','4'=>'G','5'=>'V','6'=>'S','7'=>'D'][$w]; ?></div>
+                                        <div style="font-size: 0.5rem; opacity: 0.8;"><?php echo ['1'=>'L','2'=>'M','3'=>'M','4'=>'G','5'=>'V','6'=>'S','7'=>'D'][$w]; ?></div>
                                     </th>
                                 <?php } ?>
                             </tr>
@@ -747,6 +746,38 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <?php } else { 
                                 $totOssMattina = array_fill(1, $giorni_nel_mese, 0);
                                 $totOssPomeriggio = array_fill(1, $giorni_nel_mese, 0);
+
+                                $reportCopertureFerie = [];
+                                $mappaInfermieriGiorno = array_fill(1, $giorni_nel_mese, ['M' => [], 'P' => [], 'N' => [], 'S' => []]);
+
+                                foreach ($listaCollaboratori as $c) {
+                                    $qC = strtolower($c['qualifica'] ?? $c['ruolo'] ?? '');
+                                    $isInf = (strpos($qC, 'oss') === false);
+                                    if ($isInf) {
+                                        $cId = $c['id'];
+                                        $nomeCompleto = $c['nome'] ?? 'Ops';
+                                        for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                                            $evs = $mappaTurniGriglia[$cId][$g] ?? [];
+                                            foreach ($evs as $ev) {
+                                                $tCod = strtoupper(trim($ev['tipo_evento']));
+                                                if ($tCod === 'M' || $tCod === 'MATTINA') {
+                                                    $mappaInfermieriGiorno[$g]['M'][] = $nomeCompleto;
+                                                } elseif ($tCod === 'P' || $tCod === 'POMERIGGIO') {
+                                                    $mappaInfermieriGiorno[$g]['P'][] = $nomeCompleto;
+                                                } elseif ($tCod === 'N' || $tCod === 'NOTTE') {
+                                                    $mappaInfermieriGiorno[$g]['N'][] = $nomeCompleto;
+                                                } elseif ($tCod === 'S' || $tCod === 'SMONTO') {
+                                                    $mappaInfermieriGiorno[$g]['S'][] = $nomeCompleto;
+                                                } elseif ($tCod === 'F' || $tCod === 'FERIE' || $tCod === 'PE') {
+                                                    $reportCopertureFerie[$g][] = [
+                                                        'infermiere' => $nomeCompleto,
+                                                        'tipo' => $tCod
+                                                    ];
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
 
                                 foreach ($listaCollaboratori as $collab) {
                                     $uId = $collab['id'];
@@ -762,10 +793,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             <div class="text-truncate fw-bold text-dark" style="max-width: 165px;" title="<?php echo htmlspecialchars($nomeOp); ?>">
                                                 <?php echo htmlspecialchars($nomeOp); ?>
                                             </div>
-                                            <div class="d-flex justify-content-between align-items-center" style="font-size: 0.6rem;">
+                                            <div class="d-flex justify-content-between align-items-center" style="font-size: 0.55rem;">
                                                 <span class="text-muted text-truncate" style="max-width: 110px;"><?php echo htmlspecialchars($qualificaOp); ?></span>
                                                 <?php if (!empty($squadraOp)) { ?>
-                                                    <span class="badge bg-light text-dark border px-1"><?php echo htmlspecialchars($squadraOp); ?></span>
+                                                    <span class="badge bg-light text-dark border px-1" style="font-size: 0.5rem;"><?php echo htmlspecialchars($squadraOp); ?></span>
                                                 <?php } ?>
                                             </div>
                                         </td>
@@ -799,7 +830,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                 <?php 
                                                     }
                                                 } else { ?>
-                                                    <span class="text-muted opacity-25" style="font-size: 0.6rem;">·</span>
+                                                    <span class="text-muted opacity-25" style="font-size: 0.5rem;">·</span>
                                                 <?php } ?>
                                             </td>
                                         <?php } ?>
@@ -807,22 +838,22 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 <?php } ?>
 
                                 <!-- RIEPILOGO GIORNALIERO OSS -->
-                                <tr class="table-warning fw-bold text-dark border-top border-2 riga-oss">
-                                    <td class="col-operatore-sticky bg-warning text-dark text-start ps-2">
+                                <tr class="table-warning fw-bold text-dark border-top border-2 riga-oss" style="height: 28px;">
+                                    <td class="col-operatore-sticky bg-warning text-dark text-start ps-2" style="font-size: 0.7rem;">
                                         <i class="bi bi-people-fill text-primary"></i> OSS (Mattina)
                                     </td>
                                     <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { ?>
-                                        <td class="text-center text-primary" style="font-size: 0.75rem;">
+                                        <td class="text-center text-primary" style="font-size: 0.7rem;">
                                             <?php echo ($totOssMattina[$g] > 0) ? $totOssMattina[$g] : '<span class="text-muted opacity-25">0</span>'; ?>
                                         </td>
                                     <?php } ?>
                                 </tr>
-                                <tr class="table-warning fw-bold text-dark riga-oss">
-                                    <td class="col-operatore-sticky bg-warning text-dark text-start ps-2">
+                                <tr class="table-warning fw-bold text-dark riga-oss" style="height: 28px;">
+                                    <td class="col-operatore-sticky bg-warning text-dark text-start ps-2" style="font-size: 0.7rem;">
                                         <i class="bi bi-people-fill text-danger"></i> OSS (Pomeriggio)
                                     </td>
                                     <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { ?>
-                                        <td class="text-center text-danger" style="font-size: 0.75rem;">
+                                        <td class="text-center text-danger" style="font-size: 0.7rem;">
                                             <?php echo ($totOssPomeriggio[$g] > 0) ? $totOssPomeriggio[$g] : '<span class="text-muted opacity-25">0</span>'; ?>
                                         </td>
                                     <?php } ?>
@@ -832,6 +863,40 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <!-- BOX INTELLIGENTE SOTTO LA GRIGLIA: COPERTURE INFERMIERISTICHE PER FERIE/ASSENZE -->
+        <div class="card shadow-sm mb-4 p-3">
+            <h6 class="fw-bold text-dark mb-3"><i class="bi bi-lightbulb-fill text-warning"></i> Analisi Intelligente Coperture Infermieristiche (Ferie / Assenze)</h6>
+            <div class="row g-2" style="max-height: 180px; overflow-y: auto;">
+                <?php 
+                $haAssenzeRilevate = false;
+                for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                    if (!empty($reportCopertureFerie[$g])) {
+                        $haAssenzeRilevate = true;
+                        $dataGiornoStr = sprintf('%02d/%02d/%04d', $g, $mese_selezionato, $anno_selezionato);
+                ?>
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded bg-light small">
+                                <span class="fw-bold text-primary"><?php echo $dataGiornoStr; ?>:</span>
+                                <ul class="mb-0 ps-3" style="font-size: 0.75rem;">
+                                    <?php foreach ($reportCopertureFerie[$g] as $ass) { 
+                                        $colleghiPresenti = array_merge($mappaInfermieriGiorno[$g]['P'], $mappaInfermieriGiorno[$g]['M']);
+                                        $coperturaStr = !empty($colleghiPresenti) ? implode(', ', array_unique($colleghiPresenti)) : 'Nessun collega registrato';
+                                    ?>
+                                        <li><strong><?php echo htmlspecialchars($ass['infermiere']); ?></strong> (<?php echo $ass['tipo']; ?>) → <em>Servizio:</em> <?php echo htmlspecialchars($coperturaStr); ?></li>
+                                    <?php } ?>
+                                </ul>
+                            </div>
+                        </div>
+                <?php 
+                    }
+                }
+                if (!$haAssenzeRilevate) {
+                ?>
+                    <div class="col-12 text-muted small">Nessuna ferie o assenza infermieristica registrata per questo mese. La griglia è completamente coperta.</div>
+                <?php } ?>
             </div>
         </div>
 
