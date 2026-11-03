@@ -61,14 +61,19 @@ $mese_selezionato = isset($_GET['mese']) ? intval($_GET['mese']) : intval(date('
 $anno_selezionato = isset($_GET['anno']) ? intval($_GET['anno']) : intval(date('Y'));
 $giorni_nel_mese = cal_days_in_month(CAL_GREGORIAN, $mese_selezionato, $anno_selezionato);
 
-// Colori Turni da Supabase
+// Colori e Nomi Turni da Supabase
 $mappaColoriTurni = [];
-$resTipologie = supabase_request("tipologie_turno?select=codice_breve,colore");
+$mappaNomiTurni = [];
+$resTipologie = supabase_request("tipologie_turno?select=codice_breve,nome_turno,colore");
 if (is_array($resTipologie) && !isset($resTipologie['error'])) {
     foreach ($resTipologie as $t) {
         $cod = strtoupper(trim($t['codice_breve'] ?? ''));
+        $nomeT = trim($t['nome_turno'] ?? '');
         $col = trim($t['colore'] ?? '');
-        if (!empty($cod) && !empty($col)) $mappaColoriTurni[$cod] = $col;
+        if (!empty($cod)) {
+            if (!empty($col)) $mappaColoriTurni[$cod] = $col;
+            if (!empty($nomeT)) $mappaNomiTurni[$cod] = $nomeT;
+        }
     }
 }
 
@@ -234,6 +239,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         /* Sezioni di stampa e firme */
         .print-header-info { display: none; }
         .print-footer-signatures { display: none; }
+        .print-legend { display: none; }
 
         @media print {
             @page { size: A4 landscape; margin: 6mm; }
@@ -247,16 +253,31 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 display: flex !important;
                 justify-content: space-between !important;
                 align-items: center !important;
-                margin-bottom: 15px !important;
+                margin-bottom: 12px !important;
                 border-bottom: 2px solid #0f172a;
-                padding-bottom: 8px;
+                padding-bottom: 6px;
+            }
+
+            .print-legend {
+                display: block !important;
+                margin-top: 10mm !important;
+                font-size: 7.5pt !important;
+                page-break-inside: avoid;
+            }
+            .print-legend table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .print-legend td {
+                border: 1px solid #cbd5e1;
+                padding: 3px 6px;
             }
 
             .print-footer-signatures {
                 display: flex !important;
                 justify-content: space-between !important;
                 align-items: flex-end !important;
-                margin-top: 25mm !important;
+                margin-top: 15mm !important;
                 font-size: 9pt !important;
                 page-break-inside: avoid;
             }
@@ -323,12 +344,12 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 <!-- Intestazione visibile solo in STAMPA -->
                 <div class="print-header-info">
                     <div>
-                        <h4 class="fw-bold mb-1" style="font-size: 12pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
-                        <div style="font-size: 10pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></div>
+                        <h4 class="fw-bold mb-1" style="font-size: 11pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
+                        <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></div>
                     </div>
                     <div class="text-end">
-                        <div class="fw-bold" style="font-size: 12pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
-                        <div style="font-size: 9pt;" class="text-muted">Pianificazione Turni Mensile</div>
+                        <div class="fw-bold" style="font-size: 11pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
+                        <div style="font-size: 8.5pt;" class="text-muted">Pianificazione Turni Mensile</div>
                     </div>
                 </div>
 
@@ -440,15 +461,33 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     </table>
                 </div>
 
+                <!-- Legenda Turni visibile solo in STAMPA -->
+                <div class="print-legend">
+                    <div class="fw-bold mb-1" style="font-size: 8pt;">LEGENDA TURNI ED ACCEZIONI:</div>
+                    <table>
+                        <tr>
+                            <td><strong>M</strong>: Mattina</td>
+                            <td><strong>P</strong>: Pomeriggio</td>
+                            <td><strong>N</strong>: Notte</td>
+                            <td><strong>S</strong>: Smonto Notte</td>
+                            <td><strong>R</strong>: Riposo</td>
+                            <td><strong>F</strong>: Ferie</td>
+                            <td><strong>PE</strong>: Permesso</td>
+                            <td><strong>MAL</strong>: Malattia</td>
+                            <td><strong>104</strong>: Legge 104</td>
+                        </tr>
+                    </table>
+                </div>
+
                 <!-- Sezione Firme visibile solo in STAMPA -->
                 <div class="print-footer-signatures">
                     <div class="signature-box">
                         <div class="fw-bold">Il Coordinatore</div>
-                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 20px;">(Firma)</div>
+                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 15px;">(Firma)</div>
                     </div>
                     <div class="signature-box">
                         <div class="fw-bold">Il Direttore UOC</div>
-                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 20px;">(Firma e Timbro)</div>
+                        <div class="text-muted" style="font-size: 7.5pt; margin-top: 15px;">(Firma e Timbro)</div>
                     </div>
                 </div>
 
