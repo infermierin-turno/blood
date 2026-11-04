@@ -397,7 +397,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             ?>
                                         <tr class="table-dark">
                                             <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="fw-bold text-uppercase ps-3 py-1" style="font-size: 0.7rem; letter-spacing: 0.5px;">
-                                                <i class="bi bi-person-badge me-1"></i> Personale Mattiniero / Altri Operatori
+                                                <i class="bi bi-person-badge me-1"></i> Personale Mattiniero / Oss
                                             </td>
                                         </tr>
                             <?php
