@@ -339,7 +339,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $reqInizio = date('d/m/Y', strtotime($data_inizio));
                 $reqFine = date('d/m/Y', strtotime($data_fine));
                 
-                $messaggio = "Impossibile inserire la richiesta: il periodo richiesto ($reqInizio - $reqFine) si sovrappone al blocco ferie impostato dal coordinatore per il reparto (dal $strInizio al $strFine).";
+                $messaggio = "Impossibile inserire la richiesta: il periodo richiesto ($reqInizio - $reqFine) al momento non è stato ancora attivato, blocco attuale (dal $strInizio al $strFine).";
             } else {
                 $messaggio = "Termine ultimo superato (16 del mese). L'inserimento delle desiderata è bloccato in attesa dello sblocco da parte del coordinatore.";
             }
@@ -639,11 +639,11 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             <div class="alert alert-warning py-2 px-3 small fw-bold shadow-sm mb-4 border-start border-4 border-warning d-flex align-items-center gap-2" role="alert">
                 <i class="bi bi-calendar-x fs-5 text-warning"></i>
                 <div>
-                    <strong>Avviso Blocco Ferie Attivo:</strong> Il coordinatore ha impostato un blocco delle ferie dal 
+                    <strong>Avviso Blocco Ferie Attivo:</strong> E' impostato un blocco delle ferie dal 
                     <span class="badge bg-dark text-white"><?php echo date('d/m/Y', strtotime($info_blocco_corrente['inizio'])); ?></span> 
                     al 
                     <span class="badge bg-dark text-white"><?php echo date('d/m/Y', strtotime($info_blocco_corrente['fine'])); ?></span>. 
-                    Le richieste per questo intervallo non verranno accettate.
+                    Le richieste per questo intervallo non verranno accettate ma dovranno essere discusse (Max 1 Dipendente per giorno previa sostituzione).
                 </div>
             </div>
         <?php endif; ?>
