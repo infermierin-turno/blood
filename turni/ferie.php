@@ -80,9 +80,9 @@ if (!empty($resUCorr) && is_array($resUCorr)) {
 
 // 2. Recupero reparti disponibili (filtrati per organizzazione se capo personale)
 $reparti_disponibili = [];
-$urlReparti = "reparti?select=id,nome_reparto,organizzazione_id,sblocco_desiderata&order=nome_reparto.asc";
+$urlReparti = "reparti?select=id,nome_reparto,organizzazione_id,sblocco_desiderata,blocco_ferie_inizio,blocco_ferie_fine&order=nome_reparto.asc";
 if ($is_capo_personale && !empty($org_id_utente)) {
-    $urlReparti = "reparti?organizzazione_id=eq.$org_id_utente&select=id,nome_reparto,organizzazione_id,sblocco_desiderata&order=nome_reparto.asc";
+    $urlReparti = "reparti?organizzazione_id=eq.$org_id_utente&select=id,nome_reparto,organizzazione_id,sblocco_desiderata,blocco_ferie_inizio,blocco_ferie_fine&order=nome_reparto.asc";
 }
 $resReparti = supabase_ferie_request($urlReparti);
 if (is_array($resReparti) && !isset($resReparti['error'])) {
@@ -139,6 +139,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && $_POST['
     }
 }
 
+// Gestione Impostazione Blocco Ferie Personalizzato (Dal / Al)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && $_POST['azione'] === 'imposta_blocco_ferie') {
+    if ($is_coordinatore || $is_super_admin || $is_capo_personale) {
+        $target_reparto_id = trim($_POST['reparto_id'] ?? $reparto_id_utente);
+        $blocco_inizio = trim($_POST['blocco_inizio'] ?? '');
+        $blocco_fine = trim($_POST['blocco_fine'] ?? '');
+
+        if (!empty($target_reparto_id)) {
+            supabase_ferie_request("reparti?id=eq." . urlencode($target_reparto_id), 'PATCH', [
+                'blocco_ferie_inizio' => !empty($blocco_inizio) ? $blocco_inizio : null,
+                'blocco_ferie_fine' => !empty($blocco_fine) ? $blocco_fine : null
+            ]);
+        }
+
+        header("Location: ferie.php?msg=blocco_ferie_aggiornato&reparto_id=" . urlencode($reparto_selezionato));
+        exit;
+    }
+}
+
 // Controllo sblocco diretto da Supabase
 function checkSbloccoReparto($repId) {
     if (empty($repId)) return false;
@@ -149,8 +168,35 @@ function checkSbloccoReparto($repId) {
     return false;
 }
 
+// Controllo blocco ferie personalizzato per intervallo date
+function checkBloccoFerieIntervallo($repId, $dataInizio, $dataFine) {
+    if (empty($repId)) return false;
+    $resRep = supabase_ferie_request("reparti?id=eq." . urlencode($repId) . "&select=blocco_ferie_inizio,blocco_ferie_fine");
+    if (is_array($resRep) && !empty($resRep)) {
+        $bInizio = $resRep[0]['blocco_ferie_inizio'] ?? '';
+        $bFine = $resRep[0]['blocco_ferie_fine'] ?? '';
+        
+        if (!empty($bInizio) && !empty($bFine)) {
+            // Verifica se l'intervallo richiesto si sovrappone o cade dentro il blocco impostato
+            if (($dataInizio <= $bFine) && ($dataFine >= $bInizio)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 $reparto_target_check = !empty($reparto_selezionato) ? $reparto_selezionato : $reparto_id_utente;
 $sblocco_attivo = checkSbloccoReparto($reparto_target_check);
+
+// Recupero date di blocco attuali per il reparto
+$blocco_ferie_corrente_inizio = '';
+$blocco_ferie_corrente_fine = '';
+$resRepDettaglio = supabase_ferie_request("reparti?id=eq." . urlencode($reparto_target_check) . "&select=blocco_ferie_inizio,blocco_ferie_fine");
+if (is_array($resRepDettaglio) && !empty($resRepDettaglio)) {
+    $blocco_ferie_corrente_inizio = $resRepDettaglio[0]['blocco_ferie_inizio'] ?? '';
+    $blocco_ferie_corrente_fine = $resRepDettaglio[0]['blocco_ferie_fine'] ?? '';
+}
 
 $giorno_corrente = (int)date('j');
 
@@ -271,18 +317,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reparto_collaboratore_target = $mappaUtenti[$collaboratore_selezionato]['reparto_id'] ?? $reparto_id_utente;
         $sblocco_target_attivo = checkSbloccoReparto($reparto_collaboratore_target);
         
+        $data_inizio = trim($_POST['data_inizio'] ?? '');
+        $data_fine = trim($_POST['data_fine'] ?? '');
+
+        // Controllo se l'intervallo ricade nel blocco ferie personalizzato (tranne per i ruoli amministrativi/coordinamento)
+        $blocco_intervallo_attivo = false;
+        if (!empty($data_inizio) && !empty($data_fine)) {
+            if (checkBloccoFerieIntervallo($reparto_collaboratore_target, $data_inizio, $data_fine) && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
+                $blocco_intervallo_attivo = true;
+            }
+        }
+
         $blocco_corrente = false;
-        if ($giorno_corrente > 16 && $giorno_corrente <= 30 && !$sblocco_target_attivo && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
+        if (($giorno_corrente > 16 && $giorno_corrente <= 30 && !$sblocco_target_attivo && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) || $blocco_intervallo_attivo) {
             $blocco_corrente = true;
         }
 
         if ($blocco_corrente) {
-            $messaggio = "Termine ultimo superato (16 del mese). L'inserimento delle desiderata è bloccato in attesa dello sblocco da parte del coordinatore.";
+            if ($blocco_intervallo_attivo) {
+                $messaggio = "Il periodo selezionato è bloccato dal coordinatore/amministratore per questo reparto. Impossibile inoltrare la richiesta.";
+            } else {
+                $messaggio = "Termine ultimo superato (16 del mese). L'inserimento delle desiderata è bloccato in attesa dello sblocco da parte del coordinatore.";
+            }
             $tipo_alert = "danger";
         } else {
             $tipo_assenza = trim($_POST['tipo'] ?? 'ferie');
-            $data_inizio = trim($_POST['data_inizio'] ?? '');
-            $data_fine = trim($_POST['data_fine'] ?? '');
             $note_utente = trim($_POST['note'] ?? '');
             
             $stato_iniziale = 'in attesa';
@@ -537,6 +596,9 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
         <?php if (isset($_GET['msg']) && $_GET['msg'] === 'sblocco_aggiornato'): ?>
             <div class="alert alert-info py-2 small shadow-sm" role="alert">Stato sblocco desiderata aggiornato con successo.</div>
         <?php endif; ?>
+        <?php if (isset($_GET['msg']) && $_GET['msg'] === 'blocco_ferie_aggiornato'): ?>
+            <div class="alert alert-warning py-2 small shadow-sm" role="alert"><i class="bi bi-calendar-range"></i> Periodo di blocco ferie personalizzato aggiornato con successo.</div>
+        <?php endif; ?>
         <?php if (isset($_GET['msg']) && $_GET['msg'] === 'permesso_negato'): ?>
             <div class="alert alert-danger py-2 small shadow-sm" role="alert">Operazione non autorizzata.</div>
         <?php endif; ?>
@@ -548,23 +610,50 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
         <?php } ?>
 
         <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
-        <div class="card shadow-sm mb-4 bg-white border-start border-4 border-warning p-3">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-                <div>
-                    <h5 class="mb-1 fs-6 fw-bold"><i class="bi bi-calendar-check text-warning"></i> Controllo Scadenza Desiderata (Scadenza: 16 del mese)</h5>
-                    <p class="text-muted small mb-0">Gestisci lo sblocco per il reparto selezionato. Il valore rimane salvato su DB anche dopo il logout.</p>
+        <div class="row g-3 mb-4">
+            <!-- Pannello Sblocco Desiderata -->
+            <div class="col-md-6">
+                <div class="card shadow-sm bg-white border-start border-4 border-warning p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <h5 class="mb-1 fs-6 fw-bold"><i class="bi bi-calendar-check text-warning"></i> Controllo Scadenza Desiderata</h5>
+                            <p class="text-muted small mb-0">Gestisci lo sblocco mensile per il reparto selezionato.</p>
+                        </div>
+                        <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="d-flex align-items-center gap-2">
+                            <input type="hidden" name="azione" value="toggle_sblocco">
+                            <input type="hidden" name="reparto_id" value="<?php echo htmlspecialchars($reparto_target_check); ?>">
+                            <input type="hidden" name="stato_sblocco" value="<?php echo $sblocco_attivo ? '0' : '1'; ?>">
+                            <button type="submit" class="btn btn-sm btn-<?php echo $sblocco_attivo ? 'outline-danger' : 'outline-success'; ?> fw-bold">
+                                <?php echo $sblocco_attivo ? 'Disattiva Sblocco' : 'Sblocca Fino al 30'; ?>
+                            </button>
+                        </form>
+                    </div>
                 </div>
-                <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="d-flex align-items-center gap-2">
-                    <input type="hidden" name="azione" value="toggle_sblocco">
-                    <input type="hidden" name="reparto_id" value="<?php echo htmlspecialchars($reparto_target_check); ?>">
-                    <input type="hidden" name="stato_sblocco" value="<?php echo $sblocco_attivo ? '0' : '1'; ?>">
-                    <span class="small fw-bold text-<?php echo $sblocco_attivo ? 'success' : 'secondary'; ?>">
-                        <?php echo $sblocco_attivo ? 'Sblocco Attivo (Permanente su DB)' : 'Blocco Standard Attivo'; ?>
-                    </span>
-                    <button type="submit" class="btn btn-sm btn-<?php echo $sblocco_attivo ? 'outline-danger' : 'outline-success'; ?> fw-bold">
-                        <?php echo $sblocco_attivo ? 'Disattiva Sblocco' : 'Sblocca Fino al 30'; ?>
-                    </button>
-                </form>
+            </div>
+
+            <!-- Pannello Blocco Ferie Personalizzato (Dal / Al) -->
+            <div class="col-md-6">
+                <div class="card shadow-sm bg-white border-start border-4 border-danger p-3 h-100">
+                    <h5 class="mb-1 fs-6 fw-bold"><i class="bi bi-calendar-x text-danger"></i> Imposta Blocco Ferie (Dal / Al)</h5>
+                    <p class="text-muted small mb-2">Impedisci l'inserimento di richieste in intervalli specifici (es. festività o periodi critici).</p>
+                    
+                    <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="row g-2 align-items-end">
+                        <input type="hidden" name="azione" value="imposta_blocco_ferie">
+                        <input type="hidden" name="reparto_id" value="<?php echo htmlspecialchars($reparto_target_check); ?>">
+                        
+                        <div class="col-5">
+                            <label class="form-label small fw-bold mb-1">Data Inizio Blocco</label>
+                            <input type="date" class="form-control form-control-sm" name="blocco_inizio" value="<?php echo htmlspecialchars($blocco_ferie_corrente_inizio); ?>">
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label small fw-bold mb-1">Data Fine Blocco</label>
+                            <input type="date" class="form-control form-control-sm" name="blocco_fine" value="<?php echo htmlspecialchars($blocco_ferie_corrente_fine); ?>">
+                        </div>
+                        <div class="col-2">
+                            <button type="submit" class="btn btn-sm btn-danger w-100 fw-bold" title="Salva Blocco"><i class="bi bi-save"></i></button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
         <?php endif; ?>
@@ -576,7 +665,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             <div class="card-body px-0">
                 <?php if ($inserimento_bloccato): ?>
                     <div class="alert alert-danger mb-0" role="alert">
-                        <i class="bi bi-lock-fill"></i> <strong>Termine scaduto:</strong> Il termine per l'inserimento delle desiderata era fissato al 16 del mese. Attualmente le richieste sono bloccate.
+                        <i class="bi bi-lock-fill"></i> <strong>Termine scaduto o blocco attivo:</strong> Il periodo selezionato o il termine mensile impediscono l'inserimento di nuove richieste.
                     </div>
                 <?php else: ?>
                     <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>">
@@ -627,76 +716,63 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             </div>
         </div>
 
-        <!-- Tabella Elenco Richieste e Assenze -->
-        <div class="card shadow-sm mb-4 bg-white p-3">
-            <div class="card-header bg-white pb-2 px-0 border-bottom d-flex justify-content-between align-items-center">
-                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-list-task"></i> Storico Richieste e Assenze</h5>
-                <span class="badge bg-secondary"><?php echo count($listaAssenze); ?> record</span>
-            </div>
-            <div class="card-body px-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle small mb-0">
-                        <thead class="table-light">
+        <!-- Elenco Richieste -->
+        <div class="card shadow-sm bg-white p-3">
+            <h5 class="mb-3 fs-6 fw-bold"><i class="bi bi-list-task"></i> Elenco Richieste e Stato</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle small">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Collaboratore</th>
+                            <th>Tipo</th>
+                            <th>Periodo</th>
+                            <th>Stato</th>
+                            <th>Note / Conflitti</th>
+                            <th class="text-end">Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($listaAssenze)): ?>
                             <tr>
-                                <th>Collaboratore</th>
-                                <th>Tipo</th>
-                                <th>Dal</th>
-                                <th>Al</th>
-                                <th>Stato</th>
-                                <th>Note / Dettagli</th>
-                                <th class="text-end">Azioni</th>
+                                <td colspan="6" class="text-center text-muted py-4">Nessuna richiesta registrata.</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($listaAssenze)): ?>
+                        <?php else: ?>
+                            <?php foreach ($listaAssenze as $ass): 
+                                $uidAss = $ass['utente_id'] ?? '';
+                                $nomeCollab = $mappaUtenti[$uidAss]['nome'] ?? 'Utente sconosciuto';
+                                $statoAss = $ass['stato'] ?? 'in attesa';
+                                $badgeStato = 'bg-secondary';
+                                if ($statoAss === 'approvato') $badgeStato = 'bg-success';
+                                elseif ($statoAss === 'rifiutato') $badgeStato = 'bg-danger';
+                                elseif ($statoAss === 'in attesa') $badgeStato = 'bg-warning text-dark';
+                            ?>
                                 <tr>
-                                    <td colspan="7" class="text-center text-muted py-4">Nessuna richiesta o assenza registrata.</td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($listaAssenze as $ass): 
-                                    $uAssId = $ass['utente_id'] ?? '';
-                                    $nomeCollab = $mappaUtenti[$uAssId]['nome'] ?? 'Utente Sconosciuto';
-                                    $tipoA = ucfirst($ass['tipo_assenza'] ?? 'Ferie');
-                                    $dIniz = $ass['data_inizio'] ?? '';
-                                    $dFin = $ass['data_fine'] ?? '';
-                                    $statoA = $ass['stato'] ?? 'in attesa';
-                                    $noteA = $ass['note'] ?? '';
-
-                                    $badgeStatoBg = 'warning text-dark';
-                                    if ($statoA === 'approvato') $badgeStatoBg = 'success';
-                                    elseif ($statoA === 'rifiutato') $badgeStatoBg = 'danger';
-                                ?>
-                                    <tr>
-                                        <td class="fw-bold"><?php echo htmlspecialchars($nomeCollab); ?></td>
-                                        <td><span class="badge bg-light text-dark border"><?php echo htmlspecialchars($tipoA); ?></span></td>
-                                        <td><?php echo htmlspecialchars($dIniz); ?></td>
-                                        <td><?php echo htmlspecialchars($dFin); ?></td>
-                                        <td><span class="badge bg-<?php echo $badgeStatoBg; ?>"><?php echo htmlspecialchars(ucfirst($statoA)); ?></span></td>
-                                        <td class="text-muted text-wrap" style="max-width: 250px;"><?php echo htmlspecialchars($noteA); ?></td>
-                                        <td class="text-end">
-                                            <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
-                                                <?php if ($statoA === 'in attesa'): ?>
-                                                    <a href="ferie.php?azione_stato=approvato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-success py-0 px-1" title="Approva"><i class="bi bi-check"></i></a>
-                                                    <a href="ferie.php?azione_stato=rifiutato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-danger py-0 px-1" title="Rifiuta"><i class="bi bi-x"></i></a>
-                                                <?php endif; ?>
-                                                <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Elimina" onclick="return confirm('Sei sicuro di voler eliminare questa richiesta?');"><i class="bi bi-trash"></i></a>
-                                            <?php else: ?>
-                                                <?php if ($uAssId === $utente_id && $statoA === 'in attesa'): ?>
-                                                    <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>" class="btn btn-sm btn-outline-danger py-0 px-1" title="Ritira richiesta" onclick="return confirm('Vuoi ritirare la tua richiesta?');"><i class="bi bi-trash"></i> Ritira</a>
-                                                <?php else: ?>
-                                                    <span class="text-muted small">-</span>
-                                                <?php endif; ?>
+                                    <td class="fw-bold"><?php echo htmlspecialchars($nomeCollab); ?></td>
+                                    <td><span class="badge bg-light text-dark border"><?php echo ucfirst(htmlspecialchars($ass['tipo_assenza'] ?? 'ferie')); ?></span></td>
+                                    <td><?php echo date('d/m/Y', strtotime($ass['data_inizio'])); ?> al <?php echo date('d/m/Y', strtotime($ass['data_fine'])); ?></td>
+                                    <td><span class="badge <?php echo $badgeStato; ?>"><?php echo ucfirst($statoAss); ?></span></td>
+                                    <td><?php echo htmlspecialchars($ass['note'] ?? '-'); ?></td>
+                                    <td class="text-end">
+                                        <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
+                                            <?php if ($statoAss === 'in attesa'): ?>
+                                                <a href="ferie.php?azione_stato=approvato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-success py-0 px-1" title="Approva"><i class="bi bi-check"></i></a>
+                                                <a href="ferie.php?azione_stato=rifiutato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-danger py-0 px-1" title="Rifiuta"><i class="bi bi-x"></i></a>
                                             <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                                            <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>&reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
+                                        <?php elseif ($uidAss === $utente_id && $statoAss === 'in attesa'): ?>
+                                            <a href="ferie.php?azione_stato=eliminato&id=<?php echo $ass['id']; ?>" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="return confirm('Vuoi ritirare la tua richiesta?');" title="Ritira"><i class="bi bi-trash"></i> Ritira</a>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
 
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
