@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && $_POST['
     }
 }
 
-// Gestione Impostazione Blocco Ferie Personalizzato (Dal / Al)
+// Gestione Impostazione o Rimuovi Blocco Ferie Personalizzato (Dal / Al)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['azione']) && $_POST['azione'] === 'imposta_blocco_ferie') {
     if ($is_coordinatore || $is_super_admin || $is_capo_personale) {
         $target_reparto_id = trim($_POST['reparto_id'] ?? $reparto_id_utente);
@@ -168,35 +168,29 @@ function checkSbloccoReparto($repId) {
     return false;
 }
 
-// Controllo blocco ferie personalizzato per intervallo date
-function checkBloccoFerieIntervallo($repId, $dataInizio, $dataFine) {
-    if (empty($repId)) return false;
+// Controllo e recupero dettagli del blocco ferie personalizzato
+function getDettagliBloccoFerie($repId) {
+    if (empty($repId)) return null;
     $resRep = supabase_ferie_request("reparti?id=eq." . urlencode($repId) . "&select=blocco_ferie_inizio,blocco_ferie_fine");
     if (is_array($resRep) && !empty($resRep)) {
-        $bInizio = $resRep[0]['blocco_ferie_inizio'] ?? '';
-        $bFine = $resRep[0]['blocco_ferie_fine'] ?? '';
-        
+        $bInizio = $resRep[0]['blocco_ferie_inizio'] ?? null;
+        $bFine = $resRep[0]['blocco_ferie_fine'] ?? null;
         if (!empty($bInizio) && !empty($bFine)) {
-            // Verifica se l'intervallo richiesto si sovrappone o cade dentro il blocco impostato
-            if (($dataInizio <= $bFine) && ($dataFine >= $bInizio)) {
-                return true;
-            }
+            return [
+                'inizio' => $bInizio,
+                'fine' => $bFine
+            ];
         }
     }
-    return false;
+    return null;
 }
 
 $reparto_target_check = !empty($reparto_selezionato) ? $reparto_selezionato : $reparto_id_utente;
 $sblocco_attivo = checkSbloccoReparto($reparto_target_check);
+$info_blocco_corrente = getDettagliBloccoFerie($reparto_target_check);
 
-// Recupero date di blocco attuali per il reparto
-$blocco_ferie_corrente_inizio = '';
-$blocco_ferie_corrente_fine = '';
-$resRepDettaglio = supabase_ferie_request("reparti?id=eq." . urlencode($reparto_target_check) . "&select=blocco_ferie_inizio,blocco_ferie_fine");
-if (is_array($resRepDettaglio) && !empty($resRepDettaglio)) {
-    $blocco_ferie_corrente_inizio = $resRepDettaglio[0]['blocco_ferie_inizio'] ?? '';
-    $blocco_ferie_corrente_fine = $resRepDettaglio[0]['blocco_ferie_fine'] ?? '';
-}
+$blocco_ferie_corrente_inizio = $info_blocco_corrente['inizio'] ?? '';
+$blocco_ferie_corrente_fine = $info_blocco_corrente['fine'] ?? '';
 
 $giorno_corrente = (int)date('j');
 
@@ -320,10 +314,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data_inizio = trim($_POST['data_inizio'] ?? '');
         $data_fine = trim($_POST['data_fine'] ?? '');
 
-        // Controllo se l'intervallo ricade nel blocco ferie personalizzato (tranne per i ruoli amministrativi/coordinamento)
+        // Controllo se l'intervallo ricade nel blocco ferie personalizzato
         $blocco_intervallo_attivo = false;
-        if (!empty($data_inizio) && !empty($data_fine)) {
-            if (checkBloccoFerieIntervallo($reparto_collaboratore_target, $data_inizio, $data_fine) && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
+        $dettagli_blocco = getDettagliBloccoFerie($reparto_collaboratore_target);
+        
+        if (!empty($data_inizio) && !empty($data_fine) && !empty($dettagli_blocco)) {
+            $bStart = $dettagli_blocco['inizio'];
+            $bEnd = $dettagli_blocco['fine'];
+
+            // Sovrapposizione date: (InizioRichiesta <= FineBlocco) AND (FineRichiesta >= InizioBlocco)
+            if (($data_inizio <= $bEnd) && ($data_fine >= $bStart) && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
                 $blocco_intervallo_attivo = true;
             }
         }
@@ -334,8 +334,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($blocco_corrente) {
-            if ($blocco_intervallo_attivo) {
-                $messaggio = "Il periodo selezionato è bloccato dal coordinatore/amministratore per questo reparto. Impossibile inoltrare la richiesta.";
+            if ($blocco_intervallo_attivo && !empty($dettagli_blocco)) {
+                $strInizio = date('d/m/Y', strtotime($dettagli_blocco['inizio']));
+                $strFine = date('d/m/Y', strtotime($dettagli_blocco['fine']));
+                $reqInizio = date('d/m/Y', strtotime($data_inizio));
+                $reqFine = date('d/m/Y', strtotime($data_fine));
+                
+                $messaggio = "Impossibile inserire la richiesta: il periodo richiesto ($reqInizio - $reqFine) si sovrappone al blocco ferie impostato dal coordinatore per il reparto (dal $strInizio al $strFine).";
             } else {
                 $messaggio = "Termine ultimo superato (16 del mese). L'inserimento delle desiderata è bloccato in attesa dello sblocco da parte del coordinatore.";
             }
@@ -605,14 +610,28 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
 
         <?php if (!empty($messaggio)) { ?>
             <div class="alert alert-<?php echo $tipo_alert; ?> py-2 small fw-bold shadow-sm" role="alert">
-                <i class="bi bi-info-circle-fill"></i> <?php echo htmlspecialchars($messaggio); ?>
+                <i class="bi bi-exclamation-triangle-fill"></i> <?php echo htmlspecialchars($messaggio); ?>
             </div>
         <?php } ?>
+
+        <!-- BANNER INFORMATIVO BLOCCO PER GLI UTENTI SEMPLICI -->
+        <?php if (!$is_coordinatore && !$is_super_admin && !$is_capo_personale && !empty($info_blocco_corrente)): ?>
+            <div class="alert alert-warning py-2 px-3 small fw-bold shadow-sm mb-4 border-start border-4 border-warning d-flex align-items-center gap-2" role="alert">
+                <i class="bi bi-calendar-x fs-5 text-warning"></i>
+                <div>
+                    <strong>Avviso Blocco Ferie Attivo:</strong> Il coordinatore ha impostato un blocco delle ferie dal 
+                    <span class="badge bg-dark text-white"><?php echo date('d/m/Y', strtotime($info_blocco_corrente['inizio'])); ?></span> 
+                    al 
+                    <span class="badge bg-dark text-white"><?php echo date('d/m/Y', strtotime($info_blocco_corrente['fine'])); ?></span>. 
+                    Le richieste per questo intervallo non verranno accettate.
+                </div>
+            </div>
+        <?php endif; ?>
 
         <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale): ?>
         <div class="row g-3 mb-4">
             <!-- Pannello Sblocco Desiderata -->
-            <div class="col-md-6">
+            <div class="col-md-5">
                 <div class="card shadow-sm bg-white border-start border-4 border-warning p-3 h-100">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                         <div>
@@ -632,25 +651,37 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             </div>
 
             <!-- Pannello Blocco Ferie Personalizzato (Dal / Al) -->
-            <div class="col-md-6">
+            <div class="col-md-7">
                 <div class="card shadow-sm bg-white border-start border-4 border-danger p-3 h-100">
-                    <h5 class="mb-1 fs-6 fw-bold"><i class="bi bi-calendar-x text-danger"></i> Imposta Blocco Ferie (Dal / Al)</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-calendar-x text-danger"></i> Imposta Blocco Ferie Reparto (Dal / Al)</h5>
+                        <?php if (!empty($info_blocco_corrente)): ?>
+                            <span class="badge bg-danger text-white">
+                                Blocco Attivo: <?php echo date('d/m/Y', strtotime($info_blocco_corrente['inizio'])); ?> &rarr; <?php echo date('d/m/Y', strtotime($info_blocco_corrente['fine'])); ?>
+                            </span>
+                        <?php else: ?>
+                            <span class="badge bg-secondary">Nessun Blocco Impostato</span>
+                        <?php endif; ?>
+                    </div>
                     <p class="text-muted small mb-2">Impedisci l'inserimento di richieste in intervalli specifici (es. festività o periodi critici).</p>
                     
                     <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>" class="row g-2 align-items-end">
                         <input type="hidden" name="azione" value="imposta_blocco_ferie">
                         <input type="hidden" name="reparto_id" value="<?php echo htmlspecialchars($reparto_target_check); ?>">
                         
-                        <div class="col-5">
+                        <div class="col-4">
                             <label class="form-label small fw-bold mb-1">Data Inizio Blocco</label>
                             <input type="date" class="form-control form-control-sm" name="blocco_inizio" value="<?php echo htmlspecialchars($blocco_ferie_corrente_inizio); ?>">
                         </div>
-                        <div class="col-5">
+                        <div class="col-4">
                             <label class="form-label small fw-bold mb-1">Data Fine Blocco</label>
                             <input type="date" class="form-control form-control-sm" name="blocco_fine" value="<?php echo htmlspecialchars($blocco_ferie_corrente_fine); ?>">
                         </div>
-                        <div class="col-2">
-                            <button type="submit" class="btn btn-sm btn-danger w-100 fw-bold" title="Salva Blocco"><i class="bi bi-save"></i></button>
+                        <div class="col-4 d-flex gap-1">
+                            <button type="submit" class="btn btn-sm btn-danger flex-grow-1 fw-bold" title="Salva Blocco Ferie"><i class="bi bi-save"></i> Salva Blocco</button>
+                            <?php if (!empty($info_blocco_corrente)): ?>
+                                <button type="submit" onclick="document.getElementsByName('blocco_inizio')[0].value=''; document.getElementsByName('blocco_fine')[0].value='';" class="btn btn-sm btn-outline-secondary" title="Rimuovi Blocco"><i class="bi bi-x-circle"></i></button>
+                            <?php endif; ?>
                         </div>
                     </form>
                 </div>
@@ -665,7 +696,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             <div class="card-body px-0">
                 <?php if ($inserimento_bloccato): ?>
                     <div class="alert alert-danger mb-0" role="alert">
-                        <i class="bi bi-lock-fill"></i> <strong>Termine scaduto o blocco attivo:</strong> Il periodo selezionato o il termine mensile impediscono l'inserimento di nuove richieste.
+                        <i class="bi bi-lock-fill"></i> <strong>Inserimento disabilitato:</strong> Il termine del 16 del mese è scaduto oppure è attivo un blocco sul reparto.
                     </div>
                 <?php else: ?>
                     <form method="POST" action="ferie.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>">
