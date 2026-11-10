@@ -71,7 +71,7 @@ if (empty($utente_id)) {
     exit;
 }
 
-// Forza recupero organizzazione e reparto aggiornati da DB
+// Forza recupero organizzazione, reparto e qualifica aggiornati da DB
 $resUCorr = supabase_ct_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id,qualifica,ruolo,squadra,nome");
 if (!empty($resUCorr) && is_array($resUCorr)) {
     $org_id_utente = $resUCorr[0]['organizzazione_id'] ?? $org_id_utente;
@@ -84,7 +84,7 @@ $reparto_selezionato = $_GET['reparto_id'] ?? ($is_coordinatore ? $reparto_id_ut
 $messaggio = '';
 $tipo_alert = '';
 
-// GESTIONE AZIONI POST (Proposta di cambio)
+// GESTIONE AZIONI POST (Proposta di cambio con controlli rigorosi)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $azione = $_POST['azione'] ?? '';
 
@@ -94,23 +94,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $note_proposta = trim($_POST['note'] ?? '');
 
         if (!empty($pianificazione_prop_id) && !empty($utente_dest_id)) {
-            $datiCambio = [
-                'organizzazione_id' => $org_id_utente,
-                'reparto_id' => $reparto_id_utente,
-                'utente_proponente_id' => $utente_id,
-                'pianificazione_proponente_id' => $pianificazione_prop_id,
-                'utente_destinatario_id' => $utente_dest_id,
-                'stato' => 'in_attesa_collega',
-                'note' => !empty($note_proposta) ? $note_proposta : 'Proposta di cambio turno'
-            ];
+            // 1. Recupera i dettagli del turno del proponente (per conoscere la data del turno)
+            $resTurnoProp = supabase_ct_request("pianificazione?id=eq.$pianificazione_prop_id&select=*");
+            if (!empty($resTurnoProp)) {
+                $turnoProp = $resTurnoProp[0];
+                $dataTurnoInizio = substr($turnoProp['data_inizio'], 0, 10); // Formato YYYY-MM-DD
 
-            $respIns = supabase_ct_request("cambi_turno", 'POST', $datiCambio);
-            if ($respIns !== false) {
-                $messaggio = "Proposta di cambio turno inviata con successo al collega!";
-                $tipo_alert = "success";
-            } else {
-                $messaggio = "Errore durante l'inserimento nella tabella cambi_turno su Supabase.";
-                $tipo_alert = "danger";
+                // 2. CONTROLLO ASSENZE DEL DESTINATARIO: Verifica se il collega ha ferie, permessi, 104 o malattia approvati in quella data
+                $conflittoAssenzaDestinatario = false;
+                $dettaglioAssenzaDest = '';
+
+                $resAssenzeDest = supabase_ct_request("assenze?utente_id=eq.$utente_dest_id&stato=eq.approvato&select=*");
+                if (is_array($resAssenzeDest)) {
+                    foreach ($resAssenzeDest as $ass) {
+                        $dInizio = substr($ass['data_inizio'], 0, 10);
+                        $dFine = substr($ass['data_fine'], 0, 10);
+                        $tipoAss = $ass['tipo_assenza'] ?? $ass['tipo'] ?? 'assenza';
+
+                        // Controlla se la data del turno cade nel periodo di assenza approvata del collega
+                        if ($dataTurnoInizio >= $dInizio && $dataTurnoInizio <= $dFine) {
+                            $conflittoAssenzaDestinatario = true;
+                            $dettaglioAssenzaDest = ucfirst($tipoAss) . " (dal " . date('d/m/Y', strtotime($dInizio)) . " al " . date('d/m/Y', strtotime($dFine)) . ")";
+                            break;
+                        }
+                    }
+                }
+
+                if ($conflittoAssenzaDestinatario) {
+                    $messaggio = "Impossibile inviare la proposta: nel giorno del turno ($dataTurnoInizio) il collega selezionato ha già un'assenza approvata: $dettaglioAssenzaDest.";
+                    $tipo_alert = "danger";
+                } else {
+                    // Procedi con l'inserimento della proposta
+                    $datiCambio = [
+                        'organizzazione_id' => $org_id_utente,
+                        'reparto_id' => $reparto_id_utente,
+                        'utente_proponente_id' => $utente_id,
+                        'pianificazione_proponente_id' => $pianificazione_prop_id,
+                        'utente_destinatario_id' => $utente_dest_id,
+                        'stato' => 'in_attesa_collega',
+                        'note' => !empty($note_proposta) ? $note_proposta : 'Proposta di cambio turno'
+                    ];
+
+                    $respIns = supabase_ct_request("cambi_turno", 'POST', $datiCambio);
+                    if ($respIns !== false) {
+                        $messaggio = "Proposta di cambio turno inviata con successo al collega!";
+                        $tipo_alert = "success";
+                    } else {
+                        $messaggio = "Errore durante l'inserimento nella tabella cambi_turno su Supabase.";
+                        $tipo_alert = "danger";
+                    }
+                }
             }
         } else {
             $messaggio = "Seleziona un tuo turno e il collega destinatario.";
@@ -130,6 +163,30 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
 
         if ($azione_ct === 'accetta_collega') {
             if ($ctData['utente_destinatario_id'] === $utente_id && $ctData['stato'] === 'in_attesa_collega') {
+                // Controllo supplementare di sicurezza al momento dell'accettazione del collega
+                $resTurnoProp = supabase_ct_request("pianificazione?id=eq." . $ctData['pianificazione_proponente_id'] . "&select=*");
+                $dataTurnoInizio = !empty($resTurnoProp) ? substr($resTurnoProp[0]['data_inizio'], 0, 10) : '';
+
+                $haAssenza = false;
+                if (!empty($dataTurnoInizio)) {
+                    $resAssDest = supabase_ct_request("assenze?utente_id=eq.$utente_id&stato=eq.approvato&select=*");
+                    if (is_array($resAssDest)) {
+                        foreach ($resAssDest as $ass) {
+                            $dInizio = substr($ass['data_inizio'], 0, 10);
+                            $dFine = substr($ass['data_fine'], 0, 10);
+                            if ($dataTurnoInizio >= $dInizio && $dataTurnoInizio <= $dFine) {
+                                $haAssenza = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if ($haAssenza) {
+                    header("Location: cambi_turno.php?msg=errore_assenza_collega");
+                    exit;
+                }
+
                 supabase_ct_request("cambi_turno?id=eq.$ct_id", 'PATCH', ['stato' => 'in_attesa_coordinatore']);
                 header("Location: cambi_turno.php?msg=accettato_collega");
                 exit;
@@ -170,19 +227,26 @@ $mieiTurni = [];
 $resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&select=*&order=data_inizio.desc&limit=50");
 if (is_array($resMieiTurni)) $mieiTurni = $resMieiTurni;
 
-// Caricamento colleghi (prima prova per reparto, se vuoto carica tutti gli utenti dell'organizzazione)
+// FILTRO RIGIDO PER QUALIFICA: Estraggo solo i colleghi che hanno la stessa qualifica dell'utente loggato
 $colleghiCompatibili = [];
+$miaQualifica = strtolower(trim($utente_corrente_info['qualifica'] ?? $utente_corrente_info['ruolo'] ?? ''));
+
 if (!empty($reparto_id_utente)) {
     $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$reparto_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
-    if (is_array($resColl) && !empty($resColl)) {
-        $colleghiCompatibili = $resColl;
+    if (is_array($resColl)) {
+        foreach ($resColl as $col) {
+            $qualColl = strtolower(trim($col['qualifica'] ?? $col['ruolo'] ?? ''));
+            // Confronto rigoroso: Infermiere con Infermiere, OSS con OSS
+            if (!empty($miaQualifica) && !empty($qualColl) && $qualColl === $miaQualifica) {
+                $colleghiCompatibili[] = $col;
+            }
+        }
     }
 }
-if (empty($colleghiCompatibili) && !empty($org_id_utente)) {
-    $resCollOrg = supabase_ct_request("staging_utenti?organizzazione_id=eq.$org_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
-    if (is_array($resCollOrg)) {
-        $colleghiCompatibili = $resCollOrg;
-    }
+// Fallback di sicurezza: se per qualche motivo la qualifica non è valorizzata nel DB, mostra tutti i colleghi del reparto
+if (empty($colleghiCompatibili) && !empty($reparto_id_utente)) {
+    $resCollFallback = supabase_ct_request("staging_utenti?reparto_id=eq.$reparto_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
+    if (is_array($resCollFallback)) $colleghiCompatibili = $resCollFallback;
 }
 
 $listaCambi = [];
@@ -251,7 +315,7 @@ if (is_array($resAllU)) {
                     </h2>
                     <span class="small text-muted">
                         <i class="bi bi-person-badge"></i> Operatore: <strong class="text-dark"><?php echo htmlspecialchars($utente_corrente_info['nome'] ?? 'Utente'); ?></strong> | 
-                        Ruolo: <strong class="text-dark"><?php echo ucfirst(htmlspecialchars($ruolo_raw)); ?></strong>
+                        Qualifica/Ruolo: <strong class="text-dark"><?php echo htmlspecialchars(strtoupper($miaQualifica ?: $ruolo_raw)); ?></strong>
                     </span>
                 </div>
             </div>
@@ -259,6 +323,9 @@ if (is_array($resAllU)) {
 
         <?php if (isset($_GET['msg']) && $_GET['msg'] === 'accettato_collega'): ?>
             <div class="alert alert-success py-2 small shadow-sm" role="alert">Hai accettato la proposta di cambio. Ora è in attesa dell'approvazione del coordinatore.</div>
+        <?php endif; ?>
+        <?php if (isset($_GET['msg']) && $_GET['msg'] === 'errore_assenza_collega'): ?>
+            <div class="alert alert-danger py-2 small shadow-sm" role="alert">Impossibile accettare: hai un'assenza (ferie/permesso/104) approvata in quel giorno.</div>
         <?php endif; ?>
         <?php if (isset($_GET['msg']) && $_GET['msg'] === 'approvato_definitivo'): ?>
             <div class="alert alert-success py-2 small shadow-sm" role="alert">Cambio turno approvato e registrato con successo nel planner!</div>
@@ -280,11 +347,13 @@ if (is_array($resAllU)) {
         <?php if (!$is_coordinatore && !$is_super_admin && !$is_capo_personale): ?>
         <div class="card shadow-sm mb-4 bg-white p-3">
             <div class="card-header bg-white pb-2 px-0 border-bottom">
-                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-plus-circle"></i> Proponi un Cambio Turno a un Collega</h5>
+                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-plus-circle"></i> Proponi un Cambio Turno a un Collega di Pari Qualifica</h5>
             </div>
             <div class="card-body px-0">
                 <?php if (empty($mieiTurni)): ?>
                     <div class="alert alert-warning py-2 small mb-0">Nessun turno trovato nella tabella pianificazione per il tuo utente.</div>
+                <?php elseif (empty($colleghiCompatibili)): ?>
+                    <div class="alert alert-warning py-2 small mb-0">Nessun collega con la tua stessa qualifica trovato nel reparto.</div>
                 <?php else: ?>
                     <form method="POST" action="cambi_turno.php">
                         <input type="hidden" name="azione" value="proponi_cambio">
@@ -304,7 +373,7 @@ if (is_array($resAllU)) {
                                 </select>
                             </div>
                             <div class="col-md-4">
-                                <label for="utente_destinatario_id" class="form-label small fw-bold">Collega Destinatario</label>
+                                <label for="utente_destinatario_id" class="form-label small fw-bold">Collega Destinatario (Stessa Qualifica)</label>
                                 <select class="form-select form-select-sm" id="utente_destinatario_id" name="utente_destinatario_id" required>
                                     <option value="">-- Seleziona collega --</option>
                                     <?php foreach ($colleghiCompatibili as $c) { ?>
@@ -398,7 +467,7 @@ if (is_array($resAllU)) {
                                                 <a href="cambi_turno.php?azione_ct=approva_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-success py-0 px-1" title="Approva Cambio"><i class="bi bi-check"></i> Approva</a>
                                                 <a href="cambi_turno.php?azione_ct=rifiuta_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-danger py-0 px-1" title="Rifiuta Cambio"><i class="bi bi-x"></i> Rifiuta</a>
                                             <?php endif; ?>
-                                            <a href="cambi_turno.php?azione_ct=elimina&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
+                                            <a href="cambi_turno.php?azione_ct=eliminato&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
