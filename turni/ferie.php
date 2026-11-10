@@ -322,7 +322,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $bStart = $dettagli_blocco['inizio'];
             $bEnd = $dettagli_blocco['fine'];
 
-            // Sovrapposizione date: (InizioRichiesta <= FineBlocco) AND (FineRichiesta >= InizioBlocco)
             if (($data_inizio <= $bEnd) && ($data_fine >= $bStart) && !$is_coordinatore && !$is_super_admin && !$is_capo_personale) {
                 $blocco_intervallo_attivo = true;
             }
@@ -353,6 +352,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!empty($data_inizio) && !empty($data_fine)) {
                 $squadra_collaboratore = $mappaUtenti[$collaboratore_selezionato]['squadra'] ?? 'Senza Squadra';
+                $qualifica_collaboratore = strtolower(trim($mappaUtenti[$collaboratore_selezionato]['qualifica'] ?? $mappaUtenti[$collaboratore_selezionato]['ruolo'] ?? ''));
+                
                 $richiede_weekend = includeWeekend($data_inizio, $data_fine);
                 $mieiWeekendFatti = $statisticheWeekendFerie[$collaboratore_selezionato] ?? 0;
 
@@ -367,8 +368,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         if (isset($mappaUtenti[$altroUtenteId])) {
                             $squadraAltro = $mappaUtenti[$altroUtenteId]['squadra'] ?? 'Senza Squadra';
+                            $qualificaAltro = strtolower(trim($mappaUtenti[$altroUtenteId]['qualifica'] ?? $mappaUtenti[$altroUtenteId]['ruolo'] ?? ''));
 
-                            if (!empty($squadra_collaboratore) && strcasecmp($squadraAltro, $squadra_collaboratore) === 0) {
+                            // CRITERIO RIGOROSO: STESSA SQUADRA E STESSA QUALIFICA (es. OSS con OSS, Infermiere con Infermiere)
+                            $stessaQualifica = (!empty($qualifica_collaboratore) && !empty($qualificaAltro) && ($qualifica_collaboratore === $qualificaAltro));
+
+                            if (!empty($squadra_collaboratore) && strcasecmp($squadraAltro, $squadra_collaboratore) === 0 && $stessaQualifica) {
                                 $InizioEsistente = $assEsistente['data_inizio'] ?? '';
                                 $FineEsistente = $assEsistente['data_fine'] ?? '';
                                 $statoEsistente = $assEsistente['stato'] ?? '';
@@ -381,12 +386,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                         if ($richiede_weekend) {
                                             if ($mieiWeekendFatti > $weekendAltro) {
-                                                $dettagli_conflitto = " [CONFLITTO SQUADRA & EQUITÀ WEEKEND]: Sovrapposizione con $nomeAltro. Tu hai già goduto di $mieiWeekendFatti weekend, mentre $nomeAltro ne ha registrati $weekendAltro.";
+                                                $dettagli_conflitto = " [CONFLITTO STESSA QUALIFICA & EQUITÀ WEEKEND]: Sovrapposizione con $nomeAltro (collega di pari qualifica). Tu hai già goduto di $mieiWeekendFatti weekend, mentre $nomeAltro ne ha registrati $weekendAltro.";
                                             } else {
-                                                $dettagli_conflitto = " [CONFLITTO SQUADRA & EQUITÀ WEEKEND]: Sovrapposizione nelle stesse date con $nomeAltro (Weekend goduti: Tuo $mieiWeekendFatti vs Collega $weekendAltro).";
+                                                $dettagli_conflitto = " [CONFLITTO STESSA QUALIFICA & EQUITÀ WEEKEND]: Sovrapposizione nelle stesse date con $nomeAltro di pari qualifica (Weekend goduti: Tuo $mieiWeekendFatti vs Collega $weekendAltro).";
                                             }
                                         } else {
-                                            $dettagli_conflitto = " [CONFLITTO SQUADRA]: Sovrapposizione nelle stesse date con $nomeAltro.";
+                                            $dettagli_conflitto = " [CONFLITTO STESSA QUALIFICA]: Sovrapposizione nelle stesse date con il collega di pari qualifica $nomeAltro.";
                                         }
                                         break;
                                     }
@@ -398,11 +403,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $nota_finale = $note_utente;
                 if ($conflitto_rilevato) {
-                    $nota_finale = trim("IN ATTESA (VERIFICA EQUITÀ/SQUADRA): " . $note_utente . $dettagli_conflitto);
-                    $messaggio = "La richiesta è stata inserita ed è IN ATTESA: il sistema ha rilevato una sovrapposizione di squadra valutando anche i criteri di equità dei weekend.";
+                    $nota_finale = trim("IN ATTESA (VERIFICA EQUITÀ/QUALIFICA): " . $note_utente . $dettagli_conflitto);
+                    $messaggio = "La richiesta è stata inserita ed è IN ATTESA: il sistema ha rilevato una sovrapposizione con un collega della stessa qualifica valutando l'equità dei weekend.";
                     $tipo_alert = "warning";
                 } else {
-                    $messaggio = "Richiesta registrata con successo! Controllo equità weekend per squadra superato senza conflitti.";
+                    $messaggio = "Richiesta registrata con successo! Controllo equità e qualifica superato senza conflitti.";
                     $tipo_alert = "success";
                 }
 
@@ -507,7 +512,7 @@ if (isset($_GET['azione_stato']) && isset($_GET['id'])) {
     exit;
 }
 
-// Recupero elenco assenze filtrato per gli utenti autorizzati (ordinato per data_inizio discendente)
+// Recupero elenco assenze filtrato per gli utenti autorizzati
 $listaAssenze = [];
 $idUtentiReparto = array_keys($mappaUtenti);
 
@@ -533,18 +538,15 @@ if ($is_super_admin || $is_capo_personale) {
     if (is_array($resAssenze)) $listaAssenze = $resAssenze;
 }
 
-// ORDINAMENTO PERSONALIZZATO: Prima le richieste "in attesa", poi le altre dalla più recente alla meno recente
+// Ordinamento personalizzato: Prima "in attesa", poi dal più recente al meno recente
 if (!empty($listaAssenze)) {
     usort($listaAssenze, function($a, $b) {
         $statoA = strtolower(trim($a['stato'] ?? ''));
         $statoB = strtolower(trim($b['stato'] ?? ''));
 
-        // Se A è in attesa e B no, A va in alto (-1)
         if ($statoA === 'in attesa' && $statoB !== 'in attesa') return -1;
-        // Se B è in attesa e A no, B va in alto (1)
         if ($statoB === 'in attesa' && $statoA !== 'in attesa') return 1;
 
-        // Altrimenti ordina per data_inizio decrescente (più recente prima)
         $dataA = $a['data_inizio'] ?? '';
         $dataB = $b['data_inizio'] ?? '';
         return strcmp($dataB, $dataA);
@@ -727,9 +729,10 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                                         <option value="">-- Seleziona --</option>
                                         <?php foreach ($listaCollaboratoriDropdown as $c) { 
                                             $squadraTxt = !empty($c['squadra']) ? ' [Squadra: ' . $c['squadra'] . ']' : '';
+                                            $qualificaTxt = !empty($c['qualifica']) ? ' (' . $c['qualifica'] . ')' : (!empty($c['ruolo']) ? ' (' . $c['ruolo'] . ')' : '');
                                         ?>
                                             <option value="<?php echo $c['id']; ?>">
-                                                <?php echo htmlspecialchars($c['nome']); ?> (<?php echo htmlspecialchars($c['ruolo'] ?? $c['qualifica'] ?? 'N/D'); ?><?php echo $squadraTxt; ?>)
+                                                <?php echo htmlspecialchars($c['nome']); ?><?php echo htmlspecialchars($qualificaTxt); ?><?php echo $squadraTxt; ?>
                                             </option>
                                         <?php } ?>
                                     </select>
