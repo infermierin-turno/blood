@@ -71,8 +71,8 @@ if (empty($utente_id)) {
     exit;
 }
 
-// Forza recupero organizzazione, reparto e qualifica aggiornati da DB
-$resUCorr = supabase_ct_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id,qualifica,ruolo,squadra,nome");
+// Forza recupero organizzazione, reparto e ruolo aggiornati da DB
+$resUCorr = supabase_ct_request("staging_utenti?id=eq.$utente_id&select=organizzazione_id,reparto_id,ruolo,squadra,nome");
 if (!empty($resUCorr) && is_array($resUCorr)) {
     $org_id_utente = $resUCorr[0]['organizzazione_id'] ?? $org_id_utente;
     $reparto_id_utente = $resUCorr[0]['reparto_id'] ?? $reparto_id_utente;
@@ -198,7 +198,6 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
                 exit;
             }
         } elseif ($azione_ct === 'elimina' || $azione_ct === 'ritira' || $azione_ct === 'eliminato') {
-            // Consentito a coordinatore, admin, capo personale o proponente/destinatario coinvolto
             supabase_ct_request("cambi_turno?id=eq.$ct_id", 'DELETE');
             header("Location: cambi_turno.php?msg=eliminato");
             exit;
@@ -228,26 +227,36 @@ $mieiTurni = [];
 $resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&select=*&order=data_inizio.desc&limit=50");
 if (is_array($resMieiTurni)) $mieiTurni = $resMieiTurni;
 
-// FILTRO RIGIDO PER QUALIFICA: Estraggo solo i colleghi che hanno la stessa qualifica dell'utente loggato
-$colleghiCompatibili = [];
-$miaQualifica = strtolower(trim($utente_corrente_info['qualifica'] ?? $utente_corrente_info['ruolo'] ?? ''));
+// FUNZIONE DI NORMALIZZAZIONE BASATA ESCLUSIVAMENTE SUL CAMPO 'RUOLO'
+function normalizza_ruolo($str) {
+    $str = strtolower(trim($str));
+    if (in_array($str, ['cpsi', 'infermiere', 'infermiera', 'inf', 'cps_infermiere'])) {
+        return 'INFERMIERE';
+    }
+    if (in_array($str, ['oss', 'o.s.s.', 'operatore socio sanitario', 'operatore_socio_sanitario'])) {
+        return 'OSS';
+    }
+    return strtoupper($str);
+}
 
+// Estrazione ed equalizzazione ESCLUSIVA del RUOLO
+$rawRuoloUtente = $utente_corrente_info['ruolo'] ?? $_SESSION['ruolo'] ?? $_SESSION['utente']['ruolo'] ?? '';
+$mioRuoloNorm = normalizza_ruolo($rawRuoloUtente);
+
+$colleghiCompatibili = [];
 if (!empty($reparto_id_utente)) {
-    $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$reparto_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
+    $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$reparto_id_utente&id=neq.$utente_id&select=id,nome,ruolo,squadra&order=nome.asc");
     if (is_array($resColl)) {
         foreach ($resColl as $col) {
-            $qualColl = strtolower(trim($col['qualifica'] ?? $col['ruolo'] ?? ''));
-            // Confronto rigoroso: Infermiere con Infermiere, OSS con OSS
-            if (!empty($miaQualifica) && !empty($qualColl) && $qualColl === $miaQualifica) {
+            $rawRuoloCol = $col['ruolo'] ?? '';
+            $ruoloColNorm = normalizza_ruolo($rawRuoloCol);
+
+            // Confronto rigido basato solo sul RUOLO
+            if (!empty($mioRuoloNorm) && $ruoloColNorm === $mioRuoloNorm) {
                 $colleghiCompatibili[] = $col;
             }
         }
     }
-}
-// Fallback di sicurezza: se per qualche motivo la qualifica non è valorizzata nel DB, mostra tutti i colleghi del reparto
-if (empty($colleghiCompatibili) && !empty($reparto_id_utente)) {
-    $resCollFallback = supabase_ct_request("staging_utenti?reparto_id=eq.$reparto_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
-    if (is_array($resCollFallback)) $colleghiCompatibili = $resCollFallback;
 }
 
 $listaCambi = [];
@@ -268,7 +277,7 @@ if ($is_coordinatore || $is_super_admin || $is_capo_personale) {
 }
 
 $mappaTuttiUtenti = [];
-$resAllU = supabase_ct_request("staging_utenti?select=id,nome,qualifica,ruolo");
+$resAllU = supabase_ct_request("staging_utenti?select=id,nome,ruolo");
 if (is_array($resAllU)) {
     foreach ($resAllU as $u) {
         $mappaTuttiUtenti[$u['id']] = $u;
@@ -315,7 +324,7 @@ if (is_array($resAllU)) {
                     </h2>
                     <span class="small text-muted">
                         <i class="bi bi-person-badge"></i> Operatore: <strong class="text-dark"><?php echo htmlspecialchars($utente_corrente_info['nome'] ?? 'Utente'); ?></strong> | 
-                        Qualifica/Ruolo: <strong class="text-dark"><?php echo htmlspecialchars(strtoupper($miaQualifica ?: $ruolo_raw)); ?></strong>
+                        Ruolo: <strong class="text-dark"><?php echo htmlspecialchars($mioRuoloNorm ?: strtoupper($ruolo_raw)); ?></strong>
                     </span>
                 </div>
             </div>
@@ -347,13 +356,13 @@ if (is_array($resAllU)) {
         <?php if (!$is_coordinatore && !$is_super_admin && !$is_capo_personale): ?>
         <div class="card shadow-sm mb-4 bg-white p-3">
             <div class="card-header bg-white pb-2 px-0 border-bottom">
-                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-plus-circle"></i> Proponi un Cambio Turno a un Collega di Pari Qualifica</h5>
+                <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-plus-circle"></i> Proponi un Cambio Turno a un Collega di Pari Ruolo</h5>
             </div>
             <div class="card-body px-0">
                 <?php if (empty($mieiTurni)): ?>
                     <div class="alert alert-warning py-2 small mb-0">Nessun turno trovato nella tabella pianificazione per il tuo utente.</div>
                 <?php elseif (empty($colleghiCompatibili)): ?>
-                    <div class="alert alert-warning py-2 small mb-0">Nessun collega con la tua stessa qualifica trovato nel reparto.</div>
+                    <div class="alert alert-warning py-2 small mb-0">Nessun collega con il tuo stesso ruolo (<?php echo htmlspecialchars($mioRuoloNorm); ?>) trovato nel reparto.</div>
                 <?php else: ?>
                     <form method="POST" action="cambi_turno.php">
                         <input type="hidden" name="azione" value="proponi_cambio">
@@ -373,12 +382,12 @@ if (is_array($resAllU)) {
                                 </select>
                             </div>
                             <div class="col-md-4">
-                                <label for="utente_destinatario_id" class="form-label small fw-bold">Collega Destinatario (Stessa Qualifica)</label>
+                                <label for="utente_destinatario_id" class="form-label small fw-bold">Collega Destinatario (Solo <?php echo htmlspecialchars($mioRuoloNorm); ?>)</label>
                                 <select class="form-select form-select-sm" id="utente_destinatario_id" name="utente_destinatario_id" required>
                                     <option value="">-- Seleziona collega --</option>
                                     <?php foreach ($colleghiCompatibili as $c) { ?>
                                         <option value="<?php echo $c['id']; ?>">
-                                            <?php echo htmlspecialchars($c['nome']); ?> (<?php echo htmlspecialchars($c['qualifica'] ?? $c['ruolo'] ?? 'Operatore'); ?>)
+                                            <?php echo htmlspecialchars($c['nome']); ?> (<?php echo htmlspecialchars(normalizza_ruolo($c['ruolo'] ?? '')); ?>)
                                         </option>
                                     <?php } ?>
                                 </select>
