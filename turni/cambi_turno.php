@@ -152,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// GESTIONE AZIONI GET (Accetta/Rifiuta/Approva)
+// GESTIONE AZIONI GET (Accetta/Rifiuta/Approva/Elimina)
 if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
     $ct_id = trim($_GET['id']);
     $azione_ct = trim($_GET['azione_ct']);
@@ -197,7 +197,8 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
                 header("Location: cambi_turno.php?msg=rifiutato");
                 exit;
             }
-        } elseif ($azione_ct === 'elimina' || $azione_ct === 'ritira') {
+        } elseif ($azione_ct === 'elimina' || $azione_ct === 'ritira' || $azione_ct === 'eliminato') {
+            // Consentito a coordinatore, admin, capo personale o proponente/destinatario coinvolto
             supabase_ct_request("cambi_turno?id=eq.$ct_id", 'DELETE');
             header("Location: cambi_turno.php?msg=eliminato");
             exit;
