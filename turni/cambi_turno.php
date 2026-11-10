@@ -296,7 +296,6 @@ if (is_array($resAllU)) {
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="planner.php">Planner Mensile</a></li>
-                    <li class="nav-item"><a class="nav-link" href="turni.php">Assegnazione Turni</a></li>
                     <li class="nav-item"><a class="nav-link" href="ferie.php">Ferie e Assenze</a></li>
                     <li class="nav-item"><a class="nav-link active" href="cambi_turno.php">Cambi Turno</a></li>
                     <li class="nav-item"><a class="nav-link text-danger" href="logout.php">Logout</a></li>
