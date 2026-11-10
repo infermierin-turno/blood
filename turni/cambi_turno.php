@@ -83,7 +83,6 @@ $reparto_selezionato = $_GET['reparto_id'] ?? ($is_coordinatore ? $reparto_id_ut
 
 $messaggio = '';
 $tipo_alert = '';
-$debug_info = [];
 
 // GESTIONE AZIONI POST (Proposta di cambio)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -166,41 +165,37 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
     }
 }
 
-// RACCOLTA DATI E DEBUG
-$debug_info['utente_id'] = $utente_id;
-$debug_info['reparto_id'] = $reparto_id_utente;
-$debug_info['qualifica'] = $utente_corrente_info['qualifica'] ?? 'N/D';
+// RECUPERO DATI
+$mieiTurni = [];
+$resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&select=*&order=data_inizio.desc&limit=50");
+if (is_array($resMieiTurni)) $mieiTurni = $resMieiTurni;
 
-// 1. Test recupero turni pianificazione per utente loggato
-$resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&select=*&limit=50");
-$debug_info['query_turni_eseguita'] = "pianificazione?utente_id=eq.$utente_id&select=*&limit=50";
-$debug_info['turni_trovati_count'] = is_array($resMieiTurni) ? count($resMieiTurni) : 'Errore o non array';
-$debug_info['raw_turni'] = $resMieiTurni;
-$mieiTurniFuturi = is_array($resMieiTurni) ? $resMieiTurni : [];
-
-// 2. Test recupero colleghi compatibili
 $colleghiCompatibili = [];
 if (!empty($reparto_id_utente)) {
     $mioReparto = $reparto_id_utente;
-    $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$mioReparto&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra");
-    $debug_info['colleghi_reparto_raw'] = $resColl;
+    $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$mioReparto&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
     if (is_array($resColl)) {
         foreach ($resColl as $col) {
-            $colleghiCompatibili[] = $col; // Mostriamo tutti i colleghi del reparto per evitare filtri restrittivi iniziali
+            $colleghiCompatibili[] = $col;
         }
     }
 }
-$debug_info['colleghi_compatibili_count'] = count($colleghiCompatibili);
 
-// 3. Elenco richieste cambio turno
 $listaCambi = [];
 if ($is_coordinatore || $is_super_admin || $is_capo_personale) {
-    $resC = supabase_ct_request("cambi_turno?select=*&order=created_at.desc");
+    $urlCambi = "cambi_turno?select=*&order=created_at.desc";
+    if (!empty($reparto_selezionato)) {
+        $urlCambi = "cambi_turno?reparto_id=eq.$reparto_selezionato&select=*&order=created_at.desc";
+    }
+    $resC = supabase_ct_request($urlCambi);
     if (is_array($resC)) $listaCambi = $resC;
 } else {
     $resC1 = supabase_ct_request("cambi_turno?utente_proponente_id=eq.$utente_id&select=*");
     $resC2 = supabase_ct_request("cambi_turno?utente_destinatario_id=eq.$utente_id&select=*");
     $listaCambi = array_merge(is_array($resC1)?$resC1:[], is_array($resC2)?$resC2:[]);
+    usort($listaCambi, function($a, $b) {
+        return strcmp($b['created_at'] ?? '', $a['created_at'] ?? '');
+    });
 }
 
 $mappaTuttiUtenti = [];
@@ -222,7 +217,6 @@ if (is_array($resAllU)) {
     <style>
         body { background-color: #f8fafc; padding-bottom: 70px; color: #334155; }
         .card { border: none; border-radius: 10px; box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05); background: #ffffff; }
-        .debug-box { background: #1e293b; color: #38bdf8; font-family: monospace; font-size: 12px; padding: 15px; border-radius: 8px; margin-bottom: 20px; max-height: 250px; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -245,15 +239,6 @@ if (is_array($resAllU)) {
 
     <div class="container-fluid px-4">
         
-        <!-- BOX DI DEBUG IN TEMPO REALE -->
-        <div class="card shadow-sm mb-4 border-start border-4 border-info p-3">
-            <h6 class="fw-bold text-dark mb-2"><i class="bi bi-bug-fill text-info"></i> Pannello di Debug Protur (Cambi Turno)</h6>
-            <div class="debug-box">
-                <?php echo "<pre>" . print_r($debug_info, true) . "</pre>"; ?>
-            </div>
-            <span class="small text-muted">Se <strong>turni_trovati_count</strong> è 0, significa che la tabella `pianificazione` non contiene record per il tuo `utente_id` o il campo utente_id non corrisponde.</span>
-        </div>
-
         <div class="card shadow-sm mb-4 p-3">
             <div class="row align-items-center g-3">
                 <div class="col-md-7">
@@ -294,7 +279,7 @@ if (is_array($resAllU)) {
                 <h5 class="mb-0 fs-6 fw-bold"><i class="bi bi-plus-circle"></i> Proponi un Cambio Turno a un Collega</h5>
             </div>
             <div class="card-body px-0">
-                <?php if (empty($mieiTurniFuturi)): ?>
+                <?php if (empty($mieiTurni)): ?>
                     <p class="text-muted small mb-0">Nessun turno trovato nella tabella pianificazione per il tuo utente.</p>
                 <?php elseif (empty($colleghiCompatibili)): ?>
                     <p class="text-muted small mb-0">Non ci sono colleghi nel tuo reparto.</p>
@@ -306,7 +291,7 @@ if (is_array($resAllU)) {
                                 <label for="pianificazione_id" class="form-label small fw-bold">Seleziona il tuo Turno da Scambiare</label>
                                 <select class="form-select form-select-sm" id="pianificazione_id" name="pianificazione_id" required>
                                     <option value="">-- Seleziona turno --</option>
-                                    <?php foreach ($mieiTurniFuturi as $t) { 
+                                    <?php foreach ($mieiTurni as $t) { 
                                         $dataFmt = date('d/m/Y', strtotime($t['data_inizio']));
                                         $tipoEv = $t['tipo_evento'] ?? 'Turno';
                                     ?>
@@ -411,7 +396,7 @@ if (is_array($resAllU)) {
                                                 <a href="cambi_turno.php?azione_ct=approva_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-success py-0 px-1" title="Approva Cambio"><i class="bi bi-check"></i> Approva</a>
                                                 <a href="cambi_turno.php?azione_ct=rifiuta_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-danger py-0 px-1" title="Rifiuta Cambio"><i class="bi bi-x"></i> Rifiuta</a>
                                             <?php endif; ?>
-                                            <a href="cambi_turno.php?azione_ct=elimina&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
+                                            <a href="cambi_turno.php?azione_ct=eliminato&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
