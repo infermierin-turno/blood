@@ -80,7 +80,6 @@ if (!empty($reparto_id_utente)) {
     if (!empty($dati_reparto_db) && is_array($dati_reparto_db) && isset($dati_reparto_db[0]) && is_array($dati_reparto_db[0])) {
         $r_info = $dati_reparto_db[0];
         $nome_reparto = $r_info['nome_reparto'] ?? 'N/D';
-        // Controllo del flag booleano per i straordinari sul reparto
         $gestione_straordinari_attiva = !empty($r_info['gestione_straordinari']);
     }
 }
@@ -333,6 +332,30 @@ if ($è_admin_o_coordinatore) {
                 </div>
             </div>
 
+            <!-- NUOVA SEZIONE: CAMBI TURNO CON BADGE SPERIMENTALE -->
+            <div class="col-md-4">
+                <div class="card h-100 border-start border-purple border-4" style="border-left-color: #6f42c1 !important;">
+                    <div class="card-body d-flex flex-column justify-content-between p-4">
+                        <div>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="fs-3" style="color: #6f42c1;"><i class="bi bi-arrow-left-right"></i></div>
+                                <span class="badge bg-warning text-dark px-2 py-1 fw-bold" style="font-size: 0.75rem;">
+                                    <i class="bi bi-cone-striped"></i> Sperimentale
+                                </span>
+                            </div>
+                            <h5 class="card-title fw-bold">Cambi Turno</h5>
+                            <p class="card-text text-muted small">Proponi e gestisci scambi di turno con i colleghi di pari qualifica soggette ad approvazione.</p>
+                        </div>
+                        <div class="d-grid mt-3">
+                            <!-- Pulsante che apre il modale informativo -->
+                            <button type="button" class="btn btn-sm fw-bold text-white" style="background-color: #6f42c1;" data-bs-toggle="modal" data-bs-target="#modalSperimentaleCambi">
+                                Accedi a Cambi Turno <i class="bi bi-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Sezione profilo personale / turni personali -->
             <div class="col-md-4">
                 <div class="card h-100 border-start border-secondary border-4">
@@ -347,6 +370,36 @@ if ($è_admin_o_coordinatore) {
                 </div>
             </div>
 
+        </div>
+    </div>
+
+    <!-- MODALE INFORMATIVO FUNZIONE SPERIMENTALE CAMBI TURNO -->
+    <div class="modal fade" id="modalSperimentaleCambi" tabindex="-1" aria-labelledby="modalSperimentaleCambiLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px;">
+                <div class="modal-header text-white" style="background-color: #6f42c1; border-top-left-radius: 12px; border-top-right-radius: 12px;">
+                    <h5 class="modal-title fw-bold" id="modalSperimentaleCambiLabel">
+                        <i class="bi bi-cone-striped"></i> Funzione in Via Sperimentale
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-info-circle-fill text-warning display-4"></i>
+                    </div>
+                    <h6 class="fw-bold text-dark mb-3">Benvenuto nel modulo Cambi Turno!</h6>
+                    <p class="text-muted small mb-4">
+                        Questa funzione è attualmente in <strong>fase di test sperimentale</strong>. Stiamo perfezionando i flussi di doppio accordo e validazione. 
+                        Se riscontri anomalie, comportamenti inattesi o errori di sistema, ti invitiamo a contattare direttamente <strong>Gianni</strong> per segnalarlo.
+                    </p>
+                    <div class="d-flex justify-content-center gap-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm px-4 fw-bold" data-bs-dismiss="modal">Annulla</button>
+                        <a href="cambi_turno.php" class="btn btn-sm px-4 fw-bold text-white" style="background-color: #6f42c1;">
+                            Procedi comunque <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
