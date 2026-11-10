@@ -170,14 +170,18 @@ $mieiTurni = [];
 $resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&select=*&order=data_inizio.desc&limit=50");
 if (is_array($resMieiTurni)) $mieiTurni = $resMieiTurni;
 
+// Caricamento colleghi (prima prova per reparto, se vuoto carica tutti gli utenti dell'organizzazione)
 $colleghiCompatibili = [];
 if (!empty($reparto_id_utente)) {
-    $mioReparto = $reparto_id_utente;
-    $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$mioReparto&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
-    if (is_array($resColl)) {
-        foreach ($resColl as $col) {
-            $colleghiCompatibili[] = $col;
-        }
+    $resColl = supabase_ct_request("staging_utenti?reparto_id=eq.$reparto_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
+    if (is_array($resColl) && !empty($resColl)) {
+        $colleghiCompatibili = $resColl;
+    }
+}
+if (empty($colleghiCompatibili) && !empty($org_id_utente)) {
+    $resCollOrg = supabase_ct_request("staging_utenti?organizzazione_id=eq.$org_id_utente&id=neq.$utente_id&select=id,nome,qualifica,ruolo,squadra&order=nome.asc");
+    if (is_array($resCollOrg)) {
+        $colleghiCompatibili = $resCollOrg;
     }
 }
 
@@ -280,9 +284,7 @@ if (is_array($resAllU)) {
             </div>
             <div class="card-body px-0">
                 <?php if (empty($mieiTurni)): ?>
-                    <p class="text-muted small mb-0">Nessun turno trovato nella tabella pianificazione per il tuo utente.</p>
-                <?php elseif (empty($colleghiCompatibili)): ?>
-                    <p class="text-muted small mb-0">Non ci sono colleghi nel tuo reparto.</p>
+                    <div class="alert alert-warning py-2 small mb-0">Nessun turno trovato nella tabella pianificazione per il tuo utente.</div>
                 <?php else: ?>
                     <form method="POST" action="cambi_turno.php">
                         <input type="hidden" name="azione" value="proponi_cambio">
@@ -396,7 +398,7 @@ if (is_array($resAllU)) {
                                                 <a href="cambi_turno.php?azione_ct=approva_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-success py-0 px-1" title="Approva Cambio"><i class="bi bi-check"></i> Approva</a>
                                                 <a href="cambi_turno.php?azione_ct=rifiuta_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-danger py-0 px-1" title="Rifiuta Cambio"><i class="bi bi-x"></i> Rifiuta</a>
                                             <?php endif; ?>
-                                            <a href="cambi_turno.php?azione_ct=eliminato&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
+                                            <a href="cambi_turno.php?azione_ct=elimina&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
