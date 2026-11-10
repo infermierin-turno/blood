@@ -507,7 +507,7 @@ if (isset($_GET['azione_stato']) && isset($_GET['id'])) {
     exit;
 }
 
-// Recupero elenco assenze filtrato per gli utenti autorizzati
+// Recupero elenco assenze filtrato per gli utenti autorizzati (ordinato per data_inizio discendente)
 $listaAssenze = [];
 $idUtentiReparto = array_keys($mappaUtenti);
 
@@ -531,6 +531,24 @@ if ($is_super_admin || $is_capo_personale) {
 } else {
     $resAssenze = supabase_ferie_request("assenze?utente_id=eq.$utente_id&select=*&order=data_inizio.desc");
     if (is_array($resAssenze)) $listaAssenze = $resAssenze;
+}
+
+// ORDINAMENTO PERSONALIZZATO: Prima le richieste "in attesa", poi le altre dalla più recente alla meno recente
+if (!empty($listaAssenze)) {
+    usort($listaAssenze, function($a, $b) {
+        $statoA = strtolower(trim($a['stato'] ?? ''));
+        $statoB = strtolower(trim($b['stato'] ?? ''));
+
+        // Se A è in attesa e B no, A va in alto (-1)
+        if ($statoA === 'in attesa' && $statoB !== 'in attesa') return -1;
+        // Se B è in attesa e A no, B va in alto (1)
+        if ($statoB === 'in attesa' && $statoA !== 'in attesa') return 1;
+
+        // Altrimenti ordina per data_inizio decrescente (più recente prima)
+        $dataA = $a['data_inizio'] ?? '';
+        $dataB = $b['data_inizio'] ?? '';
+        return strcmp($dataB, $dataA);
+    });
 }
 
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
