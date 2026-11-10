@@ -93,23 +93,18 @@ $reparto_selezionato = $_GET['reparto_id'] ?? ($is_coordinatore ? $reparto_id_ut
 $messaggio = '';
 $tipo_alert = '';
 
-// GESTIONE AZIONI POST (Proposta, Accettazione, Rifiuto, Approvazione Coordinatore)
+// GESTIONE AZIONI POST (Proposta di cambio)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $azione = $_POST['azione'] ?? '';
 
-    // 1. Proposta di cambio turno da parte del dipendente
     if ($azione === 'proponi_cambio') {
         $pianificazione_prop_id = trim($_POST['pianificazione_id'] ?? '');
         $utente_dest_id = trim($_POST['utente_destinatario_id'] ?? '');
         $note_proposta = trim($_POST['note'] ?? '');
 
         if (!empty($pianificazione_prop_id) && !empty($utente_dest_id)) {
-            // Verifica che il turno appartenga all'utente loggato
             $resTurnoProp = supabase_ct_request("pianificazione?id=eq.$pianificazione_prop_id&select=*");
             if (!empty($resTurnoProp)) {
-                $turnoProp = $resTurnoProp[0];
-
-                // Inserimento nella tabella cambi_turno
                 $datiCambio = [
                     'organizzazione_id' => $org_id_utente,
                     'reparto_id' => $reparto_id_utente,
@@ -136,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// GESTIONE AZIONI GET (Accetta/Rifiuta collega, oppure Approvazione/Rifiuto Coordinatore)
+// GESTIONE AZIONI GET (Accetta/Rifiuta/Approva)
 if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
     $ct_id = trim($_GET['id']);
     $azione_ct = trim($_GET['azione_ct']);
@@ -146,7 +141,6 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
         $ctData = $resCt[0];
 
         if ($azione_ct === 'accetta_collega') {
-            // Il collega destinatario accetta la proposta -> passa al coordinatore
             if ($ctData['utente_destinatario_id'] === $utente_id && $ctData['stato'] === 'in_attesa_collega') {
                 supabase_ct_request("cambi_turno?id=eq.$ct_id", 'PATCH', [
                     'stato' => 'in_attesa_coordinatore'
@@ -163,24 +157,21 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
                 exit;
             }
         } elseif ($azione_ct === 'elimina' || $azione_ct === 'ritira') {
-            // Il proponente o il coordinatore possono eliminare/ritirare
             supabase_ct_request("cambi_turno?id=eq.$ct_id", 'DELETE');
             header("Location: cambi_turno.php?msg=eliminato");
             exit;
         } elseif ($azione_ct === 'approva_coordinatore' && ($is_coordinatore || $is_super_admin || $is_capo_personale)) {
-            // IL COORDINATORE APPROVA: Esegue lo scambio effettivo degli utente_id sulla tabella pianificazione
             $pian_prop_id = $ctData['pianificazione_proponente_id'];
             $idProp = $ctData['utente_proponente_id'];
             $idDest = $ctData['utente_destinatario_id'];
 
-            // Aggiorna il turno del proponente assegnandolo al destinatario (o viceversa in base alla logica)
-            // Scambiamo l'utente_id nel record di pianificazione del proponente
+            // Aggiorna il turno assegnandolo al collega destinatario nella tabella pianificazione
             supabase_ct_request("pianificazione?id=eq.$pian_prop_id", 'PATCH', [
                 'utente_id' => $idDest,
-                'note' => 'Turno cambiato da ' . $idProp . ' a ' . $idDest . ' (Approvato da Coordinatore)'
+                'note' => 'Turno scambiato da ' . $idProp . ' a ' . $idDest . ' (Approvato da Coordinatore)'
             ]);
 
-            // Aggiorna lo stato del cambio turno
+            // Aggiorna stato cambio turno
             supabase_ct_request("cambi_turno?id=eq.$ct_id", 'PATCH', [
                 'stato' => 'approvato'
             ]);
@@ -198,13 +189,12 @@ if (isset($_GET['azione_ct']) && isset($_GET['id'])) {
 }
 
 // RECUPERO DATI PER LE VISTE
-// 1. Turni futuri del dipendente loggato (per proporre scambio)
+// 1. Turni dell'utente loggato (preleviamo gli ultimi/futuri senza blocchi rigidi di data per sicurezza)
 $mieiTurniFuturi = [];
-$oggiStr = date('Y-m-d');
-$resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&data_inizio=gte.$oggiStr&select=*&order=data_inizio.asc");
+$resMieiTurni = supabase_ct_request("pianificazione?utente_id=eq.$utente_id&select=*&order=data_inizio.desc&limit=30");
 if (is_array($resMieiTurni)) $mieiTurniFuturi = $resMieiTurni;
 
-// 2. Colleghi dello stesso reparto e stessa qualifica (per il dropdown)
+// 2. Colleghi dello stesso reparto e stessa qualifica
 $colleghiCompatibili = [];
 if (!empty($reparto_id_utente)) {
     $mioReparto = $reparto_id_utente;
@@ -214,8 +204,7 @@ if (!empty($reparto_id_utente)) {
     if (is_array($resColl)) {
         foreach ($resColl as $col) {
             $qualColl = strtolower(trim($col['qualifica'] ?? $col['ruolo'] ?? ''));
-            // Filtro rigoroso stessa qualifica
-            if ($qualColl === $miaQualifica) {
+            if ($qualColl === $miaQualifica || empty($miaQualifica)) {
                 $colleghiCompatibili[] = $col;
             }
         }
@@ -232,17 +221,15 @@ if ($is_coordinatore || $is_super_admin || $is_capo_personale) {
     $resC = supabase_ct_request($urlCambi);
     if (is_array($resC)) $listaCambi = $resC;
 } else {
-    // Dipendente vede i cambi in cui è proponente o destinatario
     $resC1 = supabase_ct_request("cambi_turno?utente_proponente_id=eq.$utente_id&select=*");
     $resC2 = supabase_ct_request("cambi_turno?utente_destinatario_id=eq.$utente_id&select=*");
     $listaCambi = array_merge(is_array($resC1)?$resC1:[], is_array($resC2)?$resC2:[]);
-    // Rimuove eventuali duplicati e ordina per data
     usort($listaCambi, function($a, $b) {
         return strcmp($b['created_at'] ?? '', $a['created_at'] ?? '');
     });
 }
 
-// Mappa utenti per visualizzare i nomi nelle tabelle
+// Mappa utenti
 $mappaTuttiUtenti = [];
 $resAllU = supabase_ct_request("staging_utenti?select=id,nome,qualifica,ruolo");
 if (is_array($resAllU)) {
@@ -325,7 +312,7 @@ if (is_array($resAllU)) {
             </div>
             <div class="card-body px-0">
                 <?php if (empty($mieiTurniFuturi)): ?>
-                    <p class="text-muted small mb-0">Non hai turni futuri pianificati da poter scambiare al momento.</p>
+                    <p class="text-muted small mb-0">Nessun turno trovato in pianificazione per il tuo utente.</p>
                 <?php elseif (empty($colleghiCompatibili)): ?>
                     <p class="text-muted small mb-0">Non ci sono colleghi della tua stessa qualifica nel tuo reparto con cui effettuare lo scambio.</p>
                 <?php else: ?>
@@ -347,7 +334,7 @@ if (is_array($resAllU)) {
                                 </select>
                             </div>
                             <div class="col-md-4">
-                                <label for="utente_destinatario_id" class="form-label small fw-bold">Collega Destinatario (Stessa Qualifica)</label>
+                                <label for="utente_destinatario_id" class="form-label small fw-bold">Collega Destinatario</label>
                                 <select class="form-select form-select-sm" id="utente_destinatario_id" name="utente_destinatario_id" required>
                                     <option value="">-- Seleziona collega --</option>
                                     <?php foreach ($colleghiCompatibili as $c) { ?>
@@ -359,7 +346,7 @@ if (is_array($resAllU)) {
                             </div>
                             <div class="col-md-3">
                                 <label for="note" class="form-label small fw-bold">Motivazione / Note</label>
-                                <input type="text" class="form-control form-control-sm" id="note" name="note" placeholder="Es. Motivi familiari">
+                                <input type="text" class="form-control form-control-sm" id="note" name="note" placeholder="Es. Motivi personali">
                             </div>
                             <div class="col-md-1 d-flex align-items-end">
                                 <button type="submit" class="btn btn-sm btn-primary w-100 fw-bold"><i class="bi bi-send"></i> Invia</button>
@@ -399,7 +386,6 @@ if (is_array($resAllU)) {
                                 $nomeDest = $mappaTuttiUtenti[$idDest]['nome'] ?? 'Utente';
                                 $statoCt = $ct['stato'] ?? 'in_attesa_collega';
 
-                                // Dettaglio turno proponente
                                 $turnoDataStr = 'Turno pianificato';
                                 $resPianProp = supabase_ct_request("pianificazione?id=eq." . $ct['pianificazione_proponente_id'] . "&select=*");
                                 if (!empty($resPianProp)) {
@@ -407,7 +393,6 @@ if (is_array($resAllU)) {
                                     $turnoDataStr = date('d/m/Y', strtotime($tp['data_inizio'])) . ' (' . ($tp['tipo_evento'] ?? 'Turno') . ')';
                                 }
 
-                                // Badge stato
                                 $badgeStato = 'bg-secondary';
                                 $testoStato = 'In attesa';
                                 if ($statoCt === 'in_attesa_collega') {
@@ -433,17 +418,14 @@ if (is_array($resAllU)) {
                                     <td class="text-end">
                                         <?php if (!$is_coordinatore && !$is_super_admin && !$is_capo_personale): ?>
                                             <?php if ($idDest === $utente_id && $statoCt === 'in_attesa_collega'): ?>
-                                                <!-- Azioni per il collega destinatario -->
                                                 <a href="cambi_turno.php?azione_ct=accetta_collega&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-success py-0 px-1" title="Accetta"><i class="bi bi-check-lg"></i> Accetta</a>
                                                 <a href="cambi_turno.php?azione_ct=rifiuta_collega&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-danger py-0 px-1" title="Rifiuta"><i class="bi bi-x-lg"></i> Rifiuta</a>
                                             <?php elseif ($idProp === $utente_id && ($statoCt === 'in_attesa_collega' || $statoCt === 'in_attesa_coordinatore')): ?>
-                                                <!-- Il proponente può ritirare -->
                                                 <a href="cambi_turno.php?azione_ct=ritira&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="return confirm('Vuoi ritirare questa proposta di cambio?');" title="Ritira"><i class="bi bi-trash"></i> Ritira</a>
                                             <?php endif; ?>
                                         <?php else: ?>
-                                            <!-- Azioni per il Coordinatore / Admin -->
                                             <?php if ($statoCt === 'in_attesa_coordinatore'): ?>
-                                                <a href="cambi_turno.php?azione_ct=approv_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-success py-0 px-1" title="Approva Cambio"><i class="bi bi-check"></i> Approva</a>
+                                                <a href="cambi_turno.php?azione_ct=approva_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-success py-0 px-1" title="Approva Cambio"><i class="bi bi-check"></i> Approva</a>
                                                 <a href="cambi_turno.php?azione_ct=rifiuta_coordinatore&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-danger py-0 px-1" title="Rifiuta Cambio"><i class="bi bi-x"></i> Rifiuta</a>
                                             <?php endif; ?>
                                             <a href="cambi_turno.php?azione_ct=elimina&id=<?php echo $ct['id']; ?>" class="btn btn-sm btn-outline-dark py-0 px-1" onclick="return confirm('Eliminare questa richiesta?');" title="Elimina"><i class="bi bi-trash"></i></a>
