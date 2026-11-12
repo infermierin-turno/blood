@@ -201,18 +201,18 @@ function verificaVincoliTurnoV2($utente_id, $data_str, $nuovo_codice, $turno_esc
 
 $mappaUtenti = [];
 if ($is_super_admin) {
-    $urlUtenti = "staging_utenti?select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+    $urlUtenti = "staging_utenti?select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
     if ($reparto_selezionato !== '') {
-        $urlUtenti = "staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+        $urlUtenti = "staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
     }
 } elseif ($is_capo_personale) {
     if (!empty($org_id_utente)) {
-        $urlUtenti = "staging_utenti?organizzazione_id=eq." . rawurlencode($org_id_utente) . ($reparto_selezionato !== '' ? "&reparto_id=eq." . rawurlencode($reparto_selezionato) : "") . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+        $urlUtenti = "staging_utenti?organizzazione_id=eq." . rawurlencode($org_id_utente) . ($reparto_selezionato !== '' ? "&reparto_id=eq." . rawurlencode($reparto_selezionato) : "") . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
     } else {
         $urlUtenti = "";
     }
 } else {
-    $urlUtenti = !empty($reparto_id_utente) ? "staging_utenti?reparto_id=eq." . rawurlencode($reparto_id_utente) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc" : "";
+    $urlUtenti = !empty($reparto_id_utente) ? "staging_utenti?reparto_id=eq." . rawurlencode($reparto_id_utente) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc" : "";
 }
 
 if (!empty($urlUtenti)) {
@@ -221,6 +221,10 @@ if (!empty($urlUtenti)) {
         foreach ($resCollab as $c) {
             $rC_low = strtolower(str_replace([' ', '-'], '_', $c['ruolo'] ?? ''));
             if (in_array($rC_low, ['super_admin', 'admin', 'superadmin', 'capo_personale', 'capopersonale'])) continue;
+            // Normalizziamo la squadra se vuota
+            if (empty($c['squadra'])) {
+                $c['squadra'] = 'Senza Squadra';
+            }
             $mappaUtenti[$c['id']] = $c;
         }
     }
@@ -252,6 +256,16 @@ if (!empty($filtro_squadra)) {
     });
     $listaCollaboratori = array_values($listaCollaboratori);
 }
+
+// Ordinamento rigoroso per Squadra e poi per Nome
+usort($listaCollaboratori, function($a, $b) {
+    $sqA = trim($a['squadra'] ?? 'Senza Squadra');
+    $sqB = trim($b['squadra'] ?? 'Senza Squadra');
+    if ($sqA !== $sqB) {
+        return strcasecmp($sqA, $sqB);
+    }
+    return strcasecmp($a['nome'] ?? '', $b['nome'] ?? '');
+});
 
 $idsUtentiReparto = [];
 foreach ($listaCollaboratori as $collab) {
@@ -427,7 +441,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
         .table-turni { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
         .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.78rem; padding: 4px 2px !important; border-color: #dee2e6 !important; }
         .table-turni tbody tr { height: 42px; }
-        .table-turni tbody tr:hover { background-color: #f8f9fa !important; }
+        .table-turni tbody tr:hover:not(.tr-sezione-squadra) { background-color: #f8f9fa !important; }
         
         .cella-interattiva { cursor: pointer; height: 42px; }
         .cella-interattiva:hover { background-color: #e9ecef !important; }
@@ -436,6 +450,15 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             position: sticky; left: 0; background-color: #ffffff; z-index: 3;
             text-align: left !important; min-width: 200px; width: 200px; padding-left: 12px !important;
             border-right: 2px solid #adb5bd !important;
+        }
+        .tr-sezione-squadra td {
+            background-color: #e9ecef !important;
+            font-weight: bold;
+            text-align: left !important;
+            padding: 6px 12px !important;
+            font-size: 0.8rem;
+            color: #495057;
+            border-top: 2px solid #ced4da !important;
         }
         
         /* Badge turni ordinati e ben visibili */
@@ -516,7 +539,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             </div>
         <?php } ?>
 
-        <!-- TABELLA PRINCIPALE ORDINATA -->
+        <!-- TABELLA PRINCIPALE DIVISA PER SQUADRA -->
         <div class="card shadow-sm mb-4">
             <div class="card-body p-0">
                 <div class="table-responsive" style="max-height: 72vh;">
@@ -543,17 +566,29 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                                     </td>
                                 </tr>
                             <?php } else { ?>
-                                <?php foreach ($listaCollaboratori as $collab) { 
+                                <?php 
+                                $ultimaSquadra = null;
+                                foreach ($listaCollaboratori as $collab) { 
                                     $uId = $collab['id'];
                                     $nomeCollab = $collab['nome'] ?? 'Operatore';
                                     $ruoloCollab = $collab['ruolo'] ?? $collab['qualifica'] ?? '';
-                                    $squadraCollab = $collab['squadra'] ?? '';
+                                    $squadraCollab = trim($collab['squadra'] ?? 'Senza Squadra');
+
+                                    // Se cambia squadra, inseriamo una riga di separazione/intestazione
+                                    if ($ultimaSquadra !== $squadraCollab) {
+                                        $ultimaSquadra = $squadraCollab;
                                 ?>
+                                    <tr class="tr-sezione-squadra">
+                                        <td colspan="<?php echo $giorni_nel_mese + 1; ?>">
+                                            <i class="bi bi-people-fill me-1"></i> Squadra: <?php echo htmlspecialchars($squadraCollab); ?>
+                                        </td>
+                                    </tr>
+                                <?php } ?>
                                     <tr>
                                         <td class="col-operatore-sticky" title="<?php echo htmlspecialchars($nomeCollab); ?>">
                                             <div class="text-truncate fw-bold text-dark" style="max-width: 185px; font-size: 0.8rem;"><?php echo htmlspecialchars($nomeCollab); ?></div>
                                             <div class="text-muted" style="font-size: 0.65rem;">
-                                                <?php echo htmlspecialchars($ruoloCollab); ?> <?php echo !empty($squadraCollab) ? '<span class="badge bg-secondary" style="font-size:0.55rem;">'.htmlspecialchars($squadraCollab).'</span>' : ''; ?>
+                                                <?php echo htmlspecialchars($ruoloCollab); ?>
                                             </div>
                                         </td>
                                         <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
