@@ -135,12 +135,12 @@ $tipologieTurni = supabase_v2_request($queryTipologie);
 
 if (!is_array($tipologieTurni) || empty($tipologieTurni)) {
     $tipologieTurni = [
-        ['id' => '1', 'nome_turno' => 'Mattina', 'codice_breve' => 'M', 'colore' => '#0d6efd', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '2', 'nome_turno' => 'Pomeriggio', 'codice_breve' => 'P', 'colore' => '#ffc107', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '3', 'nome_turno' => 'Notte', 'codice_breve' => 'N', 'colore' => '#6610f2', 'ora_inizio' => '21:00:00', 'ora_fine' => '07:00:00'],
-        ['id' => '4', 'nome_turno' => 'Smonto', 'codice_breve' => 'S', 'colore' => '#fd7e14', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '5', 'nome_turno' => 'Riposo', 'codice_breve' => 'R', 'colore' => '#198754', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59'],
-        ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59']
+        ['id' => '1', 'nome_turno' => 'Mattina', 'codice_breve' => 'M', 'colore' => '#0d6efd'],
+        ['id' => '2', 'nome_turno' => 'Pomeriggio', 'codice_breve' => 'P', 'colore' => '#ffc107'],
+        ['id' => '3', 'nome_turno' => 'Notte', 'codice_breve' => 'N', 'colore' => '#6610f2'],
+        ['id' => '4', 'nome_turno' => 'Smonto', 'codice_breve' => 'S', 'colore' => '#fd7e14'],
+        ['id' => '5', 'nome_turno' => 'Riposo', 'codice_breve' => 'R', 'colore' => '#198754'],
+        ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997']
     ];
 }
 
@@ -416,32 +416,46 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Turni V2 - PRO-TUR</title>
+    <title>Gestione Turni PRO-TUR</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
-        body { background-color: #f8fafc; padding-bottom: 70px; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
-        .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); background: #ffffff; }
-        .table-turni { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; }
-        .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.73rem; padding: 2px !important; line-height: 1.1; border-color: #e2e8f0 !important; }
-        .table-turni tbody tr { height: 34px; }
-        .table-turni tbody tr:hover { background-color: #f1f5f9 !important; }
-        .cella-interattiva { cursor: pointer; white-space: nowrap; height: 34px; }
-        .cella-interattiva:hover { background-color: #cbd5e1 !important; }
-        .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 180px; width: 180px; font-weight: 600; padding-left: 10px !important; border-right: 2px solid #cbd5e1 !important; }
-        .badge-turno { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 16px; font-size: 0.6rem; font-weight: 700; color: #fff; border-radius: 3px; margin: 0 auto; }
-        .badge-in-attesa { border: 2px dashed #f59e0b !important; }
+        body { background-color: #f4f6f9; padding-bottom: 60px; color: #212529; font-family: system-ui, -apple-system, sans-serif; }
+        .card { border: none; border-radius: 10px; box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); background: #ffffff; }
+        
+        /* Tabella pulita e spaziosa */
+        .table-turni { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
+        .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.78rem; padding: 4px 2px !important; border-color: #dee2e6 !important; }
+        .table-turni tbody tr { height: 42px; }
+        .table-turni tbody tr:hover { background-color: #f8f9fa !important; }
+        
+        .cella-interattiva { cursor: pointer; height: 42px; }
+        .cella-interattiva:hover { background-color: #e9ecef !important; }
+        
+        .col-operatore-sticky {
+            position: sticky; left: 0; background-color: #ffffff; z-index: 3;
+            text-align: left !important; min-width: 200px; width: 200px; padding-left: 12px !important;
+            border-right: 2px solid #adb5bd !important;
+        }
+        
+        /* Badge turni ordinati e ben visibili */
+        .badge-turno {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 18px; font-size: 0.65rem; font-weight: 700; color: #fff;
+            border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); margin: 1px auto;
+        }
+        .badge-in-attesa { border: 2px dashed #ffc107 !important; }
     </style>
 </head>
 <body>
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
         <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR | Turni V2</a>
+            <a class="navbar-brand fw-bold" href="dashboard.php"><i class="bi bi-hospital"></i> PRO-TUR | Reparto: <?php echo htmlspecialchars($nome_reparto_selezionato); ?></a>
             <div class="collapse navbar-collapse">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="turni_v2.php">Turni V2</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="turni_v2.php">Tabellone Turni</a></li>
                     <li class="nav-item"><a class="nav-link text-danger" href="logout.php">Logout</a></li>
                 </ul>
             </div>
@@ -450,51 +464,49 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
 
     <div class="container-fluid px-4">
         
+        <!-- BARRA FILTRI SUPERIORE PULITA -->
         <div class="card shadow-sm mb-4 p-3">
-            <div class="row align-items-center g-3">
-                <div class="col-md-3">
-                    <h2 class="mb-1 fw-bold text-dark fs-5"><i class="bi bi-calendar3 text-primary"></i> Tabellone Turni</h2>
-                    <span class="small text-muted"><i class="bi bi-building"></i> <?php echo htmlspecialchars($nome_reparto_selezionato); ?></span>
+            <form method="GET" action="turni_v2.php" class="row g-2 align-items-center justify-content-between">
+                <div class="col-auto">
+                    <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-calendar3 text-primary"></i> Tabellone <?php echo htmlspecialchars($mesiNomi[$mese_selezionato] . ' ' . $anno_selezionato); ?></h5>
                 </div>
-                <div class="col-md-9 text-md-end">
-                    <form method="GET" action="turni_v2.php" class="d-inline-flex gap-2 align-items-center flex-wrap justify-content-end">
-                        <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
-                            <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
-                                <option value="">Tutti i Reparti</option>
-                                <?php foreach ($reparti_disponibili as $rep) { ?>
-                                    <option value="<?php echo htmlspecialchars($rep['id']); ?>" <?php echo ($reparto_selezionato !== '' && (string)$rep['id'] === (string)$reparto_selezionato) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rep['nome_reparto'] ?? 'Reparto'); ?></option>
-                                <?php } ?>
-                            </select>
+                <div class="col-auto d-flex gap-2 flex-wrap align-items-center">
+                    <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
+                        <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Tutti i Reparti</option>
+                            <?php foreach ($reparti_disponibili as $rep) { ?>
+                                <option value="<?php echo htmlspecialchars($rep['id']); ?>" <?php echo ($reparto_selezionato !== '' && (string)$rep['id'] === (string)$reparto_selezionato) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rep['nome_reparto'] ?? 'Reparto'); ?></option>
+                            <?php } ?>
+                        </select>
+                    <?php } ?>
+
+                    <select name="filtro_ruolo" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">-- Tutti i Ruoli --</option>
+                        <?php foreach ($ruoliDisponibili as $rOpt) { ?>
+                            <option value="<?php echo htmlspecialchars($rOpt); ?>" <?php echo (strcasecmp($filtro_ruolo, $rOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rOpt); ?></option>
                         <?php } ?>
+                    </select>
 
-                        <select name="filtro_ruolo" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
-                            <option value="">-- Tutti i Ruoli --</option>
-                            <?php foreach ($ruoliDisponibili as $rOpt) { ?>
-                                <option value="<?php echo htmlspecialchars($rOpt); ?>" <?php echo (strcasecmp($filtro_ruolo, $rOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rOpt); ?></option>
-                            <?php } ?>
-                        </select>
+                    <select name="filtro_squadra" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">-- Tutte le Squadre --</option>
+                        <?php foreach ($squadreDisponibili as $sOpt) { ?>
+                            <option value="<?php echo htmlspecialchars($sOpt); ?>" <?php echo (strcasecmp($filtro_squadra, $sOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($sOpt); ?></option>
+                        <?php } ?>
+                    </select>
 
-                        <select name="filtro_squadra" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
-                            <option value="">-- Tutte le Squadre --</option>
-                            <?php foreach ($squadreDisponibili as $sOpt) { ?>
-                                <option value="<?php echo htmlspecialchars($sOpt); ?>" <?php echo (strcasecmp($filtro_squadra, $sOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($sOpt); ?></option>
-                            <?php } ?>
-                        </select>
-
-                        <select name="mese" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
-                            <?php foreach ($mesiNomi as $numM => $strM) { ?>
-                                <option value="<?php echo $numM; ?>" <?php echo ($numM === $mese_selezionato) ? 'selected' : ''; ?>><?php echo $strM; ?></option>
-                            <?php } ?>
-                        </select>
-                        
-                        <select name="anno" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
-                            <?php for ($a = 2024; $a <= 2030; $a++) { ?>
-                                <option value="<?php echo $a; ?>" <?php echo ($a === $anno_selezionato) ? 'selected' : ''; ?>><?php echo $a; ?></option>
-                            <?php } ?>
-                        </select>
-                    </form>
+                    <select name="mese" class="form-select form-select-sm" onchange="this.form.submit()" style="width: 110px;">
+                        <?php foreach ($mesiNomi as $numM => $strM) { ?>
+                            <option value="<?php echo $numM; ?>" <?php echo ($numM === $mese_selezionato) ? 'selected' : ''; ?>><?php echo $strM; ?></option>
+                        <?php } ?>
+                    </select>
+                    
+                    <select name="anno" class="form-select form-select-sm" onchange="this.form.submit()" style="width: 90px;">
+                        <?php for ($a = 2024; $a <= 2030; $a++) { ?>
+                            <option value="<?php echo $a; ?>" <?php echo ($a === $anno_selezionato) ? 'selected' : ''; ?>><?php echo $a; ?></option>
+                        <?php } ?>
+                    </select>
                 </div>
-            </div>
+            </form>
         </div>
 
         <?php if (!empty($messaggio)) { ?>
@@ -504,20 +516,21 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
             </div>
         <?php } ?>
 
+        <!-- TABELLA PRINCIPALE ORDINATA -->
         <div class="card shadow-sm mb-4">
             <div class="card-body p-0">
                 <div class="table-responsive" style="max-height: 72vh;">
                     <table class="table table-bordered table-turni m-0">
-                        <thead class="table-dark sticky-top" style="z-index: 3;">
+                        <thead class="table-dark sticky-top" style="z-index: 4;">
                             <tr>
                                 <th class="col-operatore-sticky bg-dark text-white">Operatore / Giorno</th>
                                 <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
                                     $timestampG = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
                                     $isFestivo = (date('N', $timestampG) == 7);
                                 ?>
-                                    <th class="<?php echo $isFestivo ? 'bg-danger text-white' : ''; ?>" style="width: 32px;">
-                                        <div style="font-size: 0.6rem;"><?php echo date('D', $timestampG); ?></div>
-                                        <div style="font-size: 0.75rem; font-weight: bold;"><?php echo $g; ?></div>
+                                    <th class="<?php echo $isFestivo ? 'bg-danger text-white' : ''; ?>" style="width: 36px;">
+                                        <div style="font-size: 0.65rem; opacity: 0.85;"><?php echo date('D', $timestampG); ?></div>
+                                        <div style="font-size: 0.85rem; font-weight: bold;"><?php echo $g; ?></div>
                                     </th>
                                 <?php } ?>
                             </tr>
@@ -538,8 +551,10 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                                 ?>
                                     <tr>
                                         <td class="col-operatore-sticky" title="<?php echo htmlspecialchars($nomeCollab); ?>">
-                                            <div class="text-truncate fw-bold" style="max-width: 165px;"><?php echo htmlspecialchars($nomeCollab); ?></div>
-                                            <div class="text-muted" style="font-size: 0.6rem;"><?php echo htmlspecialchars($ruoloCollab); ?> <?php echo !empty($squadraCollab) ? '('.htmlspecialchars($squadraCollab).')' : ''; ?></div>
+                                            <div class="text-truncate fw-bold text-dark" style="max-width: 185px; font-size: 0.8rem;"><?php echo htmlspecialchars($nomeCollab); ?></div>
+                                            <div class="text-muted" style="font-size: 0.65rem;">
+                                                <?php echo htmlspecialchars($ruoloCollab); ?> <?php echo !empty($squadraCollab) ? '<span class="badge bg-secondary" style="font-size:0.55rem;">'.htmlspecialchars($squadraCollab).'</span>' : ''; ?>
+                                            </div>
                                         </td>
                                         <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
                                             $dataCellStr = sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g);
@@ -547,13 +562,13 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                                             $eventiJsonEsc = htmlspecialchars(json_encode($eventiGiorno, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
                                         ?>
                                             <td class="cella-interattiva" onclick="apriModaleV2('<?php echo htmlspecialchars($uId, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($nomeCollab, ENT_QUOTES); ?>', '<?php echo $dataCellStr; ?>', '<?php echo $eventiJsonEsc; ?>')">
-                                                <div class="d-flex flex-column align-items-center justify-content-center gap-1">
+                                                <div class="d-flex flex-row align-items-center justify-content-center gap-1">
                                                     <?php foreach ($eventiGiorno as $ev) {
                                                         $codEv = strtoupper(trim($ev['tipo_evento'] ?? ''));
                                                         $coloreBg = $mappaColoriTurni[$codEv] ?? '#6c757d';
                                                         $isInAttesa = (strcasecmp($ev['stato'] ?? '', 'Approvato') !== 0);
                                                     ?>
-                                                        <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo htmlspecialchars($coloreBg); ?>;">
+                                                        <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo htmlspecialchars($coloreBg); ?>;" title="<?php echo htmlspecialchars($codEv); ?>">
                                                             <?php echo htmlspecialchars($codEv); ?>
                                                         </span>
                                                     <?php } ?>
@@ -579,7 +594,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                     <h5 class="modal-title fs-6 fw-bold" id="titoloModaleV2">Gestione Turno</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" id="formModaleV2" action="turni_v2.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
+                <form method="POST" id="formModaleV2" action="turni_v2.php">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <div class="modal-body small">
                         <input type="hidden" name="utente_id" id="v2_utente_id">
