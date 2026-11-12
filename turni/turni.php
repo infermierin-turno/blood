@@ -236,9 +236,7 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
         $turniEsistentiCodici[] = $tipoEsistente;
     }
 
-    // Nuova regola: se c'è già M, posso aggiungere P. Se c'è P, posso aggiungere M. Altrimenti niente se c'è N, S o altro.
     if (!empty($turniEsistentiCodici)) {
-        // Se c'è già un turno, verifichiamo la regola M <-> P
         if (count($turniEsistentiCodici) === 1) {
             $esistente = $turniEsistentiCodici[0];
             $consentito = false;
@@ -1023,7 +1021,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </select>
                         </div>
 
-                        <!-- CAMPO NOTE AGGIUNTIVO NELLA MODALE -->
                         <div class="mb-3">
                             <label class="form-label fw-bold">Note / Annotazione</label>
                             <input type="text" name="nota_turno" id="modale_nota" class="form-control form-control-sm" placeholder="Eventuali note per questo turno">
@@ -1033,10 +1030,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <i class="bi bi-info-circle-fill"></i> Questo evento deriva dal modulo <strong>Assenze</strong>. La modifica o l'eliminazione diretta non è consentita da questa vista tabellare.
                         </div>
 
-                        <!-- CONTAINER GESTIONE TURNO ESISTENTE -->
+                        <!-- CONTAINER GESTIONE TURNO ESISTENTE (Modifica / Elimina) -->
                         <div id="containerModifica" style="display: none;">
                             <input type="hidden" name="azione" value="modifica_turno_cella" id="inputAzioneModifica">
-                            <div class="d-flex gap-2" id="bottoniAzioneModifica">
+                            <div class="d-flex gap-2 mb-2" id="bottoniAzioneModifica">
                                 <button type="submit" name="azione" value="cancella_turno_cella" class="btn btn-sm btn-outline-danger w-50 fw-bold" onclick="document.getElementById('inputAzioneModifica').disabled=true;">
                                     <i class="bi bi-trash"></i> Elimina Turno
                                 </button>
@@ -1046,7 +1043,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </div>
                         </div>
 
-                        <!-- CONTAINER AGGIUNTA SECONDO TURNO (M/P) -->
+                        <!-- CONTAINER AGGIUNGI SECONDO TURNO (Compatibile M <-> P) -->
                         <div id="containerAggiungiSecondo" style="display: none;" class="mb-2">
                             <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneSecondo">
                             <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
@@ -1054,7 +1051,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </button>
                         </div>
 
-                        <!-- CONTAINER AGGIUNTA NUOVO (CELLA VUOTA) -->
+                        <!-- CONTAINER AGGIUNGI NUOVO (Cella Vuota) -->
                         <div id="containerInvioNuovo" style="display: none;">
                             <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneAggiungi">
                             <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
@@ -1159,30 +1156,26 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     containerInvioNuovo.style.display = 'none';
                 } else {
                     let tipoEsistente = evento.tipo_evento.toUpperCase();
-                    // Se c'è un solo turno ed è M o P, permetti di aggiungere l'altro (M <-> P)
-                    if (eventi.length === 1 && (tipoEsistente === 'M' || tipoEsistente === 'P')) {
-                        document.getElementById('modaleTitolo').innerText = "Aggiungi Secondo Turno - " + nomeOperatore + " (" + dataFmt + ")";
-                        inputTurnoId.value = '';
-                        selectValore.value = (tipoEsistente === 'M') ? 'P' : 'M'; // Suggerisce l'alternativo
-                        selectValore.disabled = false;
+                    // Se c'è un solo turno (M o P), permettiamo sia la modifica/eliminazione che l'aggiunta del secondo compatibile
+                    document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
+                    inputTurnoId.value = evento.id;
+                    selectValore.value = evento.tipo_evento;
+                    selectValore.disabled = false;
+                    
+                    containerModifica.style.display = 'block';
+                    bottoniAzioneModifica.style.display = 'flex';
+                    avvisoAssenza.style.display = 'none';
+                    containerInvioNuovo.style.display = 'none';
+                    if(inputAzioneModifica) inputAzioneModifica.disabled = false;
 
-                        containerModifica.style.display = 'none';
+                    // Se è M o P e non ha raggiunto il limite, mostriamo anche l'opzione per aggiungere l'altro
+                    if (eventi.length === 1 && (tipoEsistente === 'M' || tipoEsistente === 'P')) {
                         containerAggiungiSecondo.style.display = 'block';
-                        avvisoAssenza.style.display = 'none';
-                        containerInvioNuovo.style.display = 'none';
+                        // Pre-imposta il select sul turno complementare per comodità
+                        selectValore.value = (tipoEsistente === 'M') ? 'P' : 'M';
+                        inputTurnoId.value = ''; // Per l'aggiunta non serve ID turno
                     } else {
-                        // Gestione normale modifica/eliminazione del turno esistente
-                        document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
-                        inputTurnoId.value = evento.id;
-                        selectValore.value = evento.tipo_evento;
-                        selectValore.disabled = false;
-                        
-                        containerModifica.style.display = 'block';
                         containerAggiungiSecondo.style.display = 'none';
-                        bottoniAzioneModifica.style.display = 'flex';
-                        avvisoAssenza.style.display = 'none';
-                        containerInvioNuovo.style.display = 'none';
-                        if(inputAzioneModifica) inputAzioneModifica.disabled = false;
                     }
                 }
             } else {
