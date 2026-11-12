@@ -145,7 +145,10 @@ if ($is_super_admin || $is_capo_personale) {
     $reparto_selezionato = $reparto_id_utente;
 }
 
-// 4. Determinazione del nome del reparto e della struttura
+// 4. Gestione Filtro Ruolo (Tutti, Infermiere, OSS, ecc.)
+$filtro_ruolo = isset($_GET['filtro_ruolo']) ? trim($_GET['filtro_ruolo']) : '';
+
+// 5. Determinazione del nome del reparto e della struttura
 $nome_reparto_selezionato = ($is_super_admin || ($is_capo_personale && $reparto_selezionato === '')) ? "Tutti i Reparti della Struttura" : "Reparto non assegnato";
 $nome_struttura_corrente = "Azienda Sanitaria / Struttura";
 
@@ -274,6 +277,25 @@ if (!empty($urlUtenti)) {
 
 $listaCollaboratori = array_values($mappaUtenti);
 
+// Raccolta ruoli disponibili per il filtro
+$ruoliDisponibili = [];
+foreach ($listaCollaboratori as $c) {
+    $rText = trim($c['ruolo'] ?? $c['qualifica'] ?? '');
+    if (!empty($rText) && !in_array($rText, $ruoliDisponibili)) {
+        $ruoliDisponibili[] = $rText;
+    }
+}
+sort($ruoliDisponibili);
+
+// Applicazione filtro ruolo se selezionato
+if (!empty($filtro_ruolo)) {
+    $listaCollaboratori = array_filter($listaCollaboratori, function($c) use ($filtro_ruolo) {
+        $rC = trim($c['ruolo'] ?? $c['qualifica'] ?? '');
+        return strcasecmp($rC, $filtro_ruolo) === 0;
+    });
+    $listaCollaboratori = array_values($listaCollaboratori);
+}
+
 // ORDINAMENTO PERSONALIZZATO
 usort($listaCollaboratori, function($a, $b) {
     $sqA = trim($a['squadra'] ?? '');
@@ -350,6 +372,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             $messaggio = "Pulizia completata: eliminati $cancellatiCount turni (Ferie, 104, PE, Permessi e FOR protetti).";
+            $tipo_alert = "success";
+        }
+    }
+
+    if ($azione === 'cancella_turni_singolo_operatore') {
+        $utente_target_id = trim($_POST['utente_target_id'] ?? '');
+        if (!empty($utente_target_id)) {
+            $urlGetMeseOp = "pianificazione?data_inizio=gte." . $primo_giorno_tab . "&data_inizio=lte." . $ultimo_giorno_tab . "&utente_id=eq.$utente_target_id&select=id,tipo_evento";
+            $turniOpDaValutare = supabase_turni_request($urlGetMeseOp);
+            
+            $cancellatiOpCount = 0;
+            if (is_array($turniOpDaValutare)) {
+                foreach ($turniOpDaValutare as $t) {
+                    $tipoEv = strtoupper(trim($t['tipo_evento']));
+                    $codiciProtetto = ['F', 'FERIE', '104', 'PE', 'P', 'PER', 'PERMESSO', 'FOR', 'CORSO'];
+                    
+                    if (!in_array($tipoEv, $codiciProtetto)) {
+                        $tId = $t['id'];
+                        $resDel = supabase_turni_request("pianificazione?id=eq.$tId", 'DELETE');
+                        if ($resDel !== false) {
+                            $cancellatiOpCount++;
+                        }
+                    }
+                }
+            }
+            $messaggio = "Mese pulito per l'operatore selezionato: eliminati $cancellatiOpCount turni (Ferie/104 protetti).";
             $tipo_alert = "success";
         }
     }
@@ -654,20 +702,19 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         
         <div class="card shadow-sm mb-4 p-3">
             <div class="row align-items-center g-3">
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <h2 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2 fs-4">
-                        <i class="bi bi-calendar-check text-primary"></i> Assegnazione e Gestione Turni
+                        <i class="bi bi-calendar-check text-primary"></i> Assegnazione Turni
                     </h2>
                     <span class="small text-muted">
-                        <i class="bi bi-building"></i> Struttura: <strong class="text-dark"><?php echo htmlspecialchars($nome_struttura_corrente); ?></strong> | 
-                        Reparto: <strong class="text-dark"><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong>
+                        <i class="bi bi-building"></i> Reparto: <strong class="text-dark"><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong>
                     </span>
                 </div>
-                <div class="col-md-7 text-md-end">
-                    <form method="GET" action="turni.php" class="d-inline-flex gap-2 align-items-center">
+                <div class="col-md-8 text-md-end">
+                    <form method="GET" action="turni.php" class="d-inline-flex gap-2 align-items-center flex-wrap justify-content-end">
                         <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
-                            <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                                <option value="">Tutti i Reparti della Struttura</option>
+                            <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
+                                <option value="">Tutti i Reparti</option>
                                 <?php foreach ($reparti_disponibili as $rep) { 
                                     $labelRep = $rep['nome_reparto'] ?? $rep['nome'] ?? 'Reparto';
                                 ?>
@@ -675,12 +722,21 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 <?php } ?>
                             </select>
                         <?php } ?>
-                        <select name="mese" class="form-select form-select-sm" onchange="this.form.submit()">
+
+                        <!-- FILTRO RUOLO (OSS, INFERMIERI, ECC.) -->
+                        <select name="filtro_ruolo" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
+                            <option value="">-- Tutti i Ruoli --</option>
+                            <?php foreach ($ruoliDisponibili as $rOpt) { ?>
+                                <option value="<?php echo htmlspecialchars($rOpt); ?>" <?php echo (strcasecmp($filtro_ruolo, $rOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rOpt); ?></option>
+                            <?php } ?>
+                        </select>
+
+                        <select name="mese" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
                             <?php foreach ($mesiNomi as $numM => $strM) { ?>
                                 <option value="<?php echo $numM; ?>" <?php echo ($numM === $mese_selezionato) ? 'selected' : ''; ?>><?php echo $strM; ?></option>
                             <?php } ?>
                         </select>
-                        <select name="anno" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <select name="anno" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
                             <?php for ($a = 2024; $a <= 2030; $a++) { ?>
                                 <option value="<?php echo $a; ?>" <?php echo ($a === $anno_selezionato) ? 'selected' : ''; ?>><?php echo $a; ?></option>
                             <?php } ?>
@@ -714,7 +770,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 <div>
                     <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale) { ?>
                         <button type="button" class="btn btn-sm btn-outline-danger fw-bold" data-bs-toggle="modal" data-bs-target="#modalPulisciTurni">
-                            <i class="bi bi-trash3"></i> Pulisci Mese (Tranne Ferie/104)
+                            <i class="bi bi-trash3"></i> Pulisci Mese Reparto (Tranne Ferie/104)
                         </button>
                     <?php } ?>
                 </div>
@@ -745,7 +801,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <?php if (empty($listaCollaboratori)) { ?>
                                 <tr>
                                     <td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center text-muted py-4">
-                                        Nessun operatore trovato nel reparto selezionato.
+                                        Nessun operatore trovato con i filtri selezionati.
                                     </td>
                                 </tr>
                             <?php } else { ?>
@@ -756,8 +812,15 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     $squadraCollab = $collab['squadra'] ?? '';
                                 ?>
                                     <tr>
-                                        <td class="col-operatore-sticky text-truncate" title="<?php echo htmlspecialchars($nomeCollab); ?>">
-                                            <div class="text-truncate fw-bold"><?php echo htmlspecialchars($nomeCollab); ?></div>
+                                        <td class="col-operatore-sticky" title="<?php echo htmlspecialchars($nomeCollab); ?>">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div class="text-truncate fw-bold" style="max-width: 130px;"><?php echo htmlspecialchars($nomeCollab); ?></div>
+                                                <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale) { ?>
+                                                    <button type="button" class="btn btn-xs btn-outline-danger p-0 px-1" style="font-size: 0.65rem;" onclick="apriModalePulisciSingolo('<?php echo $uId; ?>', '<?php echo addslashes($nomeCollab); ?>')" title="Pulisci mese operatore">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                <?php } ?>
+                                            </div>
                                             <div class="text-muted" style="font-size: 0.65rem;">
                                                 <?php echo htmlspecialchars($ruoloCollab); ?> <?php echo !empty($squadraCollab) ? '('.htmlspecialchars($squadraCollab).')' : ''; ?>
                                             </div>
@@ -799,7 +862,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <div class="col-lg-6">
                 <div class="card shadow-sm h-100 p-3">
                     <h5 class="card-title fs-6 fw-bold mb-3"><i class="bi bi-person-plus text-primary"></i> Assegnazione Singola</h5>
-                    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>">
+                    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>&filtro_ruolo=<?php echo urlencode($filtro_ruolo); ?>">
                         <input type="hidden" name="azione" value="assegna_turno">
                         <div class="mb-2">
                             <label class="form-label small fw-bold">Collaboratore</label>
@@ -839,7 +902,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <div class="col-lg-6">
                 <div class="card shadow-sm h-100 p-3">
                     <h5 class="card-title fs-6 fw-bold mb-3"><i class="bi bi-robot text-success"></i> Generazione Automatica Turni (AI)</h5>
-                    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>">
+                    <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>&filtro_ruolo=<?php echo urlencode($filtro_ruolo); ?>">
                         <input type="hidden" name="azione" value="genera_turni_ai">
                         <div class="row g-2 mb-2">
                             <div class="col-6">
@@ -896,7 +959,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold" id="modaleTitolo">Gestione Turno</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>">
+                <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>&filtro_ruolo=<?php echo urlencode($filtro_ruolo); ?>">
                     <div class="modal-body small">
                         <input type="hidden" name="utente_id" id="modale_utente_id">
                         <input type="hidden" name="data" id="modale_data">
@@ -915,9 +978,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </select>
                         </div>
 
-                        <div id="containerAggiungi" style="display: none;">
-                            <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneAggiungi">
-                        </div>
+                        <!-- CONTAINER MODIFICA / ELIMINAZIONE -->
                         <div id="containerModifica" style="display: none;">
                             <input type="hidden" name="azione" value="modifica_turno_cella" id="inputAzioneModifica">
                             <div class="d-flex gap-2">
@@ -929,7 +990,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 </button>
                             </div>
                         </div>
+
+                        <!-- CONTAINER AGGIUNTA NUOVO -->
                         <div id="containerInvioNuovo" style="display: none;">
+                            <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneAggiungi">
                             <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
                                 <i class="bi bi-plus-circle"></i> Assegna Turno
                             </button>
@@ -940,23 +1004,47 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         </div>
     </div>
 
-    <!-- MODALE PULIZIA MESILE -->
+    <!-- MODALE PULIZIA MESE REPARTO -->
     <div class="modal fade" id="modalPulisciTurni" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-danger text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold">Conferma Pulizia Mese</h5>
+                    <h5 class="modal-title fs-6 fw-bold">Conferma Pulizia Mese Reparto</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>">
+                <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>&filtro_ruolo=<?php echo urlencode($filtro_ruolo); ?>">
                     <input type="hidden" name="azione" value="cancella_turni_tranne_ferie">
                     <div class="modal-body small">
-                        <p>Stai per eliminare tutti i turni del mese di <strong><?php echo $nomeMeseCorrente . ' ' . $anno_selezionato; ?></strong> per questo reparto.</p>
+                        <p>Stai per eliminare tutti i turni del mese di <strong><?php echo $nomeMeseCorrente . ' ' . $anno_selezionato; ?></strong> per l'intero reparto.</p>
                         <p class="text-success fw-bold mb-0"><i class="bi bi-shield-check"></i> Ferie, permessi, 104 e corsi protetti NON verranno cancellati.</p>
                     </div>
                     <div class="modal-footer py-1">
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                        <button type="submit" class="btn btn-sm btn-danger fw-bold">Conferma Pulizia</button>
+                        <button type="submit" class="btn btn-sm btn-danger fw-bold">Conferma Pulizia Intero Reparto</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE PULIZIA MESE SINGOLO OPERATORE -->
+    <div class="modal fade" id="modalPulisciSingolo" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold" id="titoloModalPulisciSingolo">Pulisci Turni Operatore</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST" action="turni.php?mese=<?php echo $mese_selezionato; ?>&anno=<?php echo $anno_selezionato; ?>&reparto_id=<?php echo $reparto_selezionato; ?>&filtro_ruolo=<?php echo urlencode($filtro_ruolo); ?>">
+                    <input type="hidden" name="azione" value="cancella_turni_singolo_operatore">
+                    <input type="hidden" name="utente_target_id" id="input_utente_target_id">
+                    <div class="modal-body small">
+                        <p>Stai per eliminare tutti i turni del mese di <strong><?php echo $nomeMeseCorrente . ' ' . $anno_selezionato; ?></strong> per l'operatore: <strong id="nomeOperatoreTarget"></strong>.</p>
+                        <p class="text-success fw-bold mb-0"><i class="bi bi-shield-check"></i> Ferie, permessi e 104 protetti NON verranno cancellati.</p>
+                    </div>
+                    <div class="modal-footer py-1">
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                        <button type="submit" class="btn btn-sm btn-danger fw-bold">Conferma Pulizia Operatore</button>
                     </div>
                 </form>
             </div>
@@ -1001,14 +1089,18 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 containerModifica.style.display = 'none';
                 containerInvioNuovo.style.display = 'block';
                 if(inputAzioneModifica) inputAzioneModifica.disabled = true;
-                if(inputAzioneAggiungi) {
-                    inputAzioneAggiungi.disabled = false;
-                    inputAzioneAggiungi.name = 'azione';
-                    inputAzioneAggiungi.value = 'aggiungi_turno_cella';
-                }
+                if(inputAzioneAggiungi) inputAzioneAggiungi.disabled = false;
             }
 
             let modalEl = document.getElementById('modalGestioneTurno');
+            let modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+
+        function apriModalePulisciSingolo(utenteId, nomeOperatore) {
+            document.getElementById('input_utente_target_id').value = utenteId;
+            document.getElementById('nomeOperatoreTarget').innerText = nomeOperatore;
+            let modalEl = document.getElementById('modalPulisciSingolo');
             let modal = new bootstrap.Modal(modalEl);
             modal.show();
         }
