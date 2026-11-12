@@ -228,19 +228,33 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
         });
     }
 
-    $haNotteOSmontoOggi = false;
+    $nuovoCodiceUpper = strtoupper(trim($nuovo_codice));
+    $turniEsistentiCodici = [];
+
     foreach ($turniGiorno as $tg) {
         $tipoEsistente = strtoupper(trim($tg['tipo_evento']));
-        if ($tipoEsistente === 'N' || $tipoEsistente === 'NOTTE' || $tipoEsistente === 'S' || $tipoEsistente === 'SMONTO') {
-            $haNotteOSmontoOggi = true;
-            break;
-        }
+        $turniEsistentiCodici[] = $tipoEsistente;
     }
 
-    $nuovoCodiceUpper = strtoupper(trim($nuovo_codice));
-    
-    if ($haNotteOSmontoOggi && ($nuovoCodiceUpper === 'M' || $nuovoCodiceUpper === 'P' || $nuovoCodiceUpper === 'N')) {
-        return "ATTENZIONE: Impossibile assegnare il turno, è già presente un turno di Notte o Smonto in questa giornata.";
+    // Nuova regola: se c'è già M, posso aggiungere P. Se c'è P, posso aggiungere M. Altrimenti niente se c'è N, S o altro.
+    if (!empty($turniEsistentiCodici)) {
+        // Se c'è già un turno, verifichiamo la regola M <-> P
+        if (count($turniEsistentiCodici) === 1) {
+            $esistente = $turniEsistentiCodici[0];
+            $consentito = false;
+
+            if ($esistente === 'M' && $nuovoCodiceUpper === 'P') {
+                $consentito = true;
+            } elseif ($esistente === 'P' && $nuovoCodiceUpper === 'M') {
+                $consentito = true;
+            }
+
+            if (!$consentito) {
+                return "ATTENZIONE: È già presente un turno ({$esistente}) in questa giornata. È consentito aggiungere un secondo turno solo combinando Mattina (M) e Pomeriggio (P).";
+            }
+        } else {
+            return "ATTENZIONE: Raggiunto il limite massimo di turni assegnabili in questa giornata.";
+        }
     }
 
     return true;
@@ -286,7 +300,6 @@ if (!empty($urlUtenti)) {
 
 $listaCollaboratori = array_values($mappaUtenti);
 
-// Raccolta ruoli disponibili (Infermiere, OSS, Medico, ecc.)
 $ruoliDisponibili = [];
 foreach ($listaCollaboratori as $c) {
     $rText = trim($c['ruolo'] ?? $c['qualifica'] ?? '');
@@ -296,7 +309,6 @@ foreach ($listaCollaboratori as $c) {
 }
 sort($ruoliDisponibili);
 
-// Applicazione filtro ruolo se selezionato
 if (!empty($filtro_ruolo)) {
     $listaCollaboratori = array_filter($listaCollaboratori, function($c) use ($filtro_ruolo) {
         $rC = trim($c['ruolo'] ?? $c['qualifica'] ?? '');
@@ -370,6 +382,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $azione = $_POST['azione'] ?? '';
+    $nota_input = trim($_POST['nota_turno'] ?? '');
 
     if ($azione === 'cancella_turni_tranne_ferie') {
         if (!empty($idsUtentiReparto)) {
@@ -421,7 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'data_fine' => $data_cell . ' 23:59:59+00',
                     'tipo_evento' => $nuovo_valore,
                     'stato' => 'Approvato',
-                    'note' => 'Aggiunta turno da modale tabellone'
+                    'note' => !empty($nota_input) ? $nota_input : 'Aggiunta turno da modale tabellone'
                 ];
                 $res = supabase_turni_request("pianificazione", 'POST', $datiPost);
                 if ($res !== false) {
@@ -456,7 +469,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $datiPatch = [
                     'tipo_evento' => $nuovo_valore,
                     'stato' => in_array($nuovo_stato, ['Approvato', 'In attesa', 'Rifiutato']) ? $nuovo_stato : 'Approvato',
-                    'note' => 'Modificato da modale tabellone'
+                    'note' => !empty($nota_input) ? $nota_input : 'Modificato da modale tabellone'
                 ];
                 $idsEsc = implode(',', array_map('rawurlencode', $idsUtentiReparto));
                 $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id) . "&utente_id=in.($idsEsc)", 'PATCH', $datiPatch);
@@ -755,7 +768,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </select>
                         <?php } ?>
 
-                        <!-- FILTRO RUOLO (OSS, INFERMIERI, ECC.) -->
                         <select name="filtro_ruolo" class="form-select form-select-sm border-primary fw-semibold" onchange="this.form.submit()" style="width: auto;">
                             <option value="">-- Tutti i Ruoli (OSS, Infermieri, ecc.) --</option>
                             <?php foreach ($ruoliDisponibili as $rOpt) { ?>
@@ -1011,10 +1023,17 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </select>
                         </div>
 
+                        <!-- CAMPO NOTE AGGIUNTIVO NELLA MODALE -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Note / Annotazione</label>
+                            <input type="text" name="nota_turno" id="modale_nota" class="form-control form-control-sm" placeholder="Eventuali note per questo turno">
+                        </div>
+
                         <div id="avvisoAssenza" class="alert alert-warning py-2 mb-3" style="display: none; font-size: 0.8rem;">
                             <i class="bi bi-info-circle-fill"></i> Questo evento deriva dal modulo <strong>Assenze</strong>. La modifica o l'eliminazione diretta non è consentita da questa vista tabellare.
                         </div>
 
+                        <!-- CONTAINER GESTIONE TURNO ESISTENTE -->
                         <div id="containerModifica" style="display: none;">
                             <input type="hidden" name="azione" value="modifica_turno_cella" id="inputAzioneModifica">
                             <div class="d-flex gap-2" id="bottoniAzioneModifica">
@@ -1027,6 +1046,15 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             </div>
                         </div>
 
+                        <!-- CONTAINER AGGIUNTA SECONDO TURNO (M/P) -->
+                        <div id="containerAggiungiSecondo" style="display: none;" class="mb-2">
+                            <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneSecondo">
+                            <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
+                                <i class="bi bi-plus-circle"></i> Aggiungi Secondo Turno (Compatibile)
+                            </button>
+                        </div>
+
+                        <!-- CONTAINER AGGIUNTA NUOVO (CELLA VUOTA) -->
                         <div id="containerInvioNuovo" style="display: none;">
                             <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneAggiungi">
                             <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
@@ -1093,6 +1121,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         function apriModaleTurno(utenteId, nomeOperatore, dataStr, eventiJson) {
             document.getElementById('modale_utente_id').value = utenteId;
             document.getElementById('modale_data').value = dataStr;
+            document.getElementById('modale_nota').value = '';
             
             let dataFmt = dataStr.split('-').reverse().join('/');
             let eventi = [];
@@ -1105,9 +1134,11 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             let selectValore = document.getElementById('modale_valore');
             let inputTurnoId = document.getElementById('modale_turno_id');
             let containerModifica = document.getElementById('containerModifica');
+            let containerAggiungiSecondo = document.getElementById('containerAggiungiSecondo');
             let containerInvioNuovo = document.getElementById('containerInvioNuovo');
             let inputAzioneModifica = document.getElementById('inputAzioneModifica');
             let inputAzioneAggiungi = document.getElementById('inputAzioneAggiungi');
+            let inputAzioneSecondo = document.getElementById('inputAzioneSecondo');
             let avvisoAssenza = document.getElementById('avvisoAssenza');
             let bottoniAzioneModifica = document.getElementById('bottoniAzioneModifica');
 
@@ -1122,21 +1153,38 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     selectValore.disabled = false;
                     
                     containerModifica.style.display = 'block';
+                    containerAggiungiSecondo.style.display = 'none';
                     bottoniAzioneModifica.style.display = 'none';
                     avvisoAssenza.style.display = 'block';
+                    containerInvioNuovo.style.display = 'none';
                 } else {
-                    document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
-                    inputTurnoId.value = evento.id;
-                    selectValore.value = evento.tipo_evento;
-                    selectValore.disabled = false;
-                    
-                    containerModifica.style.display = 'block';
-                    bottoniAzioneModifica.style.display = 'flex';
-                    avvisoAssenza.style.display = 'none';
-                    if(inputAzioneModifica) inputAzioneModifica.disabled = false;
+                    let tipoEsistente = evento.tipo_evento.toUpperCase();
+                    // Se c'è un solo turno ed è M o P, permetti di aggiungere l'altro (M <-> P)
+                    if (eventi.length === 1 && (tipoEsistente === 'M' || tipoEsistente === 'P')) {
+                        document.getElementById('modaleTitolo').innerText = "Aggiungi Secondo Turno - " + nomeOperatore + " (" + dataFmt + ")";
+                        inputTurnoId.value = '';
+                        selectValore.value = (tipoEsistente === 'M') ? 'P' : 'M'; // Suggerisce l'alternativo
+                        selectValore.disabled = false;
+
+                        containerModifica.style.display = 'none';
+                        containerAggiungiSecondo.style.display = 'block';
+                        avvisoAssenza.style.display = 'none';
+                        containerInvioNuovo.style.display = 'none';
+                    } else {
+                        // Gestione normale modifica/eliminazione del turno esistente
+                        document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
+                        inputTurnoId.value = evento.id;
+                        selectValore.value = evento.tipo_evento;
+                        selectValore.disabled = false;
+                        
+                        containerModifica.style.display = 'block';
+                        containerAggiungiSecondo.style.display = 'none';
+                        bottoniAzioneModifica.style.display = 'flex';
+                        avvisoAssenza.style.display = 'none';
+                        containerInvioNuovo.style.display = 'none';
+                        if(inputAzioneModifica) inputAzioneModifica.disabled = false;
+                    }
                 }
-                containerInvioNuovo.style.display = 'none';
-                if(inputAzioneAggiungi) inputAzioneAggiungi.disabled = true;
             } else {
                 document.getElementById('modaleTitolo').innerText = "Aggiungi Turno - " + nomeOperatore + " (" + dataFmt + ")";
                 inputTurnoId.value = '';
@@ -1144,6 +1192,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 selectValore.disabled = false;
                 
                 containerModifica.style.display = 'none';
+                containerAggiungiSecondo.style.display = 'none';
                 avvisoAssenza.style.display = 'none';
                 containerInvioNuovo.style.display = 'block';
                 if(inputAzioneAggiungi) inputAzioneAggiungi.disabled = false;
