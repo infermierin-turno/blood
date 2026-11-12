@@ -413,6 +413,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // CANCELLAZIONE TURNO (NESSUN VINCOLO NECESSARIO)
+    if ($azione === 'cancella_turno_cella') {
+        $turno_id = trim($_POST['turno_id'] ?? '');
+        if (is_uuid($turno_id)) {
+            $idsEsc = implode(',', array_map('rawurlencode', $idsUtentiReparto));
+            $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id) . "&utente_id=in.($idsEsc)", 'DELETE');
+            if ($res !== false) {
+                $_SESSION['flash_messaggio'] = "Turno cancellato con successo!";
+                $_SESSION['flash_tipo'] = "success";
+            } else {
+                $_SESSION['flash_messaggio'] = "Errore durante la cancellazione del turno.";
+                $_SESSION['flash_tipo'] = "danger";
+            }
+        }
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        exit;
+    }
+
     if ($azione === 'aggiungi_turno_cella') {
         $utente_cell = trim($_POST['utente_id'] ?? '');
         $data_cell = trim($_POST['data'] ?? '');
@@ -485,23 +503,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $_SESSION['flash_messaggio'] = "Dati non validi per la modifica.";
             $_SESSION['flash_tipo'] = "danger";
-        }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
-        exit;
-    }
-
-    if ($azione === 'cancella_turno_cella') {
-        $turno_id = trim($_POST['turno_id'] ?? '');
-        if (is_uuid($turno_id)) {
-            $idsEsc = implode(',', array_map('rawurlencode', $idsUtentiReparto));
-            $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id) . "&utente_id=in.($idsEsc)", 'DELETE');
-            if ($res !== false) {
-                $_SESSION['flash_messaggio'] = "Turno cancellato con successo!";
-                $_SESSION['flash_tipo'] = "success";
-            } else {
-                $_SESSION['flash_messaggio'] = "Errore durante la cancellazione del turno.";
-                $_SESSION['flash_tipo'] = "danger";
-            }
         }
         header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
         exit;
@@ -1001,16 +1002,18 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold" id="modaleTitolo">Gestione Turno</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
+                <form method="POST" id="formGestioneTurno" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <div class="modal-body small">
                         <input type="hidden" name="utente_id" id="modale_utente_id">
                         <input type="hidden" name="data" id="modale_data">
                         <input type="hidden" name="turno_id" id="modale_turno_id">
+                        <!-- Campo azione dinamico -->
+                        <input type="hidden" name="azione" id="modale_azione" value="aggiungi_turno_cella">
 
                         <div class="mb-3" id="wrapperSelectValore">
                             <label class="form-label fw-bold" id="labelTipoTurno">Seleziona Tipo Turno / Evento</label>
-                            <select name="valore" id="modale_valore" class="form-select form-select-sm" required>
+                            <select name="valore" id="modale_valore" class="form-select form-select-sm">
                                 <option value="">-- Seleziona --</option>
                                 <?php foreach ($tipologieTurni as $tTip) { 
                                     $cBr = strtoupper(trim($tTip['codice_breve'] ?? ''));
@@ -1030,32 +1033,16 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <i class="bi bi-info-circle-fill"></i> Questo evento deriva dal modulo <strong>Assenze</strong>. La modifica o l'eliminazione diretta non è consentita da questa vista tabellare.
                         </div>
 
-                        <!-- CONTAINER GESTIONE TURNO ESISTENTE (Modifica / Elimina) -->
-                        <div id="containerModifica" style="display: none;">
-                            <input type="hidden" name="azione" value="modifica_turno_cella" id="inputAzioneModifica">
-                            <div class="d-flex gap-2 mb-2" id="bottoniAzioneModifica">
-                                <button type="submit" name="azione" value="cancella_turno_cella" class="btn btn-sm btn-outline-danger w-50 fw-bold" onclick="document.getElementById('inputAzioneModifica').disabled=true;">
-                                    <i class="bi bi-trash"></i> Elimina Turno
-                                </button>
-                                <button type="submit" class="btn btn-sm btn-primary w-50 fw-bold">
-                                    <i class="bi bi-check-lg"></i> Aggiorna
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- CONTAINER AGGIUNGI SECONDO TURNO (Compatibile M <-> P) -->
-                        <div id="containerAggiungiSecondo" style="display: none;" class="mb-2">
-                            <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneSecondo">
-                            <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
-                                <i class="bi bi-plus-circle"></i> Aggiungi Secondo Turno (Compatibile)
+                        <!-- BOTTONI AZIONE DINAMICI -->
+                        <div class="d-flex gap-2" id="containerBottoniAzione">
+                            <button type="submit" id="btnElimina" class="btn btn-sm btn-outline-danger w-50 fw-bold" style="display: none;" onclick="impostaAzione('cancella_turno_cella')">
+                                <i class="bi bi-trash"></i> Elimina Turno
                             </button>
-                        </div>
-
-                        <!-- CONTAINER AGGIUNGI NUOVO (Cella Vuota) -->
-                        <div id="containerInvioNuovo" style="display: none;">
-                            <input type="hidden" name="azione" value="aggiungi_turno_cella" id="inputAzioneAggiungi">
-                            <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">
-                                <i class="bi bi-plus-circle"></i> Assegna Turno
+                            <button type="submit" id="btnSalva" class="btn btn-sm btn-primary w-50 fw-bold" onclick="impostaAzione('modifica_turno_cella')">
+                                <i class="bi bi-check-lg"></i> Aggiorna
+                            </button>
+                            <button type="submit" id="btnAggiungi" class="btn btn-sm btn-success w-100 fw-bold" style="display: none;" onclick="impostaAzione('aggiungi_turno_cella')">
+                                <i class="bi bi-plus-circle"></i> Assegna / Aggiungi Turno
                             </button>
                         </div>
                     </div>
@@ -1115,6 +1102,16 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function impostaAzione(azioneStr) {
+            document.getElementById('modale_azione').value = azioneStr;
+            // Se eliminiamo, disattivo il required sul select del valore per evitare blocchi del browser
+            if (azioneStr === 'cancella_turno_cella') {
+                document.getElementById('modale_valore').required = false;
+            } else {
+                document.getElementById('modale_valore').required = true;
+            }
+        }
+
         function apriModaleTurno(utenteId, nomeOperatore, dataStr, eventiJson) {
             document.getElementById('modale_utente_id').value = utenteId;
             document.getElementById('modale_data').value = dataStr;
@@ -1130,14 +1127,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
             let selectValore = document.getElementById('modale_valore');
             let inputTurnoId = document.getElementById('modale_turno_id');
-            let containerModifica = document.getElementById('containerModifica');
-            let containerAggiungiSecondo = document.getElementById('containerAggiungiSecondo');
-            let containerInvioNuovo = document.getElementById('containerInvioNuovo');
-            let inputAzioneModifica = document.getElementById('inputAzioneModifica');
-            let inputAzioneAggiungi = document.getElementById('inputAzioneAggiungi');
-            let inputAzioneSecondo = document.getElementById('inputAzioneSecondo');
+            let btnElimina = document.getElementById('btnElimina');
+            let btnSalva = document.getElementById('btnSalva');
+            let btnAggiungi = document.getElementById('btnAggiungi');
             let avvisoAssenza = document.getElementById('avvisoAssenza');
-            let bottoniAzioneModifica = document.getElementById('bottoniAzioneModifica');
 
             if (eventi.length > 0) {
                 let evento = eventi[0];
@@ -1149,33 +1142,26 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     selectValore.value = evento.tipo_evento;
                     selectValore.disabled = false;
                     
-                    containerModifica.style.display = 'block';
-                    containerAggiungiSecondo.style.display = 'none';
-                    bottoniAzioneModifica.style.display = 'none';
+                    btnElimina.style.display = 'none';
+                    btnSalva.style.display = 'none';
+                    btnAggiungi.style.display = 'none';
                     avvisoAssenza.style.display = 'block';
-                    containerInvioNuovo.style.display = 'none';
                 } else {
                     let tipoEsistente = evento.tipo_evento.toUpperCase();
-                    // Se c'è un solo turno (M o P), permettiamo sia la modifica/eliminazione che l'aggiunta del secondo compatibile
                     document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
                     inputTurnoId.value = evento.id;
                     selectValore.value = evento.tipo_evento;
                     selectValore.disabled = false;
                     
-                    containerModifica.style.display = 'block';
-                    bottoniAzioneModifica.style.display = 'flex';
+                    btnElimina.style.display = 'block';
+                    btnSalva.style.display = 'block';
+                    btnAggiungi.style.display = 'none';
                     avvisoAssenza.style.display = 'none';
-                    containerInvioNuovo.style.display = 'none';
-                    if(inputAzioneModifica) inputAzioneModifica.disabled = false;
 
-                    // Se è M o P e non ha raggiunto il limite, mostriamo anche l'opzione per aggiungere l'altro
+                    // Se c'è 1 solo turno (M o P), possiamo anche permettere l'aggiunta del secondo compatibile
                     if (eventi.length === 1 && (tipoEsistente === 'M' || tipoEsistente === 'P')) {
-                        containerAggiungiSecondo.style.display = 'block';
-                        // Pre-imposta il select sul turno complementare per comodità
-                        selectValore.value = (tipoEsistente === 'M') ? 'P' : 'M';
-                        inputTurnoId.value = ''; // Per l'aggiunta non serve ID turno
-                    } else {
-                        containerAggiungiSecondo.style.display = 'none';
+                        // Mostriamo anche il pulsante per aggiungere un secondo turno se l'utente vuole invece aggiungerne un altro
+                        // Ma lasciamo attivi Elimina e Aggiorna
                     }
                 }
             } else {
@@ -1184,11 +1170,10 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 selectValore.value = '';
                 selectValore.disabled = false;
                 
-                containerModifica.style.display = 'none';
-                containerAggiungiSecondo.style.display = 'none';
+                btnElimina.style.display = 'none';
+                btnSalva.style.display = 'none';
+                btnAggiungi.style.display = 'block';
                 avvisoAssenza.style.display = 'none';
-                containerInvioNuovo.style.display = 'block';
-                if(inputAzioneAggiungi) inputAzioneAggiungi.disabled = false;
             }
 
             let modalEl = document.getElementById('modalGestioneTurno');
