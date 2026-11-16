@@ -643,7 +643,7 @@ $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 
                     <span class="badge bg-dark text-white"><?php echo date('d/m/Y', strtotime($info_blocco_corrente['inizio'])); ?></span> 
                     al 
                     <span class="badge bg-dark text-white"><?php echo date('d/m/Y', strtotime($info_blocco_corrente['fine'])); ?></span>. 
-                    Le richieste per questo intervallo non verranno accettate ma dovranno essere discusse (Max 1 Dipendente per giorno previa sostituzione).
+                    Le richieste per questo intervallo non verranno accettate.
                 </div>
             </div>
         <?php endif; ?>
