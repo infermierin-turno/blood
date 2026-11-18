@@ -154,6 +154,7 @@ if ($is_super_admin || $is_capo_personale) {
 }
 
 $filtro_ruolo = isset($_GET['filtro_ruolo']) ? trim($_GET['filtro_ruolo']) : '';
+$filtro_squadra = isset($_GET['filtro_squadra']) ? trim($_GET['filtro_squadra']) : '';
 
 $nome_reparto_selezionato = ($is_super_admin || ($is_capo_personale && $reparto_selezionato === '')) ? "Tutti i Reparti della Struttura" : "Reparto non assegnato";
 $nome_struttura_corrente = "Azienda Sanitaria / Struttura";
@@ -261,23 +262,23 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
 $mappaUtenti = [];
 
 if ($is_super_admin) {
-    $urlUtenti = "staging_utenti?select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+    $urlUtenti = "staging_utenti?select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
     if ($reparto_selezionato !== '') {
-        $urlUtenti = "staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+        $urlUtenti = "staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
     }
 } elseif ($is_capo_personale) {
     if (!empty($org_id_utente)) {
         if ($reparto_selezionato !== '') {
-            $urlUtenti = "staging_utenti?organizzazione_id=eq." . rawurlencode($org_id_utente) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+            $urlUtenti = "staging_utenti?organizzazione_id=eq." . rawurlencode($org_id_utente) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
         } else {
-            $urlUtenti = "staging_utenti?organizzazione_id=eq." . rawurlencode($org_id_utente) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+            $urlUtenti = "staging_utenti?organizzazione_id=eq." . rawurlencode($org_id_utente) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
         }
     } else {
         $urlUtenti = "";
     }
 } else {
     if (!empty($reparto_id_utente)) {
-        $urlUtenti = "staging_utenti?reparto_id=eq." . rawurlencode($reparto_id_utente) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=nome.asc";
+        $urlUtenti = "staging_utenti?reparto_id=eq." . rawurlencode($reparto_id_utente) . "&select=id,nome,ruolo,qualifica,organizzazione_id,reparto_id,squadra&order=squadra.asc,nome.asc";
     } else {
         $urlUtenti = "";
     }
@@ -291,6 +292,9 @@ if (!empty($urlUtenti)) {
             if (in_array($rC_low, ['super_admin', 'admin', 'superadmin', 'capo_personale', 'capopersonale'])) {
                 continue;
             }
+            if (empty($c['squadra'])) {
+                $c['squadra'] = 'Senza Squadra';
+            }
             $mappaUtenti[$c['id']] = $c;
         }
     }
@@ -299,13 +303,19 @@ if (!empty($urlUtenti)) {
 $listaCollaboratori = array_values($mappaUtenti);
 
 $ruoliDisponibili = [];
+$squadreDisponibili = [];
 foreach ($listaCollaboratori as $c) {
     $rText = trim($c['ruolo'] ?? $c['qualifica'] ?? '');
     if (!empty($rText) && !in_array($rText, $ruoliDisponibili)) {
         $ruoliDisponibili[] = $rText;
     }
+    $sText = trim($c['squadra'] ?? '');
+    if (!empty($sText) && !in_array($sText, $squadreDisponibili)) {
+        $squadreDisponibili[] = $sText;
+    }
 }
 sort($ruoliDisponibili);
+sort($squadreDisponibili);
 
 if (!empty($filtro_ruolo)) {
     $listaCollaboratori = array_filter($listaCollaboratori, function($c) use ($filtro_ruolo) {
@@ -315,37 +325,20 @@ if (!empty($filtro_ruolo)) {
     $listaCollaboratori = array_values($listaCollaboratori);
 }
 
+if (!empty($filtro_squadra)) {
+    $listaCollaboratori = array_filter($listaCollaboratori, function($c) use ($filtro_squadra) {
+        $sC = trim($c['squadra'] ?? '');
+        return strcasecmp($sC, $filtro_squadra) === 0;
+    });
+    $listaCollaboratori = array_values($listaCollaboratori);
+}
+
 usort($listaCollaboratori, function($a, $b) {
-    $sqA = trim($a['squadra'] ?? '');
-    $sqB = trim($b['squadra'] ?? '');
+    $sqA = trim($a['squadra'] ?? 'Senza Squadra');
+    $sqB = trim($b['squadra'] ?? 'Senza Squadra');
     
     if ($sqA !== $sqB) {
-        if ($sqA === '') return 1;
-        if ($sqB === '') return -1;
         return strcasecmp($sqA, $sqB);
-    }
-    
-    $getPesoRuolo = function($collab) {
-        $ruolo = strtolower(trim($collab['ruolo'] ?? $collab['qualifica'] ?? ''));
-        $squadra = strtolower(trim($collab['squadra'] ?? ''));
-        
-        if (strpos($ruolo, 'mattinier') !== false || strpos($squadra, 'mattinier') !== false) {
-            return 1;
-        }
-        if (strpos($ruolo, 'oss') !== false) {
-            return 2;
-        }
-        if (strpos($ruolo, 'coordinat') !== false) {
-            return 3;
-        }
-        return 4;
-    };
-    
-    $pesoA = $getPesoRuolo($a);
-    $pesoB = $getPesoRuolo($b);
-    
-    if ($pesoA !== $pesoB) {
-        return $pesoA - $pesoB;
     }
     
     return strcasecmp($a['nome'] ?? '', $b['nome'] ?? '');
@@ -392,7 +385,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_messaggio'] = "Pulizia completata con successo (Ferie e permessi protetti).";
             $_SESSION['flash_tipo'] = "success";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 
@@ -409,15 +402,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_messaggio'] = "Operatore non valido o non autorizzato.";
             $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 
-    // CANCELLAZIONE TURNO (NESSUN VINCOLO NECESSARIO)
     if ($azione === 'cancella_turno_cella') {
         $turno_id = trim($_POST['turno_id'] ?? '');
         if (is_uuid($turno_id)) {
-            $idsEsc = implode(',', array_map('rawurlencode', $idsUtentiReparto));
+            $idsEsc = !empty($idsUtentiReparto) ? implode(',', array_map('rawurlencode', $idsUtentiReparto)) : '00000000-0000-0000-0000-000000000000';
             $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id) . "&utente_id=in.($idsEsc)", 'DELETE');
             if ($res !== false) {
                 $_SESSION['flash_messaggio'] = "Turno cancellato con successo!";
@@ -427,7 +419,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 
@@ -468,7 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_messaggio'] = "Dati non validi per l'inserimento.";
             $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 
@@ -504,7 +496,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_messaggio'] = "Dati non validi per la modifica.";
             $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 
@@ -544,7 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 
@@ -605,7 +597,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo]));
+        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
         exit;
     }
 }
@@ -700,19 +692,19 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .table-turni { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; }
         .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.73rem; padding: 2px 2px !important; line-height: 1.1; border-color: #e2e8f0 !important; overflow: hidden; }
         .table-turni tbody tr { transition: background-color 0.15s ease; height: 32px; }
-        .table-turni tbody tr:hover { background-color: #f8fafc !important; }
-        .table-turni tbody tr:hover td.col-operatore-sticky { background-color: #f1f5f9 !important; }
+        .table-turni tbody tr:hover:not(.tr-sezione-squadra) { background-color: #f8fafc !important; }
         
         .cella-interattiva { cursor: pointer; white-space: nowrap; display: table-cell; vertical-align: middle; text-align: center; height: 32px; }
         .cella-interattiva:hover { background-color: #e2e8f0 !important; }
         
         .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
+        .tr-sezione-squadra td { background-color: #e2e8f0 !important; font-weight: bold; text-align: left !important; padding: 6px 10px !important; font-size: 0.8rem; color: #334155; border-top: 2px solid #cbd5e1 !important; }
         
-        .badge-container { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+        .badge-container { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2px; }
 
         .badge-turno {
-            display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 15px; font-size: 0.6rem; font-weight: 700; color: #fff;
-            border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,0.05); letter-spacing: -0.5px; margin: 0 auto;
+            display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 16px; font-size: 0.6rem; font-weight: 700; color: #fff;
+            border-radius: 3px; box-shadow: 0 1px 1px rgba(0,0,0,0.05); margin: 0 auto;
         }
         .badge-in-attesa {
             border: 2px dashed #f59e0b !important;
@@ -743,18 +735,15 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         
         <div class="card shadow-sm mb-4 p-3">
             <div class="row align-items-center g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <h2 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2 fs-4">
                         <i class="bi bi-calendar-check text-primary"></i> Assegnazione Turni
                     </h2>
                     <span class="small text-muted">
                         <i class="bi bi-building"></i> Reparto: <strong class="text-dark"><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong>
-                        <?php if (!empty($filtro_ruolo)) { ?>
-                            | Filtro Ruolo: <span class="badge bg-primary"><?php echo htmlspecialchars($filtro_ruolo); ?></span>
-                        <?php } ?>
                     </span>
                 </div>
-                <div class="col-md-8 text-md-end">
+                <div class="col-md-9 text-md-end">
                     <form method="GET" action="turni.php" class="d-inline-flex gap-2 align-items-center flex-wrap justify-content-end">
                         <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
                             <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
@@ -768,9 +757,16 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         <?php } ?>
 
                         <select name="filtro_ruolo" class="form-select form-select-sm border-primary fw-semibold" onchange="this.form.submit()" style="width: auto;">
-                            <option value="">-- Tutti i Ruoli (OSS, Infermieri, ecc.) --</option>
+                            <option value="">-- Tutti i Ruoli --</option>
                             <?php foreach ($ruoliDisponibili as $rOpt) { ?>
                                 <option value="<?php echo htmlspecialchars($rOpt); ?>" <?php echo (strcasecmp($filtro_ruolo, $rOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($rOpt); ?></option>
+                            <?php } ?>
+                        </select>
+
+                        <select name="filtro_squadra" class="form-select form-select-sm border-success fw-semibold" onchange="this.form.submit()" style="width: auto;">
+                            <option value="">-- Tutte le Squadre --</option>
+                            <?php foreach ($squadreDisponibili as $sOpt) { ?>
+                                <option value="<?php echo htmlspecialchars($sOpt); ?>" <?php echo (strcasecmp($filtro_squadra, $sOpt) === 0) ? 'selected' : ''; ?>><?php echo htmlspecialchars($sOpt); ?></option>
                             <?php } ?>
                         </select>
 
@@ -847,12 +843,23 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     </td>
                                 </tr>
                             <?php } else { ?>
-                                <?php foreach ($listaCollaboratori as $collab) { 
+                                <?php 
+                                $ultimaSquadra = null;
+                                foreach ($listaCollaboratori as $collab) { 
                                     $uId = $collab['id'];
                                     $nomeCollab = $collab['nome'] ?? 'Operatore';
                                     $ruoloCollab = $collab['ruolo'] ?? $collab['qualifica'] ?? '';
-                                    $squadraCollab = $collab['squadra'] ?? '';
+                                    $squadraCollab = trim($collab['squadra'] ?? 'Senza Squadra');
+
+                                    if ($ultimaSquadra !== $squadraCollab) {
+                                        $ultimaSquadra = $squadraCollab;
                                 ?>
+                                    <tr class="tr-sezione-squadra">
+                                        <td colspan="<?php echo $giorni_nel_mese + 1; ?>">
+                                            <i class="bi bi-people-fill me-1"></i> Squadra: <?php echo htmlspecialchars($squadraCollab); ?>
+                                        </td>
+                                    </tr>
+                                <?php } ?>
                                     <tr>
                                         <td class="col-operatore-sticky" title="<?php echo htmlspecialchars($nomeCollab); ?>">
                                             <div class="d-flex justify-content-between align-items-center">
@@ -864,7 +871,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                 <?php } ?>
                                             </div>
                                             <div class="text-muted" style="font-size: 0.65rem;">
-                                                <?php echo htmlspecialchars($ruoloCollab); ?> <?php echo !empty($squadraCollab) ? '('.htmlspecialchars($squadraCollab).')' : ''; ?>
+                                                <?php echo htmlspecialchars($ruoloCollab); ?>
                                             </div>
                                         </td>
                                         <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
@@ -904,7 +911,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <div class="col-lg-6">
                 <div class="card shadow-sm h-100 p-3">
                     <h5 class="card-title fs-6 fw-bold mb-3"><i class="bi bi-person-plus text-primary"></i> Assegnazione Singola</h5>
-                    <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
+                    <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
                         <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                         <input type="hidden" name="azione" value="assegna_turno">
                         <div class="mb-2">
@@ -912,7 +919,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <select name="collaboratore_id" class="form-select form-select-sm" required>
                                 <option value="">-- Seleziona Operatore --</option>
                                 <?php foreach ($listaCollaboratori as $collab) { ?>
-                                    <option value="<?php echo htmlspecialchars($collab['id']); ?>"><?php echo htmlspecialchars($collab['nome']); ?></option>
+                                    <option value="<?php echo htmlspecialchars($collab['id']); ?>"><?php echo htmlspecialchars($collab['nome']); ?> (<?php echo htmlspecialchars($collab['squadra']); ?>)</option>
                                 <?php } ?>
                             </select>
                         </div>
@@ -944,7 +951,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <div class="col-lg-6">
                 <div class="card shadow-sm h-100 p-3">
                     <h5 class="card-title fs-6 fw-bold mb-3"><i class="bi bi-robot text-success"></i> Generazione Automatica Turni (AI)</h5>
-                    <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
+                    <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
                         <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                         <input type="hidden" name="azione" value="genera_turni_ai">
                         <div class="row g-2 mb-2">
@@ -1002,13 +1009,12 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold" id="modaleTitolo">Gestione Turno</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" id="formGestioneTurno" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
+                <form method="POST" id="formGestioneTurno" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <div class="modal-body small">
                         <input type="hidden" name="utente_id" id="modale_utente_id">
                         <input type="hidden" name="data" id="modale_data">
                         <input type="hidden" name="turno_id" id="modale_turno_id">
-                        <!-- Campo azione dinamico -->
                         <input type="hidden" name="azione" id="modale_azione" value="aggiungi_turno_cella">
 
                         <div class="mb-3" id="wrapperSelectValore">
@@ -1033,7 +1039,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <i class="bi bi-info-circle-fill"></i> Questo evento deriva dal modulo <strong>Assenze</strong>. La modifica o l'eliminazione diretta non è consentita da questa vista tabellare.
                         </div>
 
-                        <!-- BOTTONI AZIONE DINAMICI -->
                         <div class="d-flex gap-2" id="containerBottoniAzione">
                             <button type="submit" id="btnElimina" class="btn btn-sm btn-outline-danger w-50 fw-bold" style="display: none;" onclick="impostaAzione('cancella_turno_cella')">
                                 <i class="bi bi-trash"></i> Elimina Turno
@@ -1059,7 +1064,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold">Conferma Pulizia Mese</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
+                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <input type="hidden" name="azione" value="cancella_turni_tranne_ferie">
                     <div class="modal-body small">
@@ -1083,7 +1088,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold">Pulisci Turni Operatore</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo])); ?>">
+                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <input type="hidden" name="azione" value="cancella_turni_singolo_operatore">
                     <input type="hidden" name="utente_target_id" id="input_utente_target_id">
@@ -1104,7 +1109,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
     <script>
         function impostaAzione(azioneStr) {
             document.getElementById('modale_azione').value = azioneStr;
-            // Se eliminiamo, disattivo il required sul select del valore per evitare blocchi del browser
             if (azioneStr === 'cancella_turno_cella') {
                 document.getElementById('modale_valore').required = false;
             } else {
@@ -1147,7 +1151,6 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     btnAggiungi.style.display = 'none';
                     avvisoAssenza.style.display = 'block';
                 } else {
-                    let tipoEsistente = evento.tipo_evento.toUpperCase();
                     document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
                     inputTurnoId.value = evento.id;
                     selectValore.value = evento.tipo_evento;
@@ -1155,14 +1158,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     
                     btnElimina.style.display = 'block';
                     btnSalva.style.display = 'block';
-                    btnAggiungi.style.display = 'none';
+                    btnAggiungi.style.display = 'block'; // Flessibile: permette sia di aggiornare/eliminare che di aggiungere un secondo turno
                     avvisoAssenza.style.display = 'none';
-
-                    // Se c'è 1 solo turno (M o P), possiamo anche permettere l'aggiunta del secondo compatibile
-                    if (eventi.length === 1 && (tipoEsistente === 'M' || tipoEsistente === 'P')) {
-                        // Mostriamo anche il pulsante per aggiungere un secondo turno se l'utente vuole invece aggiungerne un altro
-                        // Ma lasciamo attivi Elimina e Aggiorna
-                    }
                 }
             } else {
                 document.getElementById('modaleTitolo').innerText = "Aggiungi Turno - " + nomeOperatore + " (" + dataFmt + ")";
