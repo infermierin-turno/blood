@@ -253,8 +253,7 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
             } elseif ($esistente === 'P' && $nuovoCodiceUpper === 'M') {
                 $consentito = true;
             }
-            // Regole specifiche richieste:
-            // STP su Mattino (M)
+            // STP su Mattina (M)
             elseif ($esistente === 'M' && $nuovoCodiceUpper === 'STP') {
                 $consentito = true;
             } elseif ($esistente === 'STP' && $nuovoCodiceUpper === 'M') {
@@ -276,6 +275,12 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
             elseif ($esistente === 'M' && $nuovoCodiceUpper === 'RDP') {
                 $consentito = true;
             } elseif ($esistente === 'RDP' && $nuovoCodiceUpper === 'M') {
+                $consentito = true;
+            }
+            // RN (Riposo/Smonto Notte) consentito sullo Smonto (S)
+            elseif ($esistente === 'S' && $nuovoCodiceUpper === 'RN') {
+                $consentito = true;
+            } elseif ($esistente === 'RN' && $nuovoCodiceUpper === 'S') {
                 $consentito = true;
             }
 
