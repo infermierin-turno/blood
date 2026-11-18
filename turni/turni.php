@@ -189,7 +189,12 @@ if (!is_array($tipologieTurni) || empty($tipologieTurni)) {
         ['id' => '3', 'nome_turno' => 'Notte', 'codice_breve' => 'N', 'colore' => '#6610f2', 'ora_inizio' => '21:00:00', 'ora_fine' => '07:00:00'],
         ['id' => '4', 'nome_turno' => 'Smonto', 'codice_breve' => 'S', 'colore' => '#fd7e14', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
         ['id' => '5', 'nome_turno' => 'Riposo', 'codice_breve' => 'R', 'colore' => '#198754', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59'],
-        ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59']
+        ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59'],
+        ['id' => '7', 'nome_turno' => 'Straordinario Mattina', 'codice_breve' => 'STP', 'colore' => '#0dcaf0', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
+        ['id' => '8', 'nome_turno' => 'Straordinario Pomeriggio', 'codice_breve' => 'STM', 'colore' => '#ffc107', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
+        ['id' => '9', 'nome_turno' => 'Rientro Diurno Mattina', 'codice_breve' => 'RDM', 'colore' => '#20c997', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
+        ['id' => '10', 'nome_turno' => 'Rientro Diurno Pomeriggio', 'codice_breve' => 'RDP', 'colore' => '#d63384', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
+        ['id' => '11', 'nome_turno' => 'Riposo Smonto Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00']
     ];
 }
 
@@ -242,14 +247,40 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
             $esistente = $turniEsistentiCodici[0];
             $consentito = false;
 
+            // Regole standard M e P
             if ($esistente === 'M' && $nuovoCodiceUpper === 'P') {
                 $consentito = true;
             } elseif ($esistente === 'P' && $nuovoCodiceUpper === 'M') {
                 $consentito = true;
             }
+            // Regole specifiche richieste:
+            // STP su Mattino (M)
+            elseif ($esistente === 'M' && $nuovoCodiceUpper === 'STP') {
+                $consentito = true;
+            } elseif ($esistente === 'STP' && $nuovoCodiceUpper === 'M') {
+                $consentito = true;
+            }
+            // STM su Pomeriggio (P)
+            elseif ($esistente === 'P' && $nuovoCodiceUpper === 'STM') {
+                $consentito = true;
+            } elseif ($esistente === 'STM' && $nuovoCodiceUpper === 'P') {
+                $consentito = true;
+            }
+            // RDM (Rientro Diurno Mattina) sui festivi in aggiunta al Pomeriggio (P)
+            elseif ($esistente === 'P' && $nuovoCodiceUpper === 'RDM') {
+                $consentito = true;
+            } elseif ($esistente === 'RDM' && $nuovoCodiceUpper === 'P') {
+                $consentito = true;
+            }
+            // RDP (Rientro Diurno Pomeriggio) sui festivi in aggiunta alla Mattina (M)
+            elseif ($esistente === 'M' && $nuovoCodiceUpper === 'RDP') {
+                $consentito = true;
+            } elseif ($esistente === 'RDP' && $nuovoCodiceUpper === 'M') {
+                $consentito = true;
+            }
 
             if (!$consentito) {
-                return "ATTENZIONE: È già presente un turno ({$esistente}) in questa giornata. È consentito aggiungere un secondo turno solo combinando Mattina (M) e Pomeriggio (P).";
+                return "ATTENZIONE: È già presente un turno ({$esistente}) in questa giornata. L'abbinamento con ({$nuovoCodiceUpper}) non è consentito dalle regole di reparto.";
             }
         } else {
             return "ATTENZIONE: Raggiunto il limite massimo di turni assegnabili in questa giornata.";
@@ -1043,7 +1074,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <button type="submit" id="btnElimina" class="btn btn-sm btn-outline-danger w-50 fw-bold" style="display: none;" onclick="impostaAzione('cancella_turno_cella')">
                                 <i class="bi bi-trash"></i> Elimina Turno
                             </button>
-                            <button type="submit" id="btnSalva" class="btn btn-sm btn-primary w-50 fw-bold" onclick="impostaAzione('modifica_turno_cella')">
+                            <button type="submit" id="btnSalva" class="btn btn-sm btn-primary w-50 fw-bold" style="display: none;" onclick="impostaAzione('modifica_turno_cella')">
                                 <i class="bi bi-check-lg"></i> Aggiorna
                             </button>
                             <button type="submit" id="btnAggiungi" class="btn btn-sm btn-success w-100 fw-bold" style="display: none;" onclick="impostaAzione('aggiungi_turno_cella')">
@@ -1158,7 +1189,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     
                     btnElimina.style.display = 'block';
                     btnSalva.style.display = 'block';
-                    btnAggiungi.style.display = 'block'; // Flessibile: permette sia di aggiornare/eliminare che di aggiungere un secondo turno
+                    btnAggiungi.style.display = 'block';
                     avvisoAssenza.style.display = 'none';
                 }
             } else {
