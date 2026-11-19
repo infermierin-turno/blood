@@ -157,11 +157,15 @@ $statiVisita = [
 ];
 
 $tagAzioni = [
-    'Mobilizzazione',
+    'Richiesti esami di routine',
+    'Richiesti esami urgenza',
+    'Richiesto emocromo di controllo',
+    'Richiesta Emotrasfusione',
     'Controllo CV',
     'Controllo CVC',
     'Controllo CV',
     'Terapia Antidolorifica',
+    'Mobilizzazione',
     'Medicazione',
     'In attesa intervento',
     'Controllare esami/consulenza',
