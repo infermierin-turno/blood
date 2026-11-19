@@ -73,6 +73,7 @@ function supabase_gv_request($endpoint, $method = 'GET', $data = null) {
 }
 
 $utente_id = $_SESSION['utente_id'] ?? $_SESSION['utente']['id'] ?? null;
+$nome_utente_corrente = $_SESSION['nome'] ?? $_SESSION['utente']['nome'] ?? '';
 $org_id_utente = $_SESSION['organizzazione_id'] ?? $_SESSION['utente']['organizzazione_id'] ?? null;
 $reparto_id_utente = $_SESSION['reparto_id'] ?? $_SESSION['utente']['reparto_id'] ?? null;
 
@@ -155,13 +156,11 @@ $statiVisita = [
     'Dimissione protetta'        => ['badge' => 'bg-dark',      'icon' => 'bi-shield-check']
 ];
 
-// Voci rapide per le consegne: basta aggiungere qui nuove voci
 $tagAzioni = [
     'Mobilizzazione',
-    'Cambio CV',
     'Antidolorifica',
     'Medicazione',
-    'In attesa intervento',
+    'Sala Operatoria',
     'Codice 56 / Riabilitazione',
     'Consulenza/Esami',
     'Fisioterapia',
@@ -441,22 +440,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
         $nuovo_stato_comp = isset($_POST['completata']) && $_POST['completata'] === '1';
 
         if (is_uuid($consegna_id)) {
-            $patchComp = [
-                'completata' => $nuovo_stato_comp,
-                'completata_da_id' => $nuovo_stato_comp && is_uuid($utente_id) ? $utente_id : null,
-                'completata_at' => $nuovo_stato_comp ? date('c') : null
-            ];
-            $res = supabase_gv_request(
-                "giro_visita_consegne?id=eq." . rawurlencode($consegna_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato),
-                'PATCH',
-                $patchComp
+            $resCheck = supabase_gv_request(
+                "giro_visita_consegne?id=eq." . rawurlencode($consegna_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,completata"
             );
-            if ($res !== false) {
-                $_SESSION['flash_messaggio'] = $nuovo_stato_comp ? "Consegna segnata come completata." : "Consegna riaperta.";
-                $_SESSION['flash_tipo'] = "success";
+            $consEsistente = (!empty($resCheck) && is_array($resCheck)) ? $resCheck[0] : null;
+
+            if ($consEsistente && !empty($consEsistente['completata']) && !$nuovo_stato_comp) {
+                $_SESSION['flash_messaggio'] = "Questa azione è già stata segnata come fatta e non può essere annullata.";
+                $_SESSION['flash_tipo'] = "warning";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento della consegna. (" . $ultimo_errore_supabase . ")";
-                $_SESSION['flash_tipo'] = "danger";
+                $patchComp = [
+                    'completata' => $nuovo_stato_comp,
+                    'completata_da_id' => $nuovo_stato_comp && is_uuid($utente_id) ? $utente_id : null,
+                    'completata_at' => $nuovo_stato_comp ? date('c') : null
+                ];
+                $res = supabase_gv_request(
+                    "giro_visita_consegne?id=eq." . rawurlencode($consegna_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato),
+                    'PATCH',
+                    $patchComp
+                );
+                if ($res !== false) {
+                    $_SESSION['flash_messaggio'] = $nuovo_stato_comp
+                        ? "Consegna segnata come completata da " . ($nome_utente_corrente !== '' ? $nome_utente_corrente : 'utente') . "."
+                        : "Consegna riaperta.";
+                    $_SESSION['flash_tipo'] = "success";
+                } else {
+                    $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento della consegna. (" . $ultimo_errore_supabase . ")";
+                    $_SESSION['flash_tipo'] = "danger";
+                }
             }
         }
         header("Location: " . $redirectUrl);
@@ -466,16 +477,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
     if ($azione === 'elimina_consegna') {
         $consegna_id = trim($_POST['consegna_id'] ?? '');
         if (is_uuid($consegna_id)) {
-            $res = supabase_gv_request(
-                "giro_visita_consegne?id=eq." . rawurlencode($consegna_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato),
-                'DELETE'
+            $resCheck = supabase_gv_request(
+                "giro_visita_consegne?id=eq." . rawurlencode($consegna_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,completata"
             );
-            if ($res !== false) {
-                $_SESSION['flash_messaggio'] = "Consegna eliminata.";
-                $_SESSION['flash_tipo'] = "success";
+            $consEsistente = (!empty($resCheck) && is_array($resCheck)) ? $resCheck[0] : null;
+
+            if ($consEsistente && !empty($consEsistente['completata'])) {
+                $_SESSION['flash_messaggio'] = "Impossibile eliminare un'azione già segnata come completata.";
+                $_SESSION['flash_tipo'] = "warning";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'eliminazione della consegna. (" . $ultimo_errore_supabase . ")";
-                $_SESSION['flash_tipo'] = "danger";
+                $res = supabase_gv_request(
+                    "giro_visita_consegne?id=eq." . rawurlencode($consegna_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato),
+                    'DELETE'
+                );
+                if ($res !== false) {
+                    $_SESSION['flash_messaggio'] = "Consegna eliminata.";
+                    $_SESSION['flash_tipo'] = "success";
+                } else {
+                    $_SESSION['flash_messaggio'] = "Errore durante l'eliminazione della consegna. (" . $ultimo_errore_supabase . ")";
+                    $_SESSION['flash_tipo'] = "danger";
+                }
             }
         }
         header("Location: " . $redirectUrl);
@@ -491,6 +512,9 @@ if (!empty($reparto_selezionato)) {
             $mappaUtenti[$u['id']] = $u;
         }
     }
+}
+if (!empty($utente_id) && !isset($mappaUtenti[$utente_id]) && $nome_utente_corrente !== '') {
+    $mappaUtenti[$utente_id] = ['id' => $utente_id, 'nome' => $nome_utente_corrente];
 }
 
 $personaleInTurno = [];
@@ -644,7 +668,8 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
         .card-letto.prio-dimissione { border-left-color: #0d6efd; }
         .card-letto.stato-visitato { border-left-color: #198754; }
         .consegna-item { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
-        .consegna-completata { opacity: 0.65; text-decoration: line-through; }
+        .consegna-item.consegna-fatta { background-color: #f0fdf4; border-color: #bbf7d0; }
+        .consegna-testo-fatto { opacity: 0.8; text-decoration: line-through; }
         .pill-turno { font-size: 0.75rem; background-color: #e2e8f0; color: #0f172a; border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
     </style>
 </head>
@@ -899,19 +924,37 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                                 $isComp = !empty($cons['completata']);
                                                 $autoreNome = $mappaUtenti[$cons['utente_id'] ?? '']['nome'] ?? '';
                                                 $assegnatoNome = $mappaUtenti[$cons['assegnato_a_id'] ?? '']['nome'] ?? '';
+                                                $completataDaNome = $mappaUtenti[$cons['completata_da_id'] ?? '']['nome'] ?? '';
+                                                if ($isComp && $completataDaNome === '') {
+                                                    $completataDaNome = 'Operatore';
+                                                }
+                                                $oraComp = ($isComp && !empty($cons['completata_at'])) ? date('H:i', strtotime($cons['completata_at'])) : '';
                                             ?>
-                                                <div class="consegna-item d-flex justify-content-between align-items-start gap-2">
-                                                    <div class="d-flex align-items-start gap-2 <?php echo $isComp ? 'consegna-completata' : ''; ?>">
-                                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0">
-                                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                                            <input type="hidden" name="azione" value="toggle_consegna">
-                                                            <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cons['id']); ?>">
-                                                            <input type="hidden" name="completata" value="<?php echo $isComp ? '0' : '1'; ?>">
-                                                            <input type="checkbox" class="form-check-input mt-1" <?php echo $isComp ? 'checked' : ''; ?> onchange="this.form.submit()" title="Segna completata">
-                                                        </form>
+                                                <div class="consegna-item d-flex justify-content-between align-items-start gap-2 <?php echo $isComp ? 'consegna-fatta' : ''; ?>">
+                                                    <div class="d-flex align-items-start gap-2">
+                                                        <?php if (!$isComp) { ?>
+                                                            <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0">
+                                                                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                                                <input type="hidden" name="azione" value="toggle_consegna">
+                                                                <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cons['id']); ?>">
+                                                                <input type="hidden" name="completata" value="1">
+                                                                <input type="checkbox" class="form-check-input mt-1" onchange="this.form.submit()" title="Segna come fatta">
+                                                            </form>
+                                                        <?php } else { ?>
+                                                            <input type="checkbox" class="form-check-input mt-1" checked disabled title="Azione completata e bloccata">
+                                                        <?php } ?>
                                                         <div class="small">
                                                             <span class="badge bg-info text-dark me-1"><?php echo htmlspecialchars($cons['tag_azione'] ?? 'Altro'); ?></span>
-                                                            <span class="text-dark"><?php echo htmlspecialchars($cons['nota'] ?? ''); ?></span>
+                                                            <span class="text-dark <?php echo $isComp ? 'consegna-testo-fatto' : ''; ?>"><?php echo htmlspecialchars($cons['nota'] ?? ''); ?></span>
+                                                            <?php if ($isComp) { ?>
+                                                                <div class="text-success fw-semibold mt-1" style="font-size: 0.73rem;">
+                                                                    <i class="bi bi-check-circle-fill"></i> Fatta da: <strong><?php echo htmlspecialchars($completataDaNome); ?></strong>
+                                                                    <?php if ($oraComp !== '') { ?>
+                                                                        <span>alle <?php echo htmlspecialchars($oraComp); ?></span>
+                                                                    <?php } ?>
+                                                                    <span class="text-muted fw-normal">&bull; Bloccata</span>
+                                                                </div>
+                                                            <?php } ?>
                                                             <?php if ($assegnatoNome !== '' || $autoreNome !== '') { ?>
                                                                 <div class="text-muted" style="font-size: 0.72rem;">
                                                                     <?php if ($assegnatoNome !== '') { ?>
@@ -924,14 +967,20 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                                             <?php } ?>
                                                         </div>
                                                     </div>
-                                                    <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0" onsubmit="return confirm('Eliminare questa consegna?');">
-                                                        <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                                        <input type="hidden" name="azione" value="elimina_consegna">
-                                                        <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cons['id']); ?>">
-                                                        <button type="submit" class="btn btn-xs btn-link text-danger p-0" title="Elimina consegna">
-                                                            <i class="bi bi-x-lg"></i>
-                                                        </button>
-                                                    </form>
+                                                    <?php if (!$isComp) { ?>
+                                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0" onsubmit="return confirm('Eliminare questa consegna?');">
+                                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                                            <input type="hidden" name="azione" value="elimina_consegna">
+                                                            <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cons['id']); ?>">
+                                                            <button type="submit" class="btn btn-xs btn-link text-danger p-0" title="Elimina consegna">
+                                                                <i class="bi bi-x-lg"></i>
+                                                            </button>
+                                                        </form>
+                                                    <?php } else { ?>
+                                                        <span class="text-success small" title="Azione completata: non eliminabile">
+                                                            <i class="bi bi-lock-fill"></i>
+                                                        </span>
+                                                    <?php } ?>
                                                 </div>
                                             <?php } ?>
                                         </div>
