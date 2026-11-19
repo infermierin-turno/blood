@@ -15,7 +15,12 @@ function is_uuid($v) {
     return is_string($v) && (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $v);
 }
 
+$ultimo_errore_supabase = '';
+
 function supabase_gv_request($endpoint, $method = 'GET', $data = null) {
+    global $ultimo_errore_supabase;
+    $ultimo_errore_supabase = '';
+
     $url = SUPABASE_URL . '/rest/v1/' . $endpoint;
     $ch = curl_init($url);
 
@@ -53,12 +58,17 @@ function supabase_gv_request($endpoint, $method = 'GET', $data = null) {
     curl_close($ch);
 
     if ($error) {
+        $ultimo_errore_supabase = "cURL: " . $error;
         error_log("Errore cURL Supabase (giro_visita): " . $error);
+        return $method === 'GET' ? [] : false;
     }
 
     if ($httpCode >= 200 && $httpCode < 300) {
         return json_decode($response, true);
     }
+
+    $ultimo_errore_supabase = "HTTP {$httpCode} - " . $response;
+    error_log("Errore HTTP Supabase (giro_visita) [{$httpCode}]: " . $response);
     return $method === 'GET' ? [] : false;
 }
 
@@ -171,7 +181,6 @@ if ($ricerca_testo !== '') {
 }
 $redirectUrl = "giro_visita.php?" . http_build_query($redirectParams);
 
-// Gestione azioni POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
     $csrf_token = $_POST['csrf'] ?? '';
     if (!hash_equals($_SESSION['csrf'], $csrf_token)) {
@@ -221,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = "Posto letto aggiornato.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento del posto letto.";
+                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento del posto letto. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
         } else {
@@ -244,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = "Nuovo posto letto / degente aggiunto.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'inserimento del posto letto.";
+                $_SESSION['flash_messaggio'] = "Errore durante l'inserimento del posto letto. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
@@ -268,7 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = "Stato aggiornato a: {$nuovo_stato}.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento rapido dello stato.";
+                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento rapido dello stato. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
@@ -295,8 +304,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = "Letto liberato / azzerato per nuovo ingresso.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'azzeramento del letto.";
+                $_SESSION['flash_messaggio'] = "Errore durante l'azzeramento del letto. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
+            }
+        }
+        header("Location: " . $redirectUrl);
+        exit;
+    }
+
+    if ($azione === 'dimetti_paziente') {
+        $posto_id = trim($_POST['posto_id'] ?? '');
+        if (is_uuid($posto_id)) {
+            $resLettura = supabase_gv_request(
+                "posti_letto_reparto?id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=*"
+            );
+            $plAttuale = (!empty($resLettura) && is_array($resLettura)) ? $resLettura[0] : null;
+
+            if ($plAttuale) {
+                $partiNota = ["Dimissione registrata"];
+                if (!empty($plAttuale['sigla_paziente'])) {
+                    $partiNota[] = "Sigla: " . trim($plAttuale['sigla_paziente']);
+                }
+                if (!empty($plAttuale['diagnosi_sintetica'])) {
+                    $partiNota[] = "Inquadramento: " . trim($plAttuale['diagnosi_sintetica']);
+                }
+                if (!empty($plAttuale['stato_visita'])) {
+                    $partiNota[] = "Stato all'uscita: " . trim($plAttuale['stato_visita']);
+                }
+                if (!empty($plAttuale['note_stato'])) {
+                    $partiNota[] = "Note: " . trim($plAttuale['note_stato']);
+                }
+                $notaDimissione = implode(" | ", $partiNota);
+
+                $resCons = supabase_gv_request("giro_visita_consegne", 'POST', [
+                    'organizzazione_id' => is_uuid($org_id_utente) ? $org_id_utente : null,
+                    'reparto_id' => $reparto_selezionato,
+                    'posto_letto_id' => $posto_id,
+                    'data_giro' => $data_giro,
+                    'utente_id' => is_uuid($utente_id) ? $utente_id : null,
+                    'assegnato_a_id' => null,
+                    'tag_azione' => 'Codice 56 / Riabilitazione',
+                    'nota' => $notaDimissione,
+                    'completata' => true,
+                    'completata_da_id' => is_uuid($utente_id) ? $utente_id : null,
+                    'completata_at' => date('c')
+                ]);
+
+                $resPatch = supabase_gv_request(
+                    "posti_letto_reparto?id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato),
+                    'PATCH',
+                    [
+                        'sigla_paziente' => '',
+                        'diagnosi_sintetica' => '',
+                        'stato_visita' => 'In attesa di visita',
+                        'priorita' => 'Normale',
+                        'note_stato' => '',
+                        'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null
+                    ]
+                );
+
+                if ($resPatch !== false && $resCons !== false) {
+                    $_SESSION['flash_messaggio'] = "Dimissione registrata nella giornata e posto letto liberato.";
+                    $_SESSION['flash_tipo'] = "success";
+                } elseif ($resPatch !== false) {
+                    $_SESSION['flash_messaggio'] = "Posto letto liberato, ma si è verificato un errore nel registrare la nota di dimissione. (" . $ultimo_errore_supabase . ")";
+                    $_SESSION['flash_tipo'] = "warning";
+                } else {
+                    $_SESSION['flash_messaggio'] = "Errore durante la dimissione del degente. (" . $ultimo_errore_supabase . ")";
+                    $_SESSION['flash_tipo'] = "danger";
+                }
             }
         }
         header("Location: " . $redirectUrl);
@@ -334,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = "Consegna operativa registrata.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante il salvataggio della consegna.";
+                $_SESSION['flash_messaggio'] = "Errore durante il salvataggio della consegna. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
@@ -361,7 +437,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = $nuovo_stato_comp ? "Consegna segnata come completata." : "Consegna riaperta.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento della consegna.";
+                $_SESSION['flash_messaggio'] = "Errore durante l'aggiornamento della consegna. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
@@ -380,7 +456,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 $_SESSION['flash_messaggio'] = "Consegna eliminata.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante l'eliminazione della consegna.";
+                $_SESSION['flash_messaggio'] = "Errore durante l'eliminazione della consegna. (" . $ultimo_errore_supabase . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
@@ -389,7 +465,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
     }
 }
 
-// Recupero operatori del reparto
 $mappaUtenti = [];
 if (!empty($reparto_selezionato)) {
     $resUt = supabase_gv_request("staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,squadra&order=nome.asc");
@@ -400,7 +475,6 @@ if (!empty($reparto_selezionato)) {
     }
 }
 
-// Recupero turni della data selezionata per mostrare il team in turno
 $personaleInTurno = [];
 $idsInTurno = [];
 if (!empty($reparto_selezionato)) {
@@ -437,7 +511,6 @@ if (!empty($reparto_selezionato)) {
     }
 }
 
-// Recupero posti letto attivi
 $postiLetto = [];
 if (!empty($reparto_selezionato)) {
     $resPL = supabase_gv_request("posti_letto_reparto?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&attivo=eq.true&select=*&order=ordine_letto.asc,stanza.asc,letto.asc");
@@ -446,7 +519,6 @@ if (!empty($reparto_selezionato)) {
     }
 }
 
-// Recupero consegne della data selezionata
 $consegnePerLetto = [];
 $totaleConsegneAperte = 0;
 if (!empty($reparto_selezionato)) {
@@ -464,7 +536,6 @@ if (!empty($reparto_selezionato)) {
     }
 }
 
-// Conteggi riepilogo stati
 $conteggiStati = [
     'totale' => count($postiLetto),
     'da_visitare' => 0,
@@ -486,7 +557,6 @@ foreach ($postiLetto as $pl) {
     }
 }
 
-// Applicazione filtri rapidi e ricerca
 $postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapido, $ricerca_testo, $consegnePerLetto) {
     $plId = $pl['id'] ?? '';
     $st = $pl['stato_visita'] ?? 'In attesa di visita';
@@ -575,7 +645,6 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
 
     <div class="container-fluid px-3 px-md-4">
 
-        <!-- Intestazione e filtri -->
         <div class="card p-3 mb-3">
             <div class="row g-3 align-items-center">
                 <div class="col-lg-4">
@@ -637,7 +706,6 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
             </div>
         <?php } else { ?>
 
-            <!-- Team in turno oggi -->
             <div class="card p-3 mb-3">
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                     <span class="fw-bold small text-secondary">
@@ -662,7 +730,6 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                 <?php } ?>
             </div>
 
-            <!-- Riepilogo e filtri rapidi -->
             <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
                 <?php
                 $filtriBottoni = [
@@ -688,7 +755,6 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                 <?php } ?>
             </div>
 
-            <!-- Griglia posti letto -->
             <?php if (empty($postiLettoFiltrati)) { ?>
                 <div class="card p-4 text-center text-muted">
                     <i class="bi bi-inbox fs-3 d-block mb-2"></i>
@@ -717,6 +783,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                         if ($labelPos === '') {
                             $labelPos = 'Posto letto';
                         }
+                        $haDegente = (!empty(trim($pl['sigla_paziente'] ?? '')) || !empty(trim($pl['diagnosi_sintetica'] ?? '')) || !empty(trim($pl['note_stato'] ?? '')));
                     ?>
                         <div class="col-12 col-md-6 col-xl-4">
                             <div class="card h-100 p-3 <?php echo $classeCard; ?>">
@@ -762,20 +829,31 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                     </div>
                                 <?php } ?>
 
-                                <!-- Azione rapida segna visitato -->
-                                <?php if ($statoAtt !== 'Visitato') { ?>
-                                    <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="mb-2">
-                                        <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                        <input type="hidden" name="azione" value="stato_rapido">
-                                        <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
-                                        <input type="hidden" name="stato_visita" value="Visitato">
-                                        <button type="submit" class="btn btn-sm btn-outline-success w-100 py-1 fw-semibold">
-                                            <i class="bi bi-check2-circle"></i> Segna Visitato
-                                        </button>
-                                    </form>
-                                <?php } ?>
+                                <div class="d-flex gap-2 mb-2">
+                                    <?php if ($statoAtt !== 'Visitato') { ?>
+                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="flex-fill m-0">
+                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                            <input type="hidden" name="azione" value="stato_rapido">
+                                            <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
+                                            <input type="hidden" name="stato_visita" value="Visitato">
+                                            <button type="submit" class="btn btn-sm btn-outline-success w-100 py-1 fw-semibold">
+                                                <i class="bi bi-check2-circle"></i> Visitato
+                                            </button>
+                                        </form>
+                                    <?php } ?>
 
-                                <!-- Consegne legate al posto letto -->
+                                    <?php if ($haDegente || in_array($statoAtt, ['Dimissione in valutazione', 'Dimissione protetta'], true) || $prioAtt === 'Dimissione') { ?>
+                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="flex-fill m-0" onsubmit="return confirm('Confermi la dimissione per <?php echo htmlspecialchars($labelPos, ENT_QUOTES); ?>? Verrà salvata una nota di dimissione nella giornata e il letto verrà liberato.');">
+                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                            <input type="hidden" name="azione" value="dimetti_paziente">
+                                            <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary w-100 py-1 fw-semibold">
+                                                <i class="bi bi-box-arrow-right"></i> Dimetti
+                                            </button>
+                                        </form>
+                                    <?php } ?>
+                                </div>
+
                                 <div class="mt-auto pt-2 border-top">
                                     <div class="d-flex justify-content-between align-items-center mb-1">
                                         <span class="small fw-bold text-secondary">Consegne del giorno (<?php echo count($consLetto); ?>)</span>
@@ -839,7 +917,6 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
         <?php } ?>
     </div>
 
-    <!-- MODALE POSTO LETTO / STATO GIRO VISITA -->
     <div class="modal fade" id="modalLetto" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -920,7 +997,6 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
         </div>
     </div>
 
-    <!-- MODALE NUOVA CONSEGNA -->
     <div class="modal fade" id="modalConsegna" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
