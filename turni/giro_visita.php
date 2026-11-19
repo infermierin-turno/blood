@@ -158,13 +158,16 @@ $statiVisita = [
 
 $tagAzioni = [
     'Mobilizzazione',
-    'Antidolorifica',
+    'Controllo CV',
+    'Controllo CVC',
+    'Controllo CV',
+    'Terapia Antidolorifica',
     'Medicazione',
-    'Sala Operatoria',
-    'Codice 56 / Riabilitazione',
-    'Consulenza/Esami',
-    'Fisioterapia',
-    'Altro'
+    'In attesa intervento',
+    'Controllare esami/consulenza',
+    'Inviata mail per dimissione in struttura',
+    'In attesa decisione parenti su tipo dimissione',
+    'Contattati Assistenti Sociali'
 ];
 
 $prioritaValide = ['Normale', 'Urgente', 'Dimissione'];
