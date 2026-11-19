@@ -288,6 +288,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
     if ($azione === 'libera_letto') {
         $posto_id = trim($_POST['posto_id'] ?? '');
         if (is_uuid($posto_id)) {
+            // Rimuove le consegne del giorno collegate al letto liberato così non restano righe barrate del degente precedente
+            supabase_gv_request(
+                "giro_visita_consegne?posto_letto_id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro),
+                'DELETE'
+            );
+
             $res = supabase_gv_request(
                 "posti_letto_reparto?id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato),
                 'PATCH',
@@ -301,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 ]
             );
             if ($res !== false) {
-                $_SESSION['flash_messaggio'] = "Letto liberato / azzerato per nuovo ingresso.";
+                $_SESSION['flash_messaggio'] = "Letto liberato e consegne del degente rimosse dalla card.";
                 $_SESSION['flash_tipo'] = "success";
             } else {
                 $_SESSION['flash_messaggio'] = "Errore durante l'azzeramento del letto. (" . $ultimo_errore_supabase . ")";
@@ -336,6 +342,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 }
                 $notaDimissione = implode(" | ", $partiNota);
 
+                // Ripulisce le vecchie consegne del paziente uscente sul letto prima di liberarlo
+                supabase_gv_request(
+                    "giro_visita_consegne?posto_letto_id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro),
+                    'DELETE'
+                );
+
+                // Registra una voce dedicata alla dimissione della giornata
                 $resCons = supabase_gv_request("giro_visita_consegne", 'POST', [
                     'organizzazione_id' => is_uuid($org_id_utente) ? $org_id_utente : null,
                     'reparto_id' => $reparto_selezionato,
@@ -345,9 +358,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                     'assegnato_a_id' => null,
                     'tag_azione' => 'Codice 56 / Riabilitazione',
                     'nota' => $notaDimissione,
-                    'completata' => true,
-                    'completata_da_id' => is_uuid($utente_id) ? $utente_id : null,
-                    'completata_at' => date('c')
+                    'completata' => false,
+                    'completata_da_id' => null,
+                    'completata_at' => null
                 ]);
 
                 $resPatch = supabase_gv_request(
@@ -843,7 +856,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                     <?php } ?>
 
                                     <?php if ($haDegente || in_array($statoAtt, ['Dimissione in valutazione', 'Dimissione protetta'], true) || $prioAtt === 'Dimissione') { ?>
-                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="flex-fill m-0" onsubmit="return confirm('Confermi la dimissione per <?php echo htmlspecialchars($labelPos, ENT_QUOTES); ?>? Verrà salvata una nota di dimissione nella giornata e il letto verrà liberato.');">
+                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="flex-fill m-0" onsubmit="return confirm('Confermi la dimissione per <?php echo htmlspecialchars($labelPos, ENT_QUOTES); ?>? Verrà salvata una nota di dimissione nella giornata, rimosse le consegne del degente uscente e liberato il letto.');">
                                             <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                                             <input type="hidden" name="azione" value="dimetti_paziente">
                                             <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
