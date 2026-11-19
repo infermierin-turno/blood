@@ -158,9 +158,10 @@ $statiVisita = [
 // Voci rapide per le consegne: basta aggiungere qui nuove voci
 $tagAzioni = [
     'Mobilizzazione',
+    'Cambio CV',
     'Antidolorifica',
     'Medicazione',
-    'Sala Operatoria',
+    'In attesa intervento',
     'Codice 56 / Riabilitazione',
     'Consulenza/Esami',
     'Fisioterapia',
