@@ -155,6 +155,7 @@ $statiVisita = [
     'Dimissione protetta'        => ['badge' => 'bg-dark',      'icon' => 'bi-shield-check']
 ];
 
+// Voci rapide per le consegne: basta aggiungere qui nuove voci
 $tagAzioni = [
     'Mobilizzazione',
     'Antidolorifica',
@@ -162,6 +163,7 @@ $tagAzioni = [
     'Sala Operatoria',
     'Codice 56 / Riabilitazione',
     'Consulenza/Esami',
+    'Fisioterapia',
     'Altro'
 ];
 
@@ -288,7 +290,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
     if ($azione === 'libera_letto') {
         $posto_id = trim($_POST['posto_id'] ?? '');
         if (is_uuid($posto_id)) {
-            // Rimuove le consegne del giorno collegate al letto liberato così non restano righe barrate del degente precedente
             supabase_gv_request(
                 "giro_visita_consegne?posto_letto_id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro),
                 'DELETE'
@@ -327,7 +328,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
             $plAttuale = (!empty($resLettura) && is_array($resLettura)) ? $resLettura[0] : null;
 
             if ($plAttuale) {
-                $partiNota = ["Dimissione registrata"];
+                $labelLettoUscita = trim(($plAttuale['stanza'] ?? '') . ' - ' . ($plAttuale['letto'] ?? ''), ' -');
+                if ($labelLettoUscita === '') {
+                    $labelLettoUscita = 'Posto letto';
+                }
+
+                $partiNota = ["Dimissione registrata", "Postazione: " . $labelLettoUscita];
                 if (!empty($plAttuale['sigla_paziente'])) {
                     $partiNota[] = "Sigla: " . trim($plAttuale['sigla_paziente']);
                 }
@@ -342,13 +348,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 }
                 $notaDimissione = implode(" | ", $partiNota);
 
-                // Ripulisce le vecchie consegne del paziente uscente sul letto prima di liberarlo
                 supabase_gv_request(
                     "giro_visita_consegne?posto_letto_id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro),
                     'DELETE'
                 );
 
-                // Registra una voce dedicata alla dimissione della giornata
                 $resCons = supabase_gv_request("giro_visita_consegne", 'POST', [
                     'organizzazione_id' => is_uuid($org_id_utente) ? $org_id_utente : null,
                     'reparto_id' => $reparto_selezionato,
@@ -377,7 +381,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 );
 
                 if ($resPatch !== false && $resCons !== false) {
-                    $_SESSION['flash_messaggio'] = "Dimissione registrata nella giornata e posto letto liberato.";
+                    $_SESSION['flash_messaggio'] = "Dimissione registrata nel riquadro di fine pagina e posto letto liberato.";
                     $_SESSION['flash_tipo'] = "success";
                 } elseif ($resPatch !== false) {
                     $_SESSION['flash_messaggio'] = "Posto letto liberato, ma si è verificato un errore nel registrare la nota di dimissione. (" . $ultimo_errore_supabase . ")";
@@ -398,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
         $nota = trim($_POST['nota'] ?? '');
         $assegnato_a = trim($_POST['assegnato_a_id'] ?? '');
 
-        if (!in_array($tag_azione, $tagAzioni, true)) {
+        if ($tag_azione === '') {
             $tag_azione = 'Altro';
         }
         $assegnatoUuid = is_uuid($assegnato_a) ? $assegnato_a : null;
@@ -533,11 +537,18 @@ if (!empty($reparto_selezionato)) {
 }
 
 $consegnePerLetto = [];
+$dimissioniGiorno = [];
 $totaleConsegneAperte = 0;
 if (!empty($reparto_selezionato)) {
     $resCons = supabase_gv_request("giro_visita_consegne?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro) . "&select=*&order=completata.asc,created_at.desc");
     if (is_array($resCons)) {
         foreach ($resCons as $c) {
+            $notaTesto = trim($c['nota'] ?? '');
+            $isDimissione = (mb_stripos($notaTesto, 'Dimissione registrata') === 0);
+            if ($isDimissione) {
+                $dimissioniGiorno[] = $c;
+                continue;
+            }
             $plId = $c['posto_letto_id'] ?? '';
             if ($plId !== '') {
                 $consegnePerLetto[$plId][] = $c;
@@ -719,28 +730,32 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
             </div>
         <?php } else { ?>
 
-            <div class="card p-3 mb-3">
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                    <span class="fw-bold small text-secondary">
-                        <i class="bi bi-people-fill text-primary"></i> Team in turno nel giorno <?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>:
-                    </span>
+            <div class="card p-2 px-3 mb-3">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <button class="btn btn-sm btn-outline-secondary fw-semibold d-inline-flex align-items-center gap-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTeamInTurno" aria-expanded="false" aria-controls="collapseTeamInTurno">
+                        <i class="bi bi-people-fill text-primary"></i>
+                        <span>Team in turno (<?php echo count($personaleInTurno); ?>)</span>
+                        <i class="bi bi-chevron-down small"></i>
+                    </button>
                     <span class="small text-muted">Consegne aperte oggi: <strong class="text-danger"><?php echo intval($totaleConsegneAperte); ?></strong></span>
                 </div>
-                <?php if (empty($personaleInTurno)) { ?>
-                    <div class="small text-muted fst-italic">Nessun operatore registrato in pianificazione per la data selezionata (esclusi riposi/assenze).</div>
-                <?php } else { ?>
-                    <div class="d-flex flex-wrap gap-2">
-                        <?php foreach ($personaleInTurno as $pt) { ?>
-                            <span class="pill-turno">
-                                <strong><?php echo htmlspecialchars($pt['nome']); ?></strong>
-                                <?php if (!empty($pt['ruolo'])) { ?>
-                                    <span class="text-muted">(<?php echo htmlspecialchars($pt['ruolo']); ?>)</span>
-                                <?php } ?>
-                                <span class="badge bg-primary"><?php echo htmlspecialchars(implode('/', $pt['turni'])); ?></span>
-                            </span>
-                        <?php } ?>
-                    </div>
-                <?php } ?>
+                <div class="collapse mt-2" id="collapseTeamInTurno">
+                    <?php if (empty($personaleInTurno)) { ?>
+                        <div class="small text-muted fst-italic">Nessun operatore registrato in pianificazione per la data selezionata (esclusi riposi/assenze).</div>
+                    <?php } else { ?>
+                        <div class="d-flex flex-wrap gap-2 pt-1 border-top">
+                            <?php foreach ($personaleInTurno as $pt) { ?>
+                                <span class="pill-turno">
+                                    <strong><?php echo htmlspecialchars($pt['nome']); ?></strong>
+                                    <?php if (!empty($pt['ruolo'])) { ?>
+                                        <span class="text-muted">(<?php echo htmlspecialchars($pt['ruolo']); ?>)</span>
+                                    <?php } ?>
+                                    <span class="badge bg-primary"><?php echo htmlspecialchars(implode('/', $pt['turni'])); ?></span>
+                                </span>
+                            <?php } ?>
+                        </div>
+                    <?php } ?>
+                </div>
             </div>
 
             <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
@@ -926,6 +941,49 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                     <?php } ?>
                 </div>
             <?php } ?>
+
+            <div class="card p-3 mt-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <h5 class="mb-0 fw-bold text-dark fs-6 d-flex align-items-center gap-2">
+                        <i class="bi bi-journal-check text-primary"></i> Dimissioni registrate nel giorno <?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>
+                    </h5>
+                    <span class="badge bg-primary"><?php echo count($dimissioniGiorno); ?></span>
+                </div>
+
+                <?php if (empty($dimissioniGiorno)) { ?>
+                    <div class="small text-muted fst-italic">Nessuna dimissione registrata per la data selezionata.</div>
+                <?php } else { ?>
+                    <div class="d-flex flex-column gap-2">
+                        <?php foreach ($dimissioniGiorno as $dim) {
+                            $autoreDim = $mappaUtenti[$dim['utente_id'] ?? '']['nome'] ?? '';
+                            $oraDim = !empty($dim['created_at']) ? date('H:i', strtotime($dim['created_at'])) : '';
+                        ?>
+                            <div class="consegna-item d-flex justify-content-between align-items-start gap-2">
+                                <div class="small">
+                                    <span class="badge bg-primary me-1">Dimissione</span>
+                                    <span class="text-dark"><?php echo htmlspecialchars($dim['nota'] ?? ''); ?></span>
+                                    <div class="text-muted" style="font-size: 0.72rem;">
+                                        <?php if ($oraDim !== '') { ?>
+                                            <span>Ore <?php echo htmlspecialchars($oraDim); ?></span>
+                                        <?php } ?>
+                                        <?php if ($autoreDim !== '') { ?>
+                                            <span><?php echo $oraDim !== '' ? ' &bull; ' : ''; ?>Registrata da: <strong><?php echo htmlspecialchars($autoreDim); ?></strong></span>
+                                        <?php } ?>
+                                    </div>
+                                </div>
+                                <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0" onsubmit="return confirm('Rimuovere questa nota di dimissione dal riepilogo del giorno?');">
+                                    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                    <input type="hidden" name="azione" value="elimina_consegna">
+                                    <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($dim['id']); ?>">
+                                    <button type="submit" class="btn btn-xs btn-link text-danger p-0" title="Elimina nota dimissione">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        <?php } ?>
+                    </div>
+                <?php } ?>
+            </div>
 
         <?php } ?>
     </div>
