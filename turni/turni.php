@@ -15,10 +15,15 @@ function is_uuid($v) {
     return is_string($v) && (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $v);
 }
 
+$ultimo_errore_turni = '';
+
 function supabase_turni_request($endpoint, $method = 'GET', $data = null) {
+    global $ultimo_errore_turni;
+    $ultimo_errore_turni = '';
+
     $url = SUPABASE_URL . '/rest/v1/' . $endpoint;
     $ch = curl_init($url);
-    
+
     $headers = [
         'apikey: ' . SUPABASE_KEY,
         'Authorization: Bearer ' . SUPABASE_KEY,
@@ -29,36 +34,46 @@ function supabase_turni_request($endpoint, $method = 'GET', $data = null) {
 
     if ($method === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
-        if ($data) {
+        if ($data !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
         $headers[] = 'Prefer: return=representation';
     } elseif ($method === 'PATCH') {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
-        if ($data) {
+        if ($data !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
         $headers[] = 'Prefer: return=representation';
     } elseif ($method === 'DELETE') {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        $headers[] = 'Prefer: return=representation';
     }
 
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    
+
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
     curl_close($ch);
 
     if ($error) {
+        $ultimo_errore_turni = "cURL: " . $error;
         error_log("Errore cURL Supabase: " . $error);
+        return $method === 'GET' ? [] : false;
     }
 
     if ($httpCode >= 200 && $httpCode < 300) {
-        return json_decode($response, true);
+        if ($response === '' || $response === null) {
+            return [];
+        }
+        $decoded = json_decode($response, true);
+        return is_array($decoded) ? $decoded : [];
     }
+
+    $ultimo_errore_turni = "HTTP {$httpCode} - " . $response;
+    error_log("Errore HTTP Supabase [{$httpCode}]: " . $response);
     return $method === 'GET' ? [] : false;
 }
 
@@ -74,7 +89,7 @@ function call_python_engine_genera($payload = []) {
         'Accept: application/json'
     ]);
     curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-    
+
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
     }
@@ -95,8 +110,8 @@ function call_python_engine_genera($payload = []) {
     }
 
     return [
-        'success' => false, 
-        'error' => "HTTP Code: $httpCode", 
+        'success' => false,
+        'error' => "HTTP Code: $httpCode",
         'response' => $response,
         'raw_output' => $response
     ];
@@ -222,7 +237,7 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
     $inizioGiorno = $data_str . ' 00:00:00';
     $fineGiorno = $data_str . ' 23:59:59';
     $urlGiorno = "pianificazione?utente_id=eq." . rawurlencode($utente_id) . "&data_inizio=gte." . urlencode($inizioGiorno) . "&data_inizio=lte." . urlencode($fineGiorno) . "&select=*";
-    
+
     $turniGiorno = supabase_turni_request($urlGiorno);
     if (!is_array($turniGiorno)) {
         $turniGiorno = [];
@@ -238,8 +253,10 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
     $turniEsistentiCodici = [];
 
     foreach ($turniGiorno as $tg) {
-        $tipoEsistente = strtoupper(trim($tg['tipo_evento']));
-        $turniEsistentiCodici[] = $tipoEsistente;
+        $tipoEsistente = strtoupper(trim($tg['tipo_evento'] ?? ''));
+        if ($tipoEsistente !== '') {
+            $turniEsistentiCodici[] = $tipoEsistente;
+        }
     }
 
     if (!empty($turniEsistentiCodici)) {
@@ -247,38 +264,27 @@ function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_esclu
             $esistente = $turniEsistentiCodici[0];
             $consentito = false;
 
-            // Regole standard M e P
             if ($esistente === 'M' && $nuovoCodiceUpper === 'P') {
                 $consentito = true;
             } elseif ($esistente === 'P' && $nuovoCodiceUpper === 'M') {
                 $consentito = true;
-            }
-            // STP su Mattina (M)
-            elseif ($esistente === 'M' && $nuovoCodiceUpper === 'STP') {
+            } elseif ($esistente === 'M' && $nuovoCodiceUpper === 'STP') {
                 $consentito = true;
             } elseif ($esistente === 'STP' && $nuovoCodiceUpper === 'M') {
                 $consentito = true;
-            }
-            // STM su Pomeriggio (P)
-            elseif ($esistente === 'P' && $nuovoCodiceUpper === 'STM') {
+            } elseif ($esistente === 'P' && $nuovoCodiceUpper === 'STM') {
                 $consentito = true;
             } elseif ($esistente === 'STM' && $nuovoCodiceUpper === 'P') {
                 $consentito = true;
-            }
-            // RDM (Rientro Diurno Mattina) sui festivi in aggiunta al Pomeriggio (P)
-            elseif ($esistente === 'P' && $nuovoCodiceUpper === 'RDM') {
+            } elseif ($esistente === 'P' && $nuovoCodiceUpper === 'RDM') {
                 $consentito = true;
             } elseif ($esistente === 'RDM' && $nuovoCodiceUpper === 'P') {
                 $consentito = true;
-            }
-            // RDP (Rientro Diurno Pomeriggio) sui festivi in aggiunta alla Mattina (M)
-            elseif ($esistente === 'M' && $nuovoCodiceUpper === 'RDP') {
+            } elseif ($esistente === 'M' && $nuovoCodiceUpper === 'RDP') {
                 $consentito = true;
             } elseif ($esistente === 'RDP' && $nuovoCodiceUpper === 'M') {
                 $consentito = true;
-            }
-            // RN (Riposo/Smonto Notte) consentito sullo Smonto (S)
-            elseif ($esistente === 'S' && $nuovoCodiceUpper === 'RN') {
+            } elseif ($esistente === 'S' && $nuovoCodiceUpper === 'RN') {
                 $consentito = true;
             } elseif ($esistente === 'RN' && $nuovoCodiceUpper === 'S') {
                 $consentito = true;
@@ -372,11 +378,11 @@ if (!empty($filtro_squadra)) {
 usort($listaCollaboratori, function($a, $b) {
     $sqA = trim($a['squadra'] ?? 'Senza Squadra');
     $sqB = trim($b['squadra'] ?? 'Senza Squadra');
-    
+
     if ($sqA !== $sqB) {
         return strcasecmp($sqA, $sqB);
     }
-    
+
     return strcasecmp($a['nome'] ?? '', $b['nome'] ?? '');
 });
 
@@ -395,6 +401,14 @@ $primo_giorno_tab = sprintf('%04d-%02d-01', $anno_selezionato, $mese_selezionato
 $ultimo_giorno_tab = sprintf('%04d-%02d-%d', $anno_selezionato, $mese_selezionato, $giorni_nel_mese);
 $timestampPrimoGiornoProssimo = mktime(0, 0, 0, $mese_selezionato + 1, 1, $anno_selezionato);
 $primo_giorno_prossimo_tab = date('Y-m-d', $timestampPrimoGiornoProssimo);
+
+$redirectQueryTurni = http_build_query([
+    'mese' => $mese_selezionato,
+    'anno' => $anno_selezionato,
+    'reparto_id' => $reparto_selezionato,
+    'filtro_ruolo' => $filtro_ruolo,
+    'filtro_squadra' => $filtro_squadra
+]);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf_token = $_POST['csrf'] ?? '';
@@ -417,11 +431,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $protetti = '(F,FERIE,104,PE,PER,PERMESSO,FOR,CORSO)';
             $queryDel = "pianificazione?utente_id=in.($idsEsc)&data_inizio=gte.$primo_giorno_tab&data_inizio=lt.$primo_giorno_prossimo_tab&tipo_evento=not.in.$protetti";
             supabase_turni_request($queryDel, 'DELETE');
-            
+
             $_SESSION['flash_messaggio'] = "Pulizia completata con successo (Ferie e permessi protetti).";
             $_SESSION['flash_tipo'] = "success";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 
@@ -431,31 +445,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $protetti = '(F,FERIE,104,PE,PER,PERMESSO,FOR,CORSO)';
             $queryDelOp = "pianificazione?utente_id=eq." . rawurlencode($utente_target_id) . "&data_inizio=gte.$primo_giorno_tab&data_inizio=lt.$primo_giorno_prossimo_tab&tipo_evento=not.in.$protetti";
             supabase_turni_request($queryDelOp, 'DELETE');
-            
+
             $_SESSION['flash_messaggio'] = "Mese pulito con successo per l'operatore selezionato.";
             $_SESSION['flash_tipo'] = "success";
         } else {
             $_SESSION['flash_messaggio'] = "Operatore non valido o non autorizzato.";
             $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 
     if ($azione === 'cancella_turno_cella') {
         $turno_id = trim($_POST['turno_id'] ?? '');
         if (is_uuid($turno_id)) {
-            $idsEsc = !empty($idsUtentiReparto) ? implode(',', array_map('rawurlencode', $idsUtentiReparto)) : '00000000-0000-0000-0000-000000000000';
-            $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id) . "&utente_id=in.($idsEsc)", 'DELETE');
-            if ($res !== false) {
+            $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id), 'DELETE');
+            if ($res !== false && count($res) > 0) {
                 $_SESSION['flash_messaggio'] = "Turno cancellato con successo!";
                 $_SESSION['flash_tipo'] = "success";
+            } elseif ($res !== false) {
+                $_SESSION['flash_messaggio'] = "Nessun turno trovato con ID specificato (potrebbe essere già stato eliminato).";
+                $_SESSION['flash_tipo'] = "warning";
             } else {
-                $_SESSION['flash_messaggio'] = "Errore durante la cancellazione del turno.";
+                $_SESSION['flash_messaggio'] = "Errore durante la cancellazione del turno. (" . $ultimo_errore_turni . ")";
                 $_SESSION['flash_tipo'] = "danger";
             }
+        } else {
+            $_SESSION['flash_messaggio'] = "ID turno non valido.";
+            $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 
@@ -464,12 +483,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data_cell = trim($_POST['data'] ?? '');
         $nuovo_valore = strtoupper(trim($_POST['valore'] ?? ''));
 
-        if (is_uuid($utente_cell) && in_array($utente_cell, $idsUtentiReparto) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data_cell) && in_array($nuovo_valore, $validCodiciTurno)) {
+        if (is_uuid($utente_cell) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data_cell) && in_array($nuovo_valore, $validCodiciTurno)) {
             $checkVincoli = verificaVincoliTurno($utente_cell, $data_cell, $nuovo_valore);
             if ($checkVincoli === true) {
                 $repIdAssegnato = $mappaUtenti[$utente_cell]['reparto_id'] ?? $reparto_id_utente;
                 $orgIdAssegnato = $mappaUtenti[$utente_cell]['organizzazione_id'] ?? $org_id_utente;
-                
+
                 $datiPost = [
                     'organizzazione_id' => !empty($orgIdAssegnato) ? $orgIdAssegnato : null,
                     'reparto_id' => !empty($repIdAssegnato) ? $repIdAssegnato : null,
@@ -485,7 +504,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['flash_messaggio'] = "Turno aggiunto con successo!";
                     $_SESSION['flash_tipo'] = "success";
                 } else {
-                    $_SESSION['flash_messaggio'] = "Errore durante l'inserimento del turno nel database.";
+                    $_SESSION['flash_messaggio'] = "Errore durante l'inserimento del turno nel database. (" . $ultimo_errore_turni . ")";
                     $_SESSION['flash_tipo'] = "danger";
                 }
             } else {
@@ -496,7 +515,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_messaggio'] = "Dati non validi per l'inserimento.";
             $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 
@@ -507,7 +526,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $nuovo_valore = strtoupper(trim($_POST['valore'] ?? ''));
         $nuovo_stato = trim($_POST['stato'] ?? 'Approvato');
 
-        if (is_uuid($turno_id) && is_uuid($utente_cell) && in_array($utente_cell, $idsUtentiReparto) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data_cell) && in_array($nuovo_valore, $validCodiciTurno)) {
+        if (is_uuid($turno_id) && is_uuid($utente_cell) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data_cell) && in_array($nuovo_valore, $validCodiciTurno)) {
             $checkVincoli = verificaVincoliTurno($utente_cell, $data_cell, $nuovo_valore, $turno_id);
             if ($checkVincoli === true) {
                 $datiPatch = [
@@ -515,13 +534,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'stato' => in_array($nuovo_stato, ['Approvato', 'In attesa', 'Rifiutato']) ? $nuovo_stato : 'Approvato',
                     'note' => !empty($nota_input) ? $nota_input : 'Modificato da modale tabellone'
                 ];
-                $idsEsc = implode(',', array_map('rawurlencode', $idsUtentiReparto));
-                $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id) . "&utente_id=in.($idsEsc)", 'PATCH', $datiPatch);
-                if ($res !== false) {
+                $res = supabase_turni_request("pianificazione?id=eq." . rawurlencode($turno_id), 'PATCH', $datiPatch);
+                if ($res !== false && count($res) > 0) {
                     $_SESSION['flash_messaggio'] = "Turno aggiornato con successo!";
                     $_SESSION['flash_tipo'] = "success";
+                } elseif ($res !== false) {
+                    $_SESSION['flash_messaggio'] = "Nessun record aggiornato su Supabase per questo turno.";
+                    $_SESSION['flash_tipo'] = "warning";
                 } else {
-                    $_SESSION['flash_messaggio'] = "Errore durante la modifica del turno.";
+                    $_SESSION['flash_messaggio'] = "Errore durante la modifica del turno. (" . $ultimo_errore_turni . ")";
                     $_SESSION['flash_tipo'] = "danger";
                 }
             } else {
@@ -532,7 +553,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash_messaggio'] = "Dati non validi per la modifica.";
             $_SESSION['flash_tipo'] = "danger";
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 
@@ -547,7 +568,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($checkVincoli === true) {
                 $repIdAss = $mappaUtenti[$collaboratore_selezionato]['reparto_id'] ?? $reparto_id_utente;
                 $orgIdAss = $mappaUtenti[$collaboratore_selezionato]['organizzazione_id'] ?? $org_id_utente;
-                
+
                 $datiPianificazione = [
                     'organizzazione_id' => !empty($orgIdAss) ? $orgIdAss : null,
                     'reparto_id' => !empty($repIdAss) ? $repIdAss : null,
@@ -572,23 +593,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['flash_tipo'] = "danger";
             }
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 
     if ($azione === 'genera_turni_ai') {
         $data_inizio_gen = trim($_POST['data_inizio_gen'] ?? '');
         $data_fine_gen = trim($_POST['data_fine_gen'] ?? '');
-        $collaboratore_gen = trim($_POST['collaboratore_gen'] ?? ''); 
-        $turno_partenza = strtoupper(trim($_POST['turno_partenza'] ?? '')); 
+        $collaboratore_gen = trim($_POST['collaboratore_gen'] ?? '');
+        $turno_partenza = strtoupper(trim($_POST['turno_partenza'] ?? ''));
         $sequenza_custom = trim($_POST['sequenza_turni'] ?? '');
-        $riposo_domenicale = isset($_POST['riposo_domenicale']) ? true : false; 
+        $riposo_domenicale = isset($_POST['riposo_domenicale']) ? true : false;
         $rispetta_ferie = isset($_POST['rispetta_ferie']) ? true : false;
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $data_inizio_gen) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $data_fine_gen) && $data_inizio_gen <= $data_fine_gen) {
             $clean_org_id = (!empty($org_id_utente)) ? $org_id_utente : null;
             $clean_rep_id = (!empty($reparto_selezionato)) ? $reparto_selezionato : null;
-            
+
             $operatori_target = [];
             if (!empty($collaboratore_gen) && is_uuid($collaboratore_gen) && in_array($collaboratore_gen, $idsUtentiReparto)) {
                 $operatori_target = [$collaboratore_gen];
@@ -619,7 +640,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'turno_partenza' => (!empty($turno_partenza) && in_array($turno_partenza, $validCodiciTurno)) ? $turno_partenza : null,
                     'sequenza_turni' => !empty($sequenza_array) ? $sequenza_array : ['M', 'P', 'N', 'S', 'R'],
                     'rispetta_ferie' => $rispetta_ferie,
-                    'riposo_domenicale' => $riposo_domenicale 
+                    'riposo_domenicale' => $riposo_domenicale
                 ];
 
                 $risultatoAI = call_python_engine_genera($payloadAI);
@@ -633,7 +654,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-        header("Location: turni.php?" . http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra]));
+        header("Location: turni.php?" . $redirectQueryTurni);
         exit;
     }
 }
@@ -664,8 +685,9 @@ if (is_array($turniMeseData)) {
         $giornoNum = intval(date('d', strtotime($tm['data_inizio'])));
         $mappaTurniGriglia[$uId][$giornoNum][] = [
             'id' => $tm['id'],
-            'tipo_evento' => $tm['tipo_evento'],
+            'tipo_evento' => strtoupper(trim($tm['tipo_evento'] ?? '')),
             'stato' => $tm['stato'] ?? 'Approvato',
+            'note' => $tm['note'] ?? '',
             'fonte' => 'pianificazione'
         ];
     }
@@ -674,18 +696,18 @@ if (is_array($turniMeseData)) {
 if (is_array($assenzeMeseData)) {
     foreach ($assenzeMeseData as $as) {
         $uId = $as['utente_id'];
-        $tipoEvento = $as['tipo_evento'] ?? $as['tipo_assenza'] ?? 'F';
+        $tipoEvento = strtoupper(trim($as['tipo_evento'] ?? $as['tipo_assenza'] ?? 'F'));
         $statoAssenza = $as['stato'] ?? 'In attesa';
-        
+
         $dInizio = max($primo_giorno_tab, substr($as['data_inizio'], 0, 10));
         $dFine = min($ultimo_giorno_tab, substr($as['data_fine'] ?? $as['data_inizio'], 0, 10));
-        
+
         $currentTimestamp = strtotime($dInizio);
         $endTimestamp = strtotime($dFine);
-        
+
         while ($currentTimestamp <= $endTimestamp) {
             $giornoNum = intval(date('d', $currentTimestamp));
-            
+
             $giaPresente = false;
             if (isset($mappaTurniGriglia[$uId][$giornoNum])) {
                 foreach ($mappaTurniGriglia[$uId][$giornoNum] as $evEsistente) {
@@ -695,16 +717,17 @@ if (is_array($assenzeMeseData)) {
                     }
                 }
             }
-            
+
             if (!$giaPresente) {
                 $mappaTurniGriglia[$uId][$giornoNum][] = [
                     'id' => $as['id'] ?? 'ass_' . rand(1000,9999),
                     'tipo_evento' => $tipoEvento,
                     'stato' => $statoAssenza,
+                    'note' => $as['note'] ?? '',
                     'fonte' => 'assenze'
                 ];
             }
-            
+
             $currentTimestamp = strtotime('+1 day', $currentTimestamp);
         }
     }
@@ -724,18 +747,18 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
     <style>
         body { background-color: #f1f5f9; padding-bottom: 70px; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
         .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); background: #ffffff; }
-        
+
         .table-turni { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; }
         .table-turni th, .table-turni td { text-align: center; vertical-align: middle; font-size: 0.73rem; padding: 2px 2px !important; line-height: 1.1; border-color: #e2e8f0 !important; overflow: hidden; }
         .table-turni tbody tr { transition: background-color 0.15s ease; height: 32px; }
         .table-turni tbody tr:hover:not(.tr-sezione-squadra) { background-color: #f8fafc !important; }
-        
+
         .cella-interattiva { cursor: pointer; white-space: nowrap; display: table-cell; vertical-align: middle; text-align: center; height: 32px; }
         .cella-interattiva:hover { background-color: #e2e8f0 !important; }
-        
+
         .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
         .tr-sezione-squadra td { background-color: #e2e8f0 !important; font-weight: bold; text-align: left !important; padding: 6px 10px !important; font-size: 0.8rem; color: #334155; border-top: 2px solid #cbd5e1 !important; }
-        
+
         .badge-container { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2px; }
 
         .badge-turno {
@@ -768,7 +791,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
     </nav>
 
     <div class="container-fluid px-4">
-        
+
         <div class="card shadow-sm mb-4 p-3">
             <div class="row align-items-center g-3">
                 <div class="col-md-3">
@@ -784,7 +807,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
                             <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
                                 <option value="">Tutti i Reparti</option>
-                                <?php foreach ($reparti_disponibili as $rep) { 
+                                <?php foreach ($reparti_disponibili as $rep) {
                                     $labelRep = $rep['nome_reparto'] ?? $rep['nome'] ?? 'Reparto';
                                 ?>
                                     <option value="<?php echo htmlspecialchars($rep['id']); ?>" <?php echo ($reparto_selezionato !== '' && (string)$rep['id'] === (string)$reparto_selezionato) ? 'selected' : ''; ?>><?php echo htmlspecialchars($labelRep); ?></option>
@@ -830,9 +853,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
         <div class="card shadow-sm mb-4 p-3">
             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="fw-bold small text-secondary">Legenda Turni:</span>
-                    <?php foreach ($tipologieTurni as $tTip) { 
+                    <?php foreach ($tipologieTurni as $tTip) {
                         $cBreve = strtoupper(trim($tTip['codice_breve'] ?? ''));
                         $cColore = $tTip['colore'] ?? '#6c757d';
                         $cNome = $tTip['nome_turno'] ?? $cBreve;
@@ -859,9 +882,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         <thead class="table-dark sticky-top" style="z-index: 3;">
                             <tr>
                                 <th class="col-operatore-sticky bg-dark text-white">Operatore / Giorno</th>
-                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
+                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
                                     $timestampG = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
-                                    $nomeGiornoW = date('N', $timestampG); 
+                                    $nomeGiornoW = date('N', $timestampG);
                                     $isFestivo = ($nomeGiornoW == 7);
                                 ?>
                                     <th class="<?php echo $isFestivo ? 'bg-danger text-white' : ''; ?>" style="width: 32px; min-width: 32px;">
@@ -879,9 +902,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     </td>
                                 </tr>
                             <?php } else { ?>
-                                <?php 
+                                <?php
                                 $ultimaSquadra = null;
-                                foreach ($listaCollaboratori as $collab) { 
+                                foreach ($listaCollaboratori as $collab) {
                                     $uId = $collab['id'];
                                     $nomeCollab = $collab['nome'] ?? 'Operatore';
                                     $ruoloCollab = $collab['ruolo'] ?? $collab['qualifica'] ?? '';
@@ -901,7 +924,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                             <div class="d-flex justify-content-between align-items-center">
                                                 <div class="text-truncate fw-bold" style="max-width: 130px;"><?php echo htmlspecialchars($nomeCollab); ?></div>
                                                 <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale) { ?>
-                                                    <button type="button" class="btn btn-xs btn-outline-danger p-0 px-1" style="font-size: 0.65rem;" onclick="apriModalePulisciSingolo('<?php echo htmlspecialchars($uId, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($nomeCollab, ENT_QUOTES); ?>')" title="Pulisci mese operatore">
+                                                    <button type="button" class="btn btn-xs btn-outline-danger p-0 px-1 btn-pulisci-singolo" style="font-size: 0.65rem;" data-uid="<?php echo htmlspecialchars($uId, ENT_QUOTES); ?>" data-nome="<?php echo htmlspecialchars($nomeCollab, ENT_QUOTES); ?>" title="Pulisci mese operatore">
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 <?php } ?>
@@ -910,14 +933,14 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                 <?php echo htmlspecialchars($ruoloCollab); ?>
                                             </div>
                                         </td>
-                                        <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { 
+                                        <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
                                             $dataCellStr = sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g);
                                             $eventiGiorno = $mappaTurniGriglia[$uId][$g] ?? [];
-                                            $eventiJsonEsc = htmlspecialchars(json_encode($eventiGiorno, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
+                                            $eventiB64 = base64_encode(json_encode($eventiGiorno, JSON_UNESCAPED_UNICODE));
                                         ?>
-                                            <td class="cella-interattiva" onclick="apriModaleTurno('<?php echo htmlspecialchars($uId, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($nomeCollab, ENT_QUOTES); ?>', '<?php echo $dataCellStr; ?>', '<?php echo $eventiJsonEsc; ?>')">
+                                            <td class="cella-interattiva" data-uid="<?php echo htmlspecialchars($uId, ENT_QUOTES); ?>" data-nome="<?php echo htmlspecialchars($nomeCollab, ENT_QUOTES); ?>" data-data="<?php echo $dataCellStr; ?>" data-eventi-b64="<?php echo htmlspecialchars($eventiB64, ENT_QUOTES); ?>">
                                                 <div class="badge-container">
-                                                    <?php if (!empty($eventiGiorno)) { 
+                                                    <?php if (!empty($eventiGiorno)) {
                                                         foreach ($eventiGiorno as $ev) {
                                                             $codEv = strtoupper(trim($ev['tipo_evento'] ?? ''));
                                                             $coloreBg = $mappaColoriTurni[$codEv] ?? '#6c757d';
@@ -927,9 +950,9 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                         <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo htmlspecialchars($coloreBg); ?>;" title="<?php echo htmlspecialchars($codEv . ' (' . ($isAssenza ? 'Assenza' : 'Turno') . ' - ' . ($ev['stato'] ?? '') . ')'); ?>">
                                                             <?php echo htmlspecialchars($codEv); ?>
                                                         </span>
-                                                    <?php 
+                                                    <?php
                                                         }
-                                                    } 
+                                                    }
                                                     ?>
                                                 </div>
                                             </td>
@@ -947,7 +970,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <div class="col-lg-6">
                 <div class="card shadow-sm h-100 p-3">
                     <h5 class="card-title fs-6 fw-bold mb-3"><i class="bi bi-person-plus text-primary"></i> Assegnazione Singola</h5>
-                    <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
+                    <form method="POST" action="turni.php?<?php echo htmlspecialchars($redirectQueryTurni); ?>">
                         <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                         <input type="hidden" name="azione" value="assegna_turno">
                         <div class="mb-2">
@@ -963,7 +986,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <label class="form-label small fw-bold">Tipologia Turno</label>
                             <select name="tipologia_turno_id" class="form-select form-select-sm" required>
                                 <option value="">-- Seleziona Turno --</option>
-                                <?php foreach ($tipologieTurni as $tTip) { 
+                                <?php foreach ($tipologieTurni as $tTip) {
                                     $cBr = strtoupper(trim($tTip['codice_breve'] ?? ''));
                                     $nTrn = $tTip['nome_turno'] ?? $cBr;
                                 ?>
@@ -987,7 +1010,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             <div class="col-lg-6">
                 <div class="card shadow-sm h-100 p-3">
                     <h5 class="card-title fs-6 fw-bold mb-3"><i class="bi bi-robot text-success"></i> Generazione Automatica Turni (AI)</h5>
-                    <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
+                    <form method="POST" action="turni.php?<?php echo htmlspecialchars($redirectQueryTurni); ?>">
                         <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                         <input type="hidden" name="azione" value="genera_turni_ai">
                         <div class="row g-2 mb-2">
@@ -1045,7 +1068,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold" id="modaleTitolo">Gestione Turno</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" id="formGestioneTurno" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
+                <form method="POST" id="formGestioneTurno" action="turni.php?<?php echo htmlspecialchars($redirectQueryTurni); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <div class="modal-body small">
                         <input type="hidden" name="utente_id" id="modale_utente_id">
@@ -1057,7 +1080,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                             <label class="form-label fw-bold" id="labelTipoTurno">Seleziona Tipo Turno / Evento</label>
                             <select name="valore" id="modale_valore" class="form-select form-select-sm">
                                 <option value="">-- Seleziona --</option>
-                                <?php foreach ($tipologieTurni as $tTip) { 
+                                <?php foreach ($tipologieTurni as $tTip) {
                                     $cBr = strtoupper(trim($tTip['codice_breve'] ?? ''));
                                     $nTrn = $tTip['nome_turno'] ?? $cBr;
                                 ?>
@@ -1100,7 +1123,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold">Conferma Pulizia Mese</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
+                <form method="POST" action="turni.php?<?php echo htmlspecialchars($redirectQueryTurni); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <input type="hidden" name="azione" value="cancella_turni_tranne_ferie">
                     <div class="modal-body small">
@@ -1124,17 +1147,17 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <h5 class="modal-title fs-6 fw-bold">Pulisci Turni Operatore</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form method="POST" action="turni.php?<?php echo htmlspecialchars(http_build_query(['mese' => $mese_selezionato, 'anno' => $anno_selezionato, 'reparto_id' => $reparto_selezionato, 'filtro_ruolo' => $filtro_ruolo, 'filtro_squadra' => $filtro_squadra])); ?>">
+                <form method="POST" action="turni.php?<?php echo htmlspecialchars($redirectQueryTurni); ?>">
                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
                     <input type="hidden" name="azione" value="cancella_turni_singolo_operatore">
                     <input type="hidden" name="utente_target_id" id="input_utente_target_id">
                     <div class="modal-body small">
-                        <p>Stai per eliminare tutti i turni del mese di <strong><?php echo htmlspecialchars($nomeMeseCorrente . ' ' . $anno_selezionato); ?></strong> per l'operatore: <strong id="nomeOperatoreTarget"></strong>.</p>
-                        <p class="text-success fw-bold mb-0"><i class="bi bi-shield-check"></i> Ferie, permessi e 104 protetti NON verranno cancellati.</p>
+                        <p>Stai per eliminare tutti i turni del mese di <strong><?php echo htmlspecialchars($nomeMeseCorrente . ' ' . $anno_selezionato); ?></strong> per <strong id="nomeOperatoreTarget"></strong>.</p>
+                        <p class="text-success fw-bold mb-0"><i class="bi bi-shield-check"></i> Ferie, permessi, 104 e corsi protetti NON verranno cancellati.</p>
                     </div>
                     <div class="modal-footer py-1">
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                        <button type="submit" class="btn btn-sm btn-danger fw-bold">Conferma Pulizia Operatore</button>
+                        <button type="submit" class="btn btn-sm btn-danger fw-bold">Conferma Pulizia</button>
                     </div>
                 </form>
             </div>
@@ -1143,25 +1166,35 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function impostaAzione(azioneStr) {
-            document.getElementById('modale_azione').value = azioneStr;
-            if (azioneStr === 'cancella_turno_cella') {
-                document.getElementById('modale_valore').required = false;
-            } else {
-                document.getElementById('modale_valore').required = true;
+        function impostaAzione(nomeAzione) {
+            document.getElementById('modale_azione').value = nomeAzione;
+        }
+
+        function decodificaEventiB64(b64Str) {
+            if (!b64Str) return [];
+            try {
+                let binStr = atob(b64Str);
+                let bytes = new Uint8Array(binStr.length);
+                for (let i = 0; i < binStr.length; i++) {
+                    bytes[i] = binStr.charCodeAt(i);
+                }
+                let jsonStr = new TextDecoder('utf-8').decode(bytes);
+                let parsed = JSON.parse(jsonStr);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                console.error("Errore decodifica eventi cella:", e);
+                return [];
             }
         }
 
-        function apriModaleTurno(utenteId, nomeOperatore, dataStr, eventiJson) {
+        function apriModaleTurno(utenteId, nomeOperatore, dataStr, eventi) {
             document.getElementById('modale_utente_id').value = utenteId;
             document.getElementById('modale_data').value = dataStr;
             document.getElementById('modale_nota').value = '';
-            
+            document.getElementById('modale_azione').value = 'aggiungi_turno_cella';
+
             let dataFmt = dataStr.split('-').reverse().join('/');
-            let eventi = [];
-            try {
-                eventi = JSON.parse(eventiJson);
-            } catch(e) {
+            if (!Array.isArray(eventi)) {
                 eventi = [];
             }
 
@@ -1175,23 +1208,24 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             if (eventi.length > 0) {
                 let evento = eventi[0];
                 let isAssenza = (evento.fonte === 'assenze');
+                document.getElementById('modale_nota').value = evento.note || '';
 
                 if (isAssenza) {
                     document.getElementById('modaleTitolo').innerText = "Visualizza Assenza - " + nomeOperatore + " (" + dataFmt + ")";
                     inputTurnoId.value = '';
-                    selectValore.value = evento.tipo_evento;
+                    selectValore.value = (evento.tipo_evento || '').toUpperCase().trim();
                     selectValore.disabled = false;
-                    
+
                     btnElimina.style.display = 'none';
                     btnSalva.style.display = 'none';
                     btnAggiungi.style.display = 'none';
                     avvisoAssenza.style.display = 'block';
                 } else {
                     document.getElementById('modaleTitolo').innerText = "Gestione Turno - " + nomeOperatore + " (" + dataFmt + ")";
-                    inputTurnoId.value = evento.id;
-                    selectValore.value = evento.tipo_evento;
+                    inputTurnoId.value = evento.id || '';
+                    selectValore.value = (evento.tipo_evento || '').toUpperCase().trim();
                     selectValore.disabled = false;
-                    
+
                     btnElimina.style.display = 'block';
                     btnSalva.style.display = 'block';
                     btnAggiungi.style.display = 'block';
@@ -1202,7 +1236,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 inputTurnoId.value = '';
                 selectValore.value = '';
                 selectValore.disabled = false;
-                
+
                 btnElimina.style.display = 'none';
                 btnSalva.style.display = 'none';
                 btnAggiungi.style.display = 'block';
@@ -1221,6 +1255,28 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             let modal = bootstrap.Modal.getOrCreateInstance(modalEl);
             modal.show();
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.cella-interattiva').forEach(function(td) {
+                td.addEventListener('click', function() {
+                    let uid = this.getAttribute('data-uid') || '';
+                    let nome = this.getAttribute('data-nome') || '';
+                    let dataStr = this.getAttribute('data-data') || '';
+                    let b64 = this.getAttribute('data-eventi-b64') || '';
+                    let eventi = decodificaEventiB64(b64);
+                    apriModaleTurno(uid, nome, dataStr, eventi);
+                });
+            });
+
+            document.querySelectorAll('.btn-pulisci-singolo').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    let uid = this.getAttribute('data-uid') || '';
+                    let nome = this.getAttribute('data-nome') || '';
+                    apriModalePulisciSingolo(uid, nome);
+                });
+            });
+        });
     </script>
 </body>
 </html>
