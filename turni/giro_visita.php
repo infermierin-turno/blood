@@ -23,6 +23,34 @@ function is_valid_date($d) {
     return checkdate((int)$parti[1], (int)$parti[2], (int)$parti[0]);
 }
 
+function data_locale_da_timestamp($tsRaw) {
+    if (!is_string($tsRaw) || trim($tsRaw) === '') {
+        return '';
+    }
+    try {
+        $dt = new DateTime($tsRaw);
+        $dt->setTimezone(new DateTimeZone('Europe/Rome'));
+        return $dt->format('Y-m-d');
+    } catch (Exception $e) {
+        $ts = strtotime($tsRaw);
+        return $ts !== false ? date('Y-m-d', $ts) : '';
+    }
+}
+
+function normalizza_stato_visita_giornaliero(array $pl, $dataRiferimento) {
+    $st = trim($pl['stato_visita'] ?? 'In attesa di visita');
+    if ($st === '') {
+        $st = 'In attesa di visita';
+    }
+    if ($st === 'Visitato' && is_valid_date($dataRiferimento)) {
+        $dataAgg = data_locale_da_timestamp($pl['updated_at'] ?? '');
+        if ($dataAgg !== '' && $dataAgg < $dataRiferimento) {
+            return 'In attesa di visita';
+        }
+    }
+    return $st;
+}
+
 $ultimo_errore_supabase = '';
 
 function supabase_gv_request($endpoint, $method = 'GET', $data = null) {
@@ -247,6 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 'priorita' => $priorita,
                 'note_stato' => $note_stato,
                 'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null,
+                'updated_at' => date('c'),
                 'attivo' => $attivo
             ];
             $res = supabase_gv_request("posti_letto_reparto?id=eq." . rawurlencode($posto_id) . "&reparto_id=eq." . rawurlencode($reparto_selezionato), 'PATCH', $patchData);
@@ -271,6 +300,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 'priorita' => $priorita,
                 'note_stato' => $note_stato,
                 'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null,
+                'updated_at' => date('c'),
                 'attivo' => true
             ];
             $res = supabase_gv_request("posti_letto_reparto", 'POST', $postData);
@@ -295,7 +325,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 'PATCH',
                 [
                     'stato_visita' => $nuovo_stato,
-                    'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null
+                    'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null,
+                    'updated_at' => date('c')
                 ]
             );
             if ($res !== false) {
@@ -328,7 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                     'stato_visita' => 'In attesa di visita',
                     'priorita' => 'Normale',
                     'note_stato' => '',
-                    'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null
+                    'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null,
+                    'updated_at' => date('c')
                 ]
             );
             if ($res !== false) {
@@ -352,6 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
             $plAttuale = (!empty($resLettura) && is_array($resLettura)) ? $resLettura[0] : null;
 
             if ($plAttuale) {
+                $statoAllUscita = normalizza_stato_visita_giornaliero($plAttuale, $data_giro);
                 $labelLettoUscita = trim(($plAttuale['stanza'] ?? '') . ' - ' . ($plAttuale['letto'] ?? ''), ' -');
                 if ($labelLettoUscita === '') {
                     $labelLettoUscita = 'Posto letto';
@@ -367,8 +400,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 if (!empty($plAttuale['data_intervento']) && is_valid_date($plAttuale['data_intervento'])) {
                     $partiNota[] = "Data intervento: " . date('d/m/Y', strtotime($plAttuale['data_intervento']));
                 }
-                if (!empty($plAttuale['stato_visita'])) {
-                    $partiNota[] = "Stato all'uscita: " . trim($plAttuale['stato_visita']);
+                if ($statoAllUscita !== '') {
+                    $partiNota[] = "Stato all'uscita: " . $statoAllUscita;
                 }
                 if (!empty($plAttuale['note_stato'])) {
                     $partiNota[] = "Note: " . trim($plAttuale['note_stato']);
@@ -404,7 +437,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                         'stato_visita' => 'In attesa di visita',
                         'priorita' => 'Normale',
                         'note_stato' => '',
-                        'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null
+                        'ultimo_aggiornamento_da' => is_uuid($utente_id) ? $utente_id : null,
+                        'updated_at' => date('c')
                     ]
                 );
 
@@ -605,7 +639,10 @@ $postiLetto = [];
 if (!empty($reparto_selezionato)) {
     $resPL = supabase_gv_request("posti_letto_reparto?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&attivo=eq.true&select=*&order=ordine_letto.asc,stanza.asc,letto.asc");
     if (is_array($resPL)) {
-        $postiLetto = $resPL;
+        foreach ($resPL as $pl) {
+            $pl['stato_visita_effettivo'] = normalizza_stato_visita_giornaliero($pl, $data_giro);
+            $postiLetto[] = $pl;
+        }
     }
 }
 
@@ -685,7 +722,7 @@ $conteggiStati = [
 ];
 
 foreach ($postiLetto as $pl) {
-    $st = $pl['stato_visita'] ?? 'In attesa di visita';
+    $st = $pl['stato_visita_effettivo'] ?? ($pl['stato_visita'] ?? 'In attesa di visita');
     if ($st === 'In attesa di visita') {
         $conteggiStati['da_visitare']++;
     } elseif ($st === 'Visitato') {
@@ -701,7 +738,7 @@ $postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapid
     $plId = $pl['id'] ?? '';
     $sigla = trim($pl['sigla_paziente'] ?? '');
     $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
-    $st = $pl['stato_visita'] ?? 'In attesa di visita';
+    $st = $pl['stato_visita_effettivo'] ?? ($pl['stato_visita'] ?? 'In attesa di visita');
     $prio = $pl['priorita'] ?? 'Normale';
     $dataInt = trim($pl['data_intervento'] ?? '');
     $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale');
@@ -949,7 +986,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                     $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
                     $dataInt = trim($pl['data_intervento'] ?? '');
                     $hasDataInt = is_valid_date($dataInt);
-                    $stato = $pl['stato_visita'] ?? 'In attesa di visita';
+                    $stato = $pl['stato_visita_effettivo'] ?? ($pl['stato_visita'] ?? 'In attesa di visita');
                     $prio = $pl['priorita'] ?? 'Normale';
                     $noteStato = trim($pl['note_stato'] ?? '');
                     $attivo = !empty($pl['attivo']);
