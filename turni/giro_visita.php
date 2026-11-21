@@ -533,16 +533,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
 }
 
 $mappaUtenti = [];
-if (!empty($reparto_selezionato)) {
-    $resUt = supabase_gv_request("staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica,squadra&order=nome.asc");
-    if (is_array($resUt)) {
-        foreach ($resUt as $u) {
+$resTuttiUt = supabase_gv_request("staging_utenti?select=id,nome,ruolo,qualifica,squadra,reparto_id&order=nome.asc");
+if (is_array($resTuttiUt)) {
+    foreach ($resTuttiUt as $u) {
+        if (!empty($u['id'])) {
             $mappaUtenti[$u['id']] = $u;
         }
     }
 }
 if (!empty($utente_id) && !isset($mappaUtenti[$utente_id]) && $nome_utente_corrente !== '') {
     $mappaUtenti[$utente_id] = ['id' => $utente_id, 'nome' => $nome_utente_corrente];
+}
+
+$utentiRepartoSelezionato = [];
+foreach ($mappaUtenti as $uId => $uInfo) {
+    if (!empty($reparto_selezionato) && (($uInfo['reparto_id'] ?? '') === $reparto_selezionato)) {
+        $utentiRepartoSelezionato[$uId] = $uInfo;
+    }
+}
+if (empty($utentiRepartoSelezionato)) {
+    $utentiRepartoSelezionato = $mappaUtenti;
+}
+
+function nome_utente_da_id($uId, array $mappaUtenti) {
+    if (!is_string($uId) || $uId === '') {
+        return '';
+    }
+    if (isset($mappaUtenti[$uId]) && !empty($mappaUtenti[$uId]['nome'])) {
+        return trim($mappaUtenti[$uId]['nome']);
+    }
+    return '';
 }
 
 $personaleInTurno = [];
@@ -634,7 +654,7 @@ foreach ($postiLetto as $pl) {
     }
 }
 
-$postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapido, $ricerca_testo, $consegnePerLetto, $stato_filtro_dash, $posto_evidenziato_id) {
+$postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapido, $ricerca_testo, $consegnePerLetto, $stato_filtro_dash, $posto_evidenziato_id, $mappaUtenti) {
     $plId = $pl['id'] ?? '';
     $sigla = trim($pl['sigla_paziente'] ?? '');
     $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
@@ -674,6 +694,13 @@ $postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapid
 
     if ($ricerca_testo !== '' && ($posto_evidenziato_id === '' || $plId !== $posto_evidenziato_id)) {
         $dataIntFormattata = is_valid_date($dataInt) ? date('d/m/Y', strtotime($dataInt)) : '';
+        $nomiCons = '';
+        foreach ($consegnePerLetto[$plId] ?? [] as $c) {
+            $nomiCons .= ' ' . ($c['nota'] ?? '') . ' ' . ($c['tag_azione'] ?? '') . ' '
+                . nome_utente_da_id($c['utente_id'] ?? '', $mappaUtenti) . ' '
+                . nome_utente_da_id($c['assegnato_a_id'] ?? '', $mappaUtenti) . ' '
+                . nome_utente_da_id($c['completata_da_id'] ?? '', $mappaUtenti);
+        }
         $haystack = mb_strtolower(
             ($pl['stanza'] ?? '') . ' ' .
             ($pl['letto'] ?? '') . ' ' .
@@ -682,7 +709,9 @@ $postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapid
             $dataInt . ' ' .
             $dataIntFormattata . ' ' .
             ($pl['note_stato'] ?? '') . ' ' .
-            $st
+            $st . ' ' .
+            nome_utente_da_id($pl['ultimo_aggiornamento_da'] ?? '', $mappaUtenti) . ' ' .
+            $nomiCons
         );
         if (mb_strpos($haystack, mb_strtolower($ricerca_testo)) === false) {
             return false;
@@ -714,6 +743,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
         .consegna-item.consegna-fatta { background-color: #f0fdf4; border-color: #bbf7d0; }
         .consegna-testo-fatto { opacity: 0.8; text-decoration: line-through; }
         .pill-turno { font-size: 0.75rem; background-color: #e2e8f0; color: #0f172a; border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
+        .meta-autore { font-size: 0.72rem; color: #64748b; }
     </style>
 </head>
 <body>
@@ -755,6 +785,9 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                     <div class="small text-muted">
                         <i class="bi bi-building"></i> <strong class="text-dark"><?php echo htmlspecialchars($nome_reparto_corrente); ?></strong>
                         &bull; Data: <strong class="text-dark"><?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?></strong>
+                        <?php if ($nome_utente_corrente !== ''): ?>
+                            &bull; Operatore: <strong class="text-dark"><?php echo htmlspecialchars($nome_utente_corrente); ?></strong>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <div class="col-lg-8">
@@ -784,7 +817,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                         </div>
 
                         <div class="col-sm-8 col-md-3">
-                            <input type="text" name="q" class="form-control form-control-sm" placeholder="Cerca letto, sigla, data int..." value="<?php echo htmlspecialchars($ricerca_testo); ?>">
+                            <input type="text" name="q" class="form-control form-control-sm" placeholder="Cerca letto, sigla, operatore..." value="<?php echo htmlspecialchars($ricerca_testo); ?>">
                         </div>
 
                         <div class="col-auto">
@@ -874,6 +907,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                     $prio = $pl['priorita'] ?? 'Normale';
                     $noteStato = trim($pl['note_stato'] ?? '');
                     $attivo = !empty($pl['attivo']);
+                    $nomeUltimoAgg = nome_utente_da_id($pl['ultimo_aggiornamento_da'] ?? '', $mappaUtenti);
 
                     $labelPosto = trim($stanza . ($letto !== '' ? ' - ' . $letto : ''), ' -');
                     if ($labelPosto === '') {
@@ -940,7 +974,13 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                             <?php endif; ?>
 
                             <?php if ($noteStato !== ''): ?>
-                                <div class="small text-secondary mb-2"><i class="bi bi-journal-text"></i> <?php echo htmlspecialchars($noteStato); ?></div>
+                                <div class="small text-secondary mb-1"><i class="bi bi-journal-text"></i> <?php echo htmlspecialchars($noteStato); ?></div>
+                            <?php endif; ?>
+
+                            <?php if ($nomeUltimoAgg !== ''): ?>
+                                <div class="meta-autore mb-2">
+                                    <i class="bi bi-person-lines-fill"></i> Ultimo aggiornamento: <strong><?php echo htmlspecialchars($nomeUltimoAgg); ?></strong>
+                                </div>
                             <?php endif; ?>
 
                             <div class="d-flex flex-wrap gap-1 mb-2">
@@ -1002,17 +1042,37 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                         <?php foreach ($consLetto as $c):
                                             $cId = $c['id'] ?? '';
                                             $isFatta = !empty($c['completata']);
-                                            $assId = $c['assegnato_a_id'] ?? '';
-                                            $nomeAss = ($assId !== '' && isset($mappaUtenti[$assId])) ? ($mappaUtenti[$assId]['nome'] ?? '') : '';
+                                            $nomeAutore = nome_utente_da_id($c['utente_id'] ?? '', $mappaUtenti);
+                                            $nomeAss = nome_utente_da_id($c['assegnato_a_id'] ?? '', $mappaUtenti);
+                                            $nomeComp = nome_utente_da_id($c['completata_da_id'] ?? '', $mappaUtenti);
+                                            $oraComp = '';
+                                            if ($isFatta && !empty($c['completata_at'])) {
+                                                $tsComp = strtotime($c['completata_at']);
+                                                if ($tsComp !== false) {
+                                                    $oraComp = date('H:i', $tsComp);
+                                                }
+                                            }
                                         ?>
                                             <div class="consegna-item <?php echo $isFatta ? 'consegna-fatta' : ''; ?>">
                                                 <div class="d-flex justify-content-between align-items-start gap-2">
-                                                    <div class="small <?php echo $isFatta ? 'consegna-testo-fatto' : ''; ?>">
-                                                        <span class="badge bg-secondary-subtle text-dark border me-1"><?php echo htmlspecialchars($c['tag_azione'] ?? 'Azione'); ?></span>
-                                                        <?php echo htmlspecialchars($c['nota'] ?? ''); ?>
-                                                        <?php if ($nomeAss !== ''): ?>
-                                                            <div class="text-muted mt-1" style="font-size: 0.72rem;"><i class="bi bi-person-check"></i> Assegnata a: <?php echo htmlspecialchars($nomeAss); ?></div>
-                                                        <?php endif; ?>
+                                                    <div class="small">
+                                                        <div class="<?php echo $isFatta ? 'consegna-testo-fatto' : ''; ?>">
+                                                            <span class="badge bg-secondary-subtle text-dark border me-1"><?php echo htmlspecialchars($c['tag_azione'] ?? 'Azione'); ?></span>
+                                                            <?php echo htmlspecialchars($c['nota'] ?? ''); ?>
+                                                        </div>
+                                                        <div class="meta-autore mt-1">
+                                                            <?php if ($nomeAutore !== ''): ?>
+                                                                <span><i class="bi bi-person-plus"></i> Inserita da: <strong><?php echo htmlspecialchars($nomeAutore); ?></strong></span>
+                                                            <?php endif; ?>
+                                                            <?php if ($nomeAss !== ''): ?>
+                                                                <span class="ms-2"><i class="bi bi-person-check"></i> Assegnata a: <strong><?php echo htmlspecialchars($nomeAss); ?></strong></span>
+                                                            <?php endif; ?>
+                                                            <?php if ($isFatta): ?>
+                                                                <div class="text-success fw-semibold mt-1">
+                                                                    <i class="bi bi-check2-all"></i> Fatta<?php echo $nomeComp !== '' ? ' da ' . htmlspecialchars($nomeComp) : ''; ?><?php echo $oraComp !== '' ? ' alle ' . htmlspecialchars($oraComp) : ''; ?>
+                                                                </div>
+                                                            <?php endif; ?>
+                                                        </div>
                                                     </div>
                                                     <div class="d-flex gap-1 flex-shrink-0">
                                                         <?php if (!$isFatta && is_uuid($cId)): ?>
@@ -1053,7 +1113,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                     <div class="col-12">
                                         <select name="assegnato_a_id" class="form-select form-select-sm">
                                             <option value="">Assegna a... (opzionale)</option>
-                                            <?php foreach ($mappaUtenti as $u): ?>
+                                            <?php foreach ($utentiRepartoSelezionato as $u): ?>
                                                 <option value="<?php echo htmlspecialchars($u['id']); ?>"><?php echo htmlspecialchars($u['nome'] ?? 'Operatore'); ?></option>
                                             <?php endforeach; ?>
                                         </select>
@@ -1098,10 +1158,15 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                         <div class="small text-muted">Nessuna dimissione registrata per questa data.</div>
                     <?php else: ?>
                         <ul class="list-group list-group-flush small">
-                            <?php foreach ($dimissioniGiorno as $dim): ?>
+                            <?php foreach ($dimissioniGiorno as $dim):
+                                $nomeDimAutore = nome_utente_da_id($dim['utente_id'] ?? '', $mappaUtenti);
+                            ?>
                                 <li class="list-group-item px-0 py-1">
                                     <span class="badge bg-success-subtle text-success-emphasis border me-1"><?php echo htmlspecialchars($dim['tag_azione'] ?? 'Dimissione'); ?></span>
                                     <?php echo htmlspecialchars($dim['nota'] ?? ''); ?>
+                                    <?php if ($nomeDimAutore !== ''): ?>
+                                        <span class="meta-autore ms-1">(registrata da <strong><?php echo htmlspecialchars($nomeDimAutore); ?></strong>)</span>
+                                    <?php endif; ?>
                                 </li>
                             <?php endforeach; ?>
                         </ul>
