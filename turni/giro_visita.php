@@ -15,6 +15,14 @@ function is_uuid($v) {
     return is_string($v) && (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $v);
 }
 
+function is_valid_date($d) {
+    if (!is_string($d) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) {
+        return false;
+    }
+    $parti = explode('-', $d);
+    return checkdate((int)$parti[1], (int)$parti[2], (int)$parti[0]);
+}
+
 $ultimo_errore_supabase = '';
 
 function supabase_gv_request($endpoint, $method = 'GET', $data = null) {
@@ -129,12 +137,14 @@ if ($is_super_admin || $is_capo_personale) {
     $reparto_selezionato = is_uuid($reparto_id_utente) ? $reparto_id_utente : '';
 }
 
-$data_giro = (isset($_GET['data_giro']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['data_giro']))
+$data_giro = (isset($_GET['data_giro']) && is_valid_date($_GET['data_giro']))
     ? $_GET['data_giro']
     : date('Y-m-d');
 
 $filtro_rapido = isset($_GET['filtro']) ? trim($_GET['filtro']) : 'tutti';
 $ricerca_testo = isset($_GET['q']) ? trim($_GET['q']) : '';
+$posto_evidenziato_id = (isset($_GET['posto_id']) && is_uuid($_GET['posto_id'])) ? $_GET['posto_id'] : '';
+$stato_filtro_dash = isset($_GET['stato']) ? trim($_GET['stato']) : '';
 
 $nome_reparto_corrente = "Reparto non selezionato";
 foreach ($reparti_disponibili as $rep) {
@@ -163,7 +173,6 @@ $tagAzioni = [
     'Richiesta Emotrasfusione',
     'Controllo CV',
     'Controllo CVC',
-    'Controllo CV',
     'Terapia Antidolorifica',
     'Mobilizzazione',
     'Medicazione',
@@ -188,6 +197,9 @@ $redirectParams = [
 if ($ricerca_testo !== '') {
     $redirectParams['q'] = $ricerca_testo;
 }
+if ($posto_evidenziato_id !== '') {
+    $redirectParams['posto_id'] = $posto_evidenziato_id;
+}
 $redirectUrl = "giro_visita.php?" . http_build_query($redirectParams);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
@@ -206,6 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
         $ordine_letto = max(1, intval($_POST['ordine_letto'] ?? 1));
         $sigla_paziente = strtoupper(trim($_POST['sigla_paziente'] ?? ''));
         $diagnosi_sintetica = trim($_POST['diagnosi_sintetica'] ?? '');
+        $data_intervento_raw = trim($_POST['data_intervento'] ?? '');
+        $data_intervento = is_valid_date($data_intervento_raw) ? $data_intervento_raw : null;
         $stato_visita = trim($_POST['stato_visita'] ?? 'In attesa di visita');
         $priorita = trim($_POST['priorita'] ?? 'Normale');
         $note_stato = trim($_POST['note_stato'] ?? '');
@@ -228,6 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 'ordine_letto' => $ordine_letto,
                 'sigla_paziente' => $sigla_paziente,
                 'diagnosi_sintetica' => $diagnosi_sintetica,
+                'data_intervento' => $data_intervento,
                 'stato_visita' => $stato_visita,
                 'priorita' => $priorita,
                 'note_stato' => $note_stato,
@@ -251,6 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 'ordine_letto' => $ordine_letto,
                 'sigla_paziente' => $sigla_paziente,
                 'diagnosi_sintetica' => $diagnosi_sintetica,
+                'data_intervento' => $data_intervento,
                 'stato_visita' => $stato_visita,
                 'priorita' => $priorita,
                 'note_stato' => $note_stato,
@@ -308,6 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 [
                     'sigla_paziente' => '',
                     'diagnosi_sintetica' => '',
+                    'data_intervento' => null,
                     'stato_visita' => 'In attesa di visita',
                     'priorita' => 'Normale',
                     'note_stato' => '',
@@ -347,6 +364,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                 if (!empty($plAttuale['diagnosi_sintetica'])) {
                     $partiNota[] = "Inquadramento: " . trim($plAttuale['diagnosi_sintetica']);
                 }
+                if (!empty($plAttuale['data_intervento']) && is_valid_date($plAttuale['data_intervento'])) {
+                    $partiNota[] = "Data intervento: " . date('d/m/Y', strtotime($plAttuale['data_intervento']));
+                }
                 if (!empty($plAttuale['stato_visita'])) {
                     $partiNota[] = "Stato all'uscita: " . trim($plAttuale['stato_visita']);
                 }
@@ -380,6 +400,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                     [
                         'sigla_paziente' => '',
                         'diagnosi_sintetica' => '',
+                        'data_intervento' => null,
                         'stato_visita' => 'In attesa di visita',
                         'priorita' => 'Normale',
                         'note_stato' => '',
@@ -613,11 +634,18 @@ foreach ($postiLetto as $pl) {
     }
 }
 
-$postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapido, $ricerca_testo, $consegnePerLetto) {
+$postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapido, $ricerca_testo, $consegnePerLetto, $stato_filtro_dash, $posto_evidenziato_id) {
     $plId = $pl['id'] ?? '';
+    $sigla = trim($pl['sigla_paziente'] ?? '');
+    $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
     $st = $pl['stato_visita'] ?? 'In attesa di visita';
     $prio = $pl['priorita'] ?? 'Normale';
+    $dataInt = trim($pl['data_intervento'] ?? '');
+    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale');
 
+    if ($filtro_rapido === 'occupati' && !$isOccupato) {
+        return false;
+    }
     if ($filtro_rapido === 'da_visitare' && $st !== 'In attesa di visita') {
         return false;
     }
@@ -640,12 +668,19 @@ $postiLettoFiltrati = array_filter($postiLetto, function($pl) use ($filtro_rapid
         }
     }
 
-    if ($ricerca_testo !== '') {
+    if ($stato_filtro_dash !== '' && $st !== $stato_filtro_dash && ($posto_evidenziato_id === '' || $plId !== $posto_evidenziato_id)) {
+        return false;
+    }
+
+    if ($ricerca_testo !== '' && ($posto_evidenziato_id === '' || $plId !== $posto_evidenziato_id)) {
+        $dataIntFormattata = is_valid_date($dataInt) ? date('d/m/Y', strtotime($dataInt)) : '';
         $haystack = mb_strtolower(
             ($pl['stanza'] ?? '') . ' ' .
             ($pl['letto'] ?? '') . ' ' .
-            ($pl['sigla_paziente'] ?? '') . ' ' .
-            ($pl['diagnosi_sintetica'] ?? '') . ' ' .
+            $sigla . ' ' .
+            $diagnosi . ' ' .
+            $dataInt . ' ' .
+            $dataIntFormattata . ' ' .
             ($pl['note_stato'] ?? '') . ' ' .
             $st
         );
@@ -674,6 +709,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
         .card-letto.prio-urgente { border-left-color: #dc3545; }
         .card-letto.prio-dimissione { border-left-color: #0d6efd; }
         .card-letto.stato-visitato { border-left-color: #198754; }
+        .card-letto.evidenziata { outline: 3px solid #0d6efd; box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.15); }
         .consegna-item { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
         .consegna-item.consegna-fatta { background-color: #f0fdf4; border-color: #bbf7d0; }
         .consegna-testo-fatto { opacity: 0.8; text-decoration: line-through; }
@@ -691,6 +727,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="dashboard_ricoveri.php">Dashboard Ricoveri</a></li>
                     <li class="nav-item"><a class="nav-link" href="planner.php">Planner Mensile</a></li>
                     <li class="nav-item"><a class="nav-link" href="turni.php">Assegnazione Turni</a></li>
                     <li class="nav-item"><a class="nav-link active" href="giro_visita.php">Giro Visita</a></li>
@@ -701,6 +738,13 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
     </nav>
 
     <div class="container-fluid px-3 px-md-4">
+
+        <?php if ($messaggio !== ''): ?>
+            <div class="alert alert-<?php echo htmlspecialchars($tipo_alert ?: 'info'); ?> alert-dismissible fade show" role="alert">
+                <?php echo htmlspecialchars($messaggio); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
 
         <div class="card p-3 mb-3">
             <div class="row g-3 align-items-center">
@@ -716,526 +760,477 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                 <div class="col-lg-8">
                     <form method="GET" action="giro_visita.php" class="row g-2 justify-content-lg-end align-items-center">
                         <input type="hidden" name="filtro" value="<?php echo htmlspecialchars($filtro_rapido); ?>">
-                        <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)) { ?>
-                            <div class="col-12 col-sm-auto">
+                        <?php if ($posto_evidenziato_id !== ''): ?>
+                            <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($posto_evidenziato_id); ?>">
+                        <?php endif; ?>
+                        <?php if ($stato_filtro_dash !== ''): ?>
+                            <input type="hidden" name="stato" value="<?php echo htmlspecialchars($stato_filtro_dash); ?>">
+                        <?php endif; ?>
+
+                        <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)): ?>
+                            <div class="col-sm-5 col-md-4">
                                 <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                                    <?php foreach ($reparti_disponibili as $rep) {
-                                        $labelRep = $rep['nome_reparto'] ?? $rep['nome'] ?? 'Reparto';
-                                    ?>
+                                    <?php foreach ($reparti_disponibili as $rep): ?>
                                         <option value="<?php echo htmlspecialchars($rep['id']); ?>" <?php echo ((string)$rep['id'] === (string)$reparto_selezionato) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($labelRep); ?>
+                                            <?php echo htmlspecialchars($rep['nome_reparto'] ?? $rep['nome'] ?? 'Reparto'); ?>
                                         </option>
-                                    <?php } ?>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
-                        <?php } ?>
-                        <div class="col-6 col-sm-auto">
+                        <?php endif; ?>
+
+                        <div class="col-sm-4 col-md-3">
                             <input type="date" name="data_giro" class="form-control form-control-sm" value="<?php echo htmlspecialchars($data_giro); ?>" onchange="this.form.submit()">
                         </div>
-                        <div class="col-6 col-sm-auto">
-                            <input type="text" name="q" class="form-control form-control-sm" placeholder="Cerca stanza, sigla, diagnosi..." value="<?php echo htmlspecialchars($ricerca_testo); ?>">
+
+                        <div class="col-sm-8 col-md-3">
+                            <input type="text" name="q" class="form-control form-control-sm" placeholder="Cerca letto, sigla, data int..." value="<?php echo htmlspecialchars($ricerca_testo); ?>">
                         </div>
+
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-sm btn-primary fw-bold"><i class="bi bi-search"></i> Filtra</button>
+                            <button type="submit" class="btn btn-sm btn-primary" title="Filtra"><i class="bi bi-search"></i></button>
+                            <?php if ($ricerca_testo !== '' || $filtro_rapido !== 'tutti' || $stato_filtro_dash !== '' || $posto_evidenziato_id !== ''): ?>
+                                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>" class="btn btn-sm btn-outline-secondary" title="Azzera filtri"><i class="bi bi-x-lg"></i></a>
+                            <?php endif; ?>
+                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalPostoLetto" onclick="preparaNuovoPostoLetto()">
+                                <i class="bi bi-plus-lg"></i> Posto Letto
+                            </button>
                         </div>
-                        <?php if (!empty($reparto_selezionato)) { ?>
-                            <div class="col-auto">
-                                <button type="button" class="btn btn-sm btn-success fw-bold" onclick="apriModaleLetto(null)">
-                                    <i class="bi bi-plus-lg"></i> Nuovo Letto
-                                </button>
-                            </div>
-                        <?php } ?>
                     </form>
                 </div>
             </div>
         </div>
 
-        <?php if (!empty($messaggio)) { ?>
-            <div class="alert alert-<?php echo htmlspecialchars($tipo_alert ?: 'info'); ?> alert-dismissible fade show shadow-sm" role="alert">
-                <i class="bi bi-info-circle-fill me-2"></i> <?php echo htmlspecialchars($messaggio); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-md-3">
+                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>&filtro=tutti" class="text-decoration-none text-reset">
+                    <div class="card p-2">
+                        <div class="small text-muted fw-semibold">Posti Attivi</div>
+                        <div class="fs-5 fw-bold"><?php echo (int)$conteggiStati['totale']; ?></div>
+                    </div>
+                </a>
             </div>
-        <?php } ?>
-
-        <?php if (empty($reparto_selezionato)) { ?>
-            <div class="alert alert-warning shadow-sm">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i> Nessun reparto associato all'utenza o selezionato.
+            <div class="col-6 col-md-3">
+                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>&filtro=da_visitare" class="text-decoration-none text-reset">
+                    <div class="card p-2">
+                        <div class="small text-muted fw-semibold">In Attesa Visita</div>
+                        <div class="fs-5 fw-bold text-secondary"><?php echo (int)$conteggiStati['da_visitare']; ?></div>
+                    </div>
+                </a>
             </div>
-        <?php } else { ?>
-
-            <div class="card p-2 px-3 mb-3">
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-                    <button class="btn btn-sm btn-outline-secondary fw-semibold d-inline-flex align-items-center gap-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTeamInTurno" aria-expanded="false" aria-controls="collapseTeamInTurno">
-                        <i class="bi bi-people-fill text-primary"></i>
-                        <span>Team in turno (<?php echo count($personaleInTurno); ?>)</span>
-                        <i class="bi bi-chevron-down small"></i>
-                    </button>
-                    <span class="small text-muted">Consegne aperte oggi: <strong class="text-danger"><?php echo intval($totaleConsegneAperte); ?></strong></span>
-                </div>
-                <div class="collapse mt-2" id="collapseTeamInTurno">
-                    <?php if (empty($personaleInTurno)) { ?>
-                        <div class="small text-muted fst-italic">Nessun operatore registrato in pianificazione per la data selezionata (esclusi riposi/assenze).</div>
-                    <?php } else { ?>
-                        <div class="d-flex flex-wrap gap-2 pt-1 border-top">
-                            <?php foreach ($personaleInTurno as $pt) { ?>
-                                <span class="pill-turno">
-                                    <strong><?php echo htmlspecialchars($pt['nome']); ?></strong>
-                                    <?php if (!empty($pt['ruolo'])) { ?>
-                                        <span class="text-muted">(<?php echo htmlspecialchars($pt['ruolo']); ?>)</span>
-                                    <?php } ?>
-                                    <span class="badge bg-primary"><?php echo htmlspecialchars(implode('/', $pt['turni'])); ?></span>
-                                </span>
-                            <?php } ?>
-                        </div>
-                    <?php } ?>
-                </div>
+            <div class="col-6 col-md-3">
+                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>&filtro=da_rivalutare" class="text-decoration-none text-reset">
+                    <div class="card p-2">
+                        <div class="small text-muted fw-semibold">Medicazioni / Esami / Urg.</div>
+                        <div class="fs-5 fw-bold text-warning"><?php echo (int)$conteggiStati['medicazioni_esami']; ?></div>
+                    </div>
+                </a>
             </div>
+            <div class="col-6 col-md-3">
+                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>&filtro=dimissioni" class="text-decoration-none text-reset">
+                    <div class="card p-2">
+                        <div class="small text-muted fw-semibold">Dimissioni / Valutazione</div>
+                        <div class="fs-5 fw-bold text-primary"><?php echo (int)$conteggiStati['dimissioni']; ?></div>
+                    </div>
+                </a>
+            </div>
+        </div>
 
-            <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
-                <?php
-                $filtriBottoni = [
-                    'tutti'           => ['label' => 'Tutti i letti', 'count' => $conteggiStati['totale'], 'cls' => 'btn-outline-dark'],
-                    'da_visitare'     => ['label' => 'Da visitare', 'count' => $conteggiStati['da_visitare'], 'cls' => 'btn-outline-secondary'],
-                    'da_rivalutare'   => ['label' => 'Medicazioni / Esami / Urgenti', 'count' => $conteggiStati['medicazioni_esami'], 'cls' => 'btn-outline-warning'],
-                    'dimissioni'      => ['label' => 'Dimissioni / Cod. 56', 'count' => $conteggiStati['dimissioni'], 'cls' => 'btn-outline-primary'],
-                    'consegne_aperte' => ['label' => 'Consegne aperte', 'count' => $totaleConsegneAperte, 'cls' => 'btn-outline-danger']
-                ];
-                foreach ($filtriBottoni as $keyF => $infoF) {
-                    $attivoF = ($filtro_rapido === $keyF);
-                    $urlF = "giro_visita.php?" . http_build_query([
-                        'reparto_id' => $reparto_selezionato,
-                        'data_giro'  => $data_giro,
-                        'filtro'     => $keyF,
-                        'q'          => $ricerca_testo
-                    ]);
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            <?php
+            $filtriBar = [
+                'tutti'           => 'Tutti',
+                'occupati'        => 'Occupati',
+                'da_visitare'     => 'Da visitare',
+                'da_rivalutare'   => 'Rivalutare / Urgenti',
+                'dimissioni'      => 'Dimissioni',
+                'consegne_aperte' => 'Consegne aperte (' . (int)$totaleConsegneAperte . ')'
+            ];
+            foreach ($filtriBar as $kF => $lblF):
+                $clsBtn = ($filtro_rapido === $kF) ? 'btn-dark' : 'btn-outline-secondary bg-white';
+            ?>
+                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>&filtro=<?php echo urlencode($kF); ?><?php echo $ricerca_testo !== '' ? '&q=' . urlencode($ricerca_testo) : ''; ?>" class="btn btn-sm <?php echo $clsBtn; ?>">
+                    <?php echo htmlspecialchars($lblF); ?>
+                </a>
+            <?php endforeach; ?>
+        </div>
+
+        <?php if (empty($reparto_selezionato)): ?>
+            <div class="alert alert-info">Nessun reparto configurato per l'utente.</div>
+        <?php elseif (empty($postiLettoFiltrati)): ?>
+            <div class="card p-4 text-center text-muted">Nessun posto letto trovato con i filtri attuali.</div>
+        <?php else: ?>
+            <div class="row g-3 mb-4">
+                <?php foreach ($postiLettoFiltrati as $pl):
+                    $plId = $pl['id'] ?? '';
+                    $stanza = trim($pl['stanza'] ?? '');
+                    $letto = trim($pl['letto'] ?? '');
+                    $ordine = intval($pl['ordine_letto'] ?? 1);
+                    $sigla = trim($pl['sigla_paziente'] ?? '');
+                    $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
+                    $dataInt = trim($pl['data_intervento'] ?? '');
+                    $hasDataInt = is_valid_date($dataInt);
+                    $stato = $pl['stato_visita'] ?? 'In attesa di visita';
+                    $prio = $pl['priorita'] ?? 'Normale';
+                    $noteStato = trim($pl['note_stato'] ?? '');
+                    $attivo = !empty($pl['attivo']);
+
+                    $labelPosto = trim($stanza . ($letto !== '' ? ' - ' . $letto : ''), ' -');
+                    if ($labelPosto === '') {
+                        $labelPosto = 'Posto letto';
+                    }
+
+                    $cardClass = 'card-letto';
+                    if ($posto_evidenziato_id !== '' && $plId === $posto_evidenziato_id) {
+                        $cardClass .= ' evidenziata';
+                    }
+                    if ($prio === 'Urgente') {
+                        $cardClass .= ' prio-urgente';
+                    } elseif ($prio === 'Dimissione' || in_array($stato, ['Dimissione in valutazione', 'Dimissione protetta'], true)) {
+                        $cardClass .= ' prio-dimissione';
+                    } elseif ($stato === 'Visitato') {
+                        $cardClass .= ' stato-visitato';
+                    }
+
+                    $badgeStatoInfo = $statiVisita[$stato] ?? ['badge' => 'bg-secondary', 'icon' => 'bi-info-circle'];
+                    $consLetto = $consegnePerLetto[$plId] ?? [];
+
+                    $badgeInterventoClass = 'bg-light text-dark border';
+                    $badgeInterventoLabel = '';
+                    if ($hasDataInt) {
+                        $dataIntFmt = date('d/m/Y', strtotime($dataInt));
+                        if ($dataInt === $data_giro) {
+                            $badgeInterventoClass = 'bg-danger text-white';
+                            $badgeInterventoLabel = "Intervento oggi ({$dataIntFmt})";
+                        } elseif ($dataInt < $data_giro) {
+                            $badgeInterventoClass = 'bg-warning text-dark';
+                            $badgeInterventoLabel = "Intervento: {$dataIntFmt}";
+                        } else {
+                            $badgeInterventoClass = 'bg-info text-dark';
+                            $badgeInterventoLabel = "Intervento: {$dataIntFmt}";
+                        }
+                    }
                 ?>
-                    <a href="<?php echo htmlspecialchars($urlF); ?>" class="btn btn-sm <?php echo $attivoF ? 'btn-dark fw-bold' : $infoF['cls']; ?>">
-                        <?php echo htmlspecialchars($infoF['label']); ?>
-                        <span class="badge bg-light text-dark ms-1"><?php echo intval($infoF['count']); ?></span>
-                    </a>
-                <?php } ?>
-            </div>
-
-            <?php if (empty($postiLettoFiltrati)) { ?>
-                <div class="card p-4 text-center text-muted">
-                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                    Nessun posto letto trovato con i filtri selezionati. Puoi aggiungerne uno con il pulsante <strong>Nuovo Letto</strong>.
-                </div>
-            <?php } else { ?>
-                <div class="row g-3">
-                    <?php foreach ($postiLettoFiltrati as $pl) {
-                        $plId = $pl['id'];
-                        $statoAtt = $pl['stato_visita'] ?? 'In attesa di visita';
-                        $prioAtt = $pl['priorita'] ?? 'Normale';
-                        $stMeta = $statiVisita[$statoAtt] ?? ['badge' => 'bg-secondary', 'icon' => 'bi-circle'];
-                        $consLetto = $consegnePerLetto[$plId] ?? [];
-
-                        $classeCard = 'card-letto';
-                        if ($prioAtt === 'Urgente') {
-                            $classeCard .= ' prio-urgente';
-                        } elseif ($prioAtt === 'Dimissione') {
-                            $classeCard .= ' prio-dimissione';
-                        } elseif ($statoAtt === 'Visitato') {
-                            $classeCard .= ' stato-visitato';
-                        }
-
-                        $plJson = htmlspecialchars(json_encode($pl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
-                        $labelPos = trim(($pl['stanza'] ?? '') . ' - ' . ($pl['letto'] ?? ''), ' -');
-                        if ($labelPos === '') {
-                            $labelPos = 'Posto letto';
-                        }
-                        $haDegente = (!empty(trim($pl['sigla_paziente'] ?? '')) || !empty(trim($pl['diagnosi_sintetica'] ?? '')) || !empty(trim($pl['note_stato'] ?? '')));
-                    ?>
-                        <div class="col-12 col-md-6 col-xl-4">
-                            <div class="card h-100 p-3 <?php echo $classeCard; ?>">
-                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                                    <div>
-                                        <span class="fw-bold fs-6 text-dark">
-                                            <i class="bi bi-door-open text-secondary"></i> <?php echo htmlspecialchars($labelPos); ?>
-                                        </span>
-                                        <?php if (!empty($pl['sigla_paziente'])) { ?>
-                                            <span class="badge bg-light text-dark border ms-1 fw-bold"><?php echo htmlspecialchars($pl['sigla_paziente']); ?></span>
-                                        <?php } ?>
-                                        <?php if ($prioAtt === 'Urgente') { ?>
-                                            <span class="badge bg-danger ms-1">Urgente</span>
-                                        <?php } elseif ($prioAtt === 'Dimissione') { ?>
-                                            <span class="badge bg-primary ms-1">Dimissione</span>
-                                        <?php } ?>
-                                    </div>
-                                    <div class="btn-group">
-                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="apriModaleLetto('<?php echo $plJson; ?>')" title="Modifica posto letto / stato">
-                                            <i class="bi bi-pencil-square"></i>
-                                        </button>
-                                        <button type="button" class="btn btn-xs btn-outline-success py-0 px-2" onclick="apriModaleConsegna('<?php echo htmlspecialchars($plId, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($labelPos, ENT_QUOTES); ?>')" title="Nuova consegna">
-                                            <i class="bi bi-plus-circle"></i>
-                                        </button>
-                                    </div>
+                    <div class="col-md-6 col-xl-4" id="posto-<?php echo htmlspecialchars($plId); ?>">
+                        <div class="card p-3 h-100 <?php echo $cardClass; ?>">
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                <div>
+                                    <span class="badge bg-dark fs-6"><?php echo htmlspecialchars($labelPosto); ?></span>
+                                    <?php if ($sigla !== ''): ?>
+                                        <span class="fw-bold fs-6 ms-1"><?php echo htmlspecialchars($sigla); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted small ms-1">Posto libero</span>
+                                    <?php endif; ?>
                                 </div>
+                                <span class="badge <?php echo $badgeStatoInfo['badge']; ?>">
+                                    <i class="bi <?php echo $badgeStatoInfo['icon']; ?>"></i> <?php echo htmlspecialchars($stato); ?>
+                                </span>
+                            </div>
 
+                            <?php if ($hasDataInt): ?>
                                 <div class="mb-2">
-                                    <span class="badge <?php echo $stMeta['badge']; ?>" style="font-size: 0.75rem;">
-                                        <i class="bi <?php echo $stMeta['icon']; ?>"></i> <?php echo htmlspecialchars($statoAtt); ?>
+                                    <span class="badge <?php echo $badgeInterventoClass; ?>">
+                                        <i class="bi bi-scissors"></i> <?php echo htmlspecialchars($badgeInterventoLabel); ?>
                                     </span>
                                 </div>
+                            <?php endif; ?>
 
-                                <?php if (!empty($pl['diagnosi_sintetica'])) { ?>
-                                    <div class="small fw-semibold text-dark mb-1">
-                                        <?php echo htmlspecialchars($pl['diagnosi_sintetica']); ?>
-                                    </div>
-                                <?php } ?>
+                            <?php if ($diagnosi !== ''): ?>
+                                <div class="small fw-semibold mb-1"><?php echo htmlspecialchars($diagnosi); ?></div>
+                            <?php endif; ?>
 
-                                <?php if (!empty($pl['note_stato'])) { ?>
-                                    <div class="small text-muted mb-2">
-                                        <i class="bi bi-chat-left-text"></i> <?php echo htmlspecialchars($pl['note_stato']); ?>
-                                    </div>
-                                <?php } ?>
+                            <?php if ($noteStato !== ''): ?>
+                                <div class="small text-secondary mb-2"><i class="bi bi-journal-text"></i> <?php echo htmlspecialchars($noteStato); ?></div>
+                            <?php endif; ?>
 
-                                <div class="d-flex gap-2 mb-2">
-                                    <?php if ($statoAtt !== 'Visitato') { ?>
-                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="flex-fill m-0">
-                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                            <input type="hidden" name="azione" value="stato_rapido">
-                                            <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
-                                            <input type="hidden" name="stato_visita" value="Visitato">
-                                            <button type="submit" class="btn btn-sm btn-outline-success w-100 py-1 fw-semibold">
-                                                <i class="bi bi-check2-circle"></i> Visitato
-                                            </button>
-                                        </form>
-                                    <?php } ?>
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalPostoLetto"
+                                    data-id="<?php echo htmlspecialchars($plId); ?>"
+                                    data-stanza="<?php echo htmlspecialchars($stanza, ENT_QUOTES); ?>"
+                                    data-letto="<?php echo htmlspecialchars($letto, ENT_QUOTES); ?>"
+                                    data-ordine="<?php echo $ordine; ?>"
+                                    data-sigla="<?php echo htmlspecialchars($sigla, ENT_QUOTES); ?>"
+                                    data-diagnosi="<?php echo htmlspecialchars($diagnosi, ENT_QUOTES); ?>"
+                                    data-data-intervento="<?php echo htmlspecialchars($hasDataInt ? $dataInt : '', ENT_QUOTES); ?>"
+                                    data-stato="<?php echo htmlspecialchars($stato, ENT_QUOTES); ?>"
+                                    data-priorita="<?php echo htmlspecialchars($prio, ENT_QUOTES); ?>"
+                                    data-note="<?php echo htmlspecialchars($noteStato, ENT_QUOTES); ?>"
+                                    data-attivo="<?php echo $attivo ? '1' : '0'; ?>"
+                                    onclick="caricaPostoLettoInModale(this)"
+                                >
+                                    <i class="bi bi-pencil"></i> Modifica
+                                </button>
 
-                                    <?php if ($haDegente || in_array($statoAtt, ['Dimissione in valutazione', 'Dimissione protetta'], true) || $prioAtt === 'Dimissione') { ?>
-                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="flex-fill m-0" onsubmit="return confirm('Confermi la dimissione per <?php echo htmlspecialchars($labelPos, ENT_QUOTES); ?>? Verrà salvata una nota di dimissione nella giornata, rimosse le consegne del degente uscente e liberato il letto.');">
-                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                            <input type="hidden" name="azione" value="dimetti_paziente">
-                                            <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-primary w-100 py-1 fw-semibold">
-                                                <i class="bi bi-box-arrow-right"></i> Dimetti
-                                            </button>
-                                        </form>
-                                    <?php } ?>
-                                </div>
-
-                                <div class="mt-auto pt-2 border-top">
-                                    <div class="d-flex justify-content-between align-items-center mb-1">
-                                        <span class="small fw-bold text-secondary">Consegne del giorno (<?php echo count($consLetto); ?>)</span>
-                                        <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" onclick="apriModaleConsegna('<?php echo htmlspecialchars($plId, ENT_QUOTES); ?>', '<?php echo htmlspecialchars($labelPos, ENT_QUOTES); ?>')">
-                                            + Aggiungi
-                                        </button>
-                                    </div>
-
-                                    <?php if (empty($consLetto)) { ?>
-                                        <div class="small text-muted fst-italic">Nessuna consegna registrata per oggi.</div>
-                                    <?php } else { ?>
-                                        <div class="d-flex flex-column gap-2">
-                                            <?php foreach ($consLetto as $cons) {
-                                                $isComp = !empty($cons['completata']);
-                                                $autoreNome = $mappaUtenti[$cons['utente_id'] ?? '']['nome'] ?? '';
-                                                $assegnatoNome = $mappaUtenti[$cons['assegnato_a_id'] ?? '']['nome'] ?? '';
-                                                $completataDaNome = $mappaUtenti[$cons['completata_da_id'] ?? '']['nome'] ?? '';
-                                                if ($isComp && $completataDaNome === '') {
-                                                    $completataDaNome = 'Operatore';
-                                                }
-                                                $oraComp = ($isComp && !empty($cons['completata_at'])) ? date('H:i', strtotime($cons['completata_at'])) : '';
-                                            ?>
-                                                <div class="consegna-item d-flex justify-content-between align-items-start gap-2 <?php echo $isComp ? 'consegna-fatta' : ''; ?>">
-                                                    <div class="d-flex align-items-start gap-2">
-                                                        <?php if (!$isComp) { ?>
-                                                            <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0">
-                                                                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                                                <input type="hidden" name="azione" value="toggle_consegna">
-                                                                <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cons['id']); ?>">
-                                                                <input type="hidden" name="completata" value="1">
-                                                                <input type="checkbox" class="form-check-input mt-1" onchange="this.form.submit()" title="Segna come fatta">
-                                                            </form>
-                                                        <?php } else { ?>
-                                                            <input type="checkbox" class="form-check-input mt-1" checked disabled title="Azione completata e bloccata">
-                                                        <?php } ?>
-                                                        <div class="small">
-                                                            <span class="badge bg-info text-dark me-1"><?php echo htmlspecialchars($cons['tag_azione'] ?? 'Altro'); ?></span>
-                                                            <span class="text-dark <?php echo $isComp ? 'consegna-testo-fatto' : ''; ?>"><?php echo htmlspecialchars($cons['nota'] ?? ''); ?></span>
-                                                            <?php if ($isComp) { ?>
-                                                                <div class="text-success fw-semibold mt-1" style="font-size: 0.73rem;">
-                                                                    <i class="bi bi-check-circle-fill"></i> Fatta da: <strong><?php echo htmlspecialchars($completataDaNome); ?></strong>
-                                                                    <?php if ($oraComp !== '') { ?>
-                                                                        <span>alle <?php echo htmlspecialchars($oraComp); ?></span>
-                                                                    <?php } ?>
-                                                                    <span class="text-muted fw-normal">&bull; Bloccata</span>
-                                                                </div>
-                                                            <?php } ?>
-                                                            <?php if ($assegnatoNome !== '' || $autoreNome !== '') { ?>
-                                                                <div class="text-muted" style="font-size: 0.72rem;">
-                                                                    <?php if ($assegnatoNome !== '') { ?>
-                                                                        <span>Assegnata a: <strong><?php echo htmlspecialchars($assegnatoNome); ?></strong></span>
-                                                                    <?php } ?>
-                                                                    <?php if ($autoreNome !== '') { ?>
-                                                                        <span> &bull; da <?php echo htmlspecialchars($autoreNome); ?></span>
-                                                                    <?php } ?>
-                                                                </div>
-                                                            <?php } ?>
-                                                        </div>
-                                                    </div>
-                                                    <?php if (!$isComp) { ?>
-                                                        <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0" onsubmit="return confirm('Eliminare questa consegna?');">
-                                                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                                            <input type="hidden" name="azione" value="elimina_consegna">
-                                                            <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cons['id']); ?>">
-                                                            <button type="submit" class="btn btn-xs btn-link text-danger p-0" title="Elimina consegna">
-                                                                <i class="bi bi-x-lg"></i>
-                                                            </button>
-                                                        </form>
-                                                    <?php } else { ?>
-                                                        <span class="text-success small" title="Azione completata: non eliminabile">
-                                                            <i class="bi bi-lock-fill"></i>
-                                                        </span>
-                                                    <?php } ?>
-                                                </div>
-                                            <?php } ?>
-                                        </div>
-                                    <?php } ?>
-                                </div>
-                            </div>
-                        </div>
-                    <?php } ?>
-                </div>
-            <?php } ?>
-
-            <div class="card p-3 mt-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                    <h5 class="mb-0 fw-bold text-dark fs-6 d-flex align-items-center gap-2">
-                        <i class="bi bi-journal-check text-primary"></i> Dimissioni registrate nel giorno <?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>
-                    </h5>
-                    <span class="badge bg-primary"><?php echo count($dimissioniGiorno); ?></span>
-                </div>
-
-                <?php if (empty($dimissioniGiorno)) { ?>
-                    <div class="small text-muted fst-italic">Nessuna dimissione registrata per la data selezionata.</div>
-                <?php } else { ?>
-                    <div class="d-flex flex-column gap-2">
-                        <?php foreach ($dimissioniGiorno as $dim) {
-                            $autoreDim = $mappaUtenti[$dim['utente_id'] ?? '']['nome'] ?? '';
-                            $oraDim = !empty($dim['created_at']) ? date('H:i', strtotime($dim['created_at'])) : '';
-                        ?>
-                            <div class="consegna-item d-flex justify-content-between align-items-start gap-2">
-                                <div class="small">
-                                    <span class="badge bg-primary me-1">Dimissione</span>
-                                    <span class="text-dark"><?php echo htmlspecialchars($dim['nota'] ?? ''); ?></span>
-                                    <div class="text-muted" style="font-size: 0.72rem;">
-                                        <?php if ($oraDim !== '') { ?>
-                                            <span>Ore <?php echo htmlspecialchars($oraDim); ?></span>
-                                        <?php } ?>
-                                        <?php if ($autoreDim !== '') { ?>
-                                            <span><?php echo $oraDim !== '' ? ' &bull; ' : ''; ?>Registrata da: <strong><?php echo htmlspecialchars($autoreDim); ?></strong></span>
-                                        <?php } ?>
-                                    </div>
-                                </div>
-                                <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>" class="m-0" onsubmit="return confirm('Rimuovere questa nota di dimissione dal riepilogo del giorno?');">
+                                <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="d-inline">
                                     <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                                    <input type="hidden" name="azione" value="elimina_consegna">
-                                    <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($dim['id']); ?>">
-                                    <button type="submit" class="btn btn-xs btn-link text-danger p-0" title="Elimina nota dimissione">
-                                        <i class="bi bi-x-lg"></i>
+                                    <input type="hidden" name="azione" value="stato_rapido">
+                                    <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
+                                    <input type="hidden" name="stato_visita" value="Visitato">
+                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Segna come visitato">
+                                        <i class="bi bi-check2"></i> Visitato
+                                    </button>
+                                </form>
+
+                                <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="d-inline" onsubmit="return confirm('Registrare la dimissione e liberare il posto letto?');">
+                                    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                    <input type="hidden" name="azione" value="dimetti_paziente">
+                                    <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-dark" title="Dimetti paziente">
+                                        <i class="bi bi-box-arrow-right"></i> Dimetti
+                                    </button>
+                                </form>
+
+                                <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="d-inline" onsubmit="return confirm('Liberare il posto letto e rimuovere le consegne del giorno?');">
+                                    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                    <input type="hidden" name="azione" value="libera_letto">
+                                    <input type="hidden" name="posto_id" value="<?php echo htmlspecialchars($plId); ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Libera letto">
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
                             </div>
-                        <?php } ?>
+
+                            <div class="border-top pt-2 mt-auto">
+                                <div class="small fw-bold mb-2">Consegne (<?php echo count($consLetto); ?>)</div>
+
+                                <?php if (!empty($consLetto)): ?>
+                                    <div class="d-flex flex-column gap-2 mb-2">
+                                        <?php foreach ($consLetto as $c):
+                                            $cId = $c['id'] ?? '';
+                                            $isFatta = !empty($c['completata']);
+                                            $assId = $c['assegnato_a_id'] ?? '';
+                                            $nomeAss = ($assId !== '' && isset($mappaUtenti[$assId])) ? ($mappaUtenti[$assId]['nome'] ?? '') : '';
+                                        ?>
+                                            <div class="consegna-item <?php echo $isFatta ? 'consegna-fatta' : ''; ?>">
+                                                <div class="d-flex justify-content-between align-items-start gap-2">
+                                                    <div class="small <?php echo $isFatta ? 'consegna-testo-fatto' : ''; ?>">
+                                                        <span class="badge bg-secondary-subtle text-dark border me-1"><?php echo htmlspecialchars($c['tag_azione'] ?? 'Azione'); ?></span>
+                                                        <?php echo htmlspecialchars($c['nota'] ?? ''); ?>
+                                                        <?php if ($nomeAss !== ''): ?>
+                                                            <div class="text-muted mt-1" style="font-size: 0.72rem;"><i class="bi bi-person-check"></i> Assegnata a: <?php echo htmlspecialchars($nomeAss); ?></div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <div class="d-flex gap-1 flex-shrink-0">
+                                                        <?php if (!$isFatta && is_uuid($cId)): ?>
+                                                            <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="d-inline">
+                                                                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                                                <input type="hidden" name="azione" value="toggle_consegna">
+                                                                <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cId); ?>">
+                                                                <input type="hidden" name="completata" value="1">
+                                                                <button type="submit" class="btn btn-sm btn-success py-0 px-1" title="Segna completata"><i class="bi bi-check"></i></button>
+                                                            </form>
+                                                            <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="d-inline" onsubmit="return confirm('Eliminare questa consegna?');">
+                                                                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                                                <input type="hidden" name="azione" value="elimina_consegna">
+                                                                <input type="hidden" name="consegna_id" value="<?php echo htmlspecialchars($cId); ?>">
+                                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1" title="Elimina consegna"><i class="bi bi-x"></i></button>
+                                                            </form>
+                                                        <?php elseif ($isFatta): ?>
+                                                            <span class="badge bg-success"><i class="bi bi-check-all"></i> Fatta</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+
+                                <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="row g-1">
+                                    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                                    <input type="hidden" name="azione" value="aggiungi_consegna">
+                                    <input type="hidden" name="posto_letto_id" value="<?php echo htmlspecialchars($plId); ?>">
+                                    <div class="col-12">
+                                        <select name="tag_azione" class="form-select form-select-sm">
+                                            <?php foreach ($tagAzioni as $tag): ?>
+                                                <option value="<?php echo htmlspecialchars($tag); ?>"><?php echo htmlspecialchars($tag); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-12">
+                                        <select name="assegnato_a_id" class="form-select form-select-sm">
+                                            <option value="">Assegna a... (opzionale)</option>
+                                            <?php foreach ($mappaUtenti as $u): ?>
+                                                <option value="<?php echo htmlspecialchars($u['id']); ?>"><?php echo htmlspecialchars($u['nome'] ?? 'Operatore'); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-9">
+                                        <input type="text" name="nota" class="form-control form-control-sm" placeholder="Nuova consegna / nota..." required>
+                                    </div>
+                                    <div class="col-3">
+                                        <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-plus"></i></button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
                     </div>
-                <?php } ?>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card p-3 h-100">
+                    <h3 class="h6 fw-bold mb-2"><i class="bi bi-people-fill text-primary"></i> Personale in Turno (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h3>
+                    <?php if (empty($personaleInTurno)): ?>
+                        <div class="small text-muted">Nessun operatore registrato in turno per questa data.</div>
+                    <?php else: ?>
+                        <div class="d-flex flex-wrap gap-1">
+                            <?php foreach ($personaleInTurno as $op): ?>
+                                <span class="pill-turno">
+                                    <strong><?php echo htmlspecialchars($op['nome']); ?></strong>
+                                    <span class="text-muted"><?php echo htmlspecialchars(implode(', ', $op['turni'])); ?></span>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
 
-        <?php } ?>
-    </div>
-
-    <div class="modal fade" id="modalLetto" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-dark text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold" id="modalLettoTitolo">Posto Letto / Stato Giro Visita</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="col-lg-6">
+                <div class="card p-3 h-100">
+                    <h3 class="h6 fw-bold mb-2"><i class="bi bi-box-arrow-right text-success"></i> Dimissioni Registrate (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h3>
+                    <?php if (empty($dimissioniGiorno)): ?>
+                        <div class="small text-muted">Nessuna dimissione registrata per questa data.</div>
+                    <?php else: ?>
+                        <ul class="list-group list-group-flush small">
+                            <?php foreach ($dimissioniGiorno as $dim): ?>
+                                <li class="list-group-item px-0 py-1">
+                                    <span class="badge bg-success-subtle text-success-emphasis border me-1"><?php echo htmlspecialchars($dim['tag_azione'] ?? 'Dimissione'); ?></span>
+                                    <?php echo htmlspecialchars($dim['nota'] ?? ''); ?>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
                 </div>
-                <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>">
-                    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                    <input type="hidden" name="azione" value="salva_posto_letto">
-                    <input type="hidden" name="posto_id" id="ml_posto_id">
-                    <div class="modal-body small">
-                        <div class="row g-2 mb-2">
-                            <div class="col-5">
-                                <label class="form-label fw-bold">Stanza</label>
-                                <input type="text" name="stanza" id="ml_stanza" class="form-control form-control-sm" placeholder="Es. Stanza 1">
-                            </div>
-                            <div class="col-4">
-                                <label class="form-label fw-bold">Letto</label>
-                                <input type="text" name="letto" id="ml_letto" class="form-control form-control-sm" placeholder="Es. Letto A">
-                            </div>
-                            <div class="col-3">
-                                <label class="form-label fw-bold">Ordine</label>
-                                <input type="number" name="ordine_letto" id="ml_ordine" class="form-control form-control-sm" value="1" min="1">
-                            </div>
-                        </div>
-
-                        <div class="row g-2 mb-2">
-                            <div class="col-5">
-                                <label class="form-label fw-bold">Sigla / Iniziali</label>
-                                <input type="text" name="sigla_paziente" id="ml_sigla" class="form-control form-control-sm" placeholder="Es. M.R.">
-                            </div>
-                            <div class="col-7">
-                                <label class="form-label fw-bold">Priorità</label>
-                                <select name="priorita" id="ml_priorita" class="form-select form-select-sm">
-                                    <?php foreach ($prioritaValide as $pr) { ?>
-                                        <option value="<?php echo htmlspecialchars($pr); ?>"><?php echo htmlspecialchars($pr); ?></option>
-                                    <?php } ?>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Stato Giro Visita</label>
-                            <select name="stato_visita" id="ml_stato" class="form-select form-select-sm">
-                                <?php foreach ($statiVisita as $stNome => $stInfo) { ?>
-                                    <option value="<?php echo htmlspecialchars($stNome); ?>"><?php echo htmlspecialchars($stNome); ?></option>
-                                <?php } ?>
-                            </select>
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Diagnosi / Inquadramento sintetico</label>
-                            <input type="text" name="diagnosi_sintetica" id="ml_diagnosi" class="form-control form-control-sm" placeholder="Es. Frattura femore dx in attesa di intervento">
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Note di stato / giro</label>
-                            <textarea name="note_stato" id="ml_note" class="form-control form-control-sm" rows="2" placeholder="Sintesi veloce del giro visita..."></textarea>
-                        </div>
-
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="attivo" id="ml_attivo" value="1" checked>
-                            <label class="form-check-label" for="ml_attivo">Posto letto attivo nel reparto</label>
-                        </div>
-                    </div>
-                    <div class="modal-footer py-2 justify-content-between">
-                        <button type="submit" id="btnLiberaLetto" class="btn btn-sm btn-outline-warning fw-bold" style="display: none;" onclick="return svuotaCampiLetto()">
-                            <i class="bi bi-eraser"></i> Libera Letto
-                        </button>
-                        <div class="d-flex gap-2 ms-auto">
-                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                            <button type="submit" class="btn btn-sm btn-primary fw-bold"><i class="bi bi-check-lg"></i> Salva</button>
-                        </div>
-                    </div>
-                </form>
             </div>
         </div>
+
     </div>
 
-    <div class="modal fade" id="modalConsegna" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold" id="modalConsegnaTitolo">Nuova Consegna Operativa</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="modal fade" id="modalPostoLetto" tabindex="-1" aria-labelledby="modalPostoLettoLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <form method="POST" action="giro_visita.php?<?php echo htmlspecialchars(http_build_query($redirectParams)); ?>" class="modal-content">
+                <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                <input type="hidden" name="azione" value="salva_posto_letto">
+                <input type="hidden" name="posto_id" id="pl_id" value="">
+
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="modalPostoLettoLabel">Gestione Posto Letto / Degente</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
                 </div>
-                <form method="POST" action="<?php echo htmlspecialchars($redirectUrl); ?>">
-                    <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
-                    <input type="hidden" name="azione" value="aggiungi_consegna">
-                    <input type="hidden" name="posto_letto_id" id="mc_posto_id">
-                    <div class="modal-body small">
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Categoria / Tag Azione</label>
-                            <select name="tag_azione" id="mc_tag" class="form-select form-select-sm" required>
-                                <?php foreach ($tagAzioni as $tg) { ?>
-                                    <option value="<?php echo htmlspecialchars($tg); ?>"><?php echo htmlspecialchars($tg); ?></option>
-                                <?php } ?>
-                            </select>
-                        </div>
 
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Assegna a operatore (opzionale)</label>
-                            <select name="assegnato_a_id" id="mc_assegnato" class="form-select form-select-sm">
-                                <option value="">-- Non assegnata a singolo --</option>
-                                <?php foreach ($personaleInTurno as $pt) { ?>
-                                    <option value="<?php echo htmlspecialchars($pt['id']); ?>">
-                                        <?php echo htmlspecialchars($pt['nome']); ?> (In turno: <?php echo htmlspecialchars(implode('/', $pt['turni'])); ?>)
-                                    </option>
-                                <?php } ?>
-                                <?php foreach ($mappaUtenti as $uId => $uInfo) {
-                                    if (isset($personaleInTurno[$uId])) continue;
-                                ?>
-                                    <option value="<?php echo htmlspecialchars($uId); ?>">
-                                        <?php echo htmlspecialchars($uInfo['nome'] ?? 'Operatore'); ?>
-                                    </option>
-                                <?php } ?>
-                            </select>
-                        </div>
+                <div class="modal-body row g-3">
+                    <div class="col-sm-4">
+                        <label for="pl_stanza" class="form-label small fw-semibold">Stanza</label>
+                        <input type="text" name="stanza" id="pl_stanza" class="form-control form-control-sm" placeholder="Es. Stanza 1">
+                    </div>
+                    <div class="col-sm-4">
+                        <label for="pl_letto" class="form-label small fw-semibold">Letto</label>
+                        <input type="text" name="letto" id="pl_letto" class="form-control form-control-sm" placeholder="Es. A / 1">
+                    </div>
+                    <div class="col-sm-4">
+                        <label for="pl_ordine" class="form-label small fw-semibold">Ordine visualizzazione</label>
+                        <input type="number" min="1" name="ordine_letto" id="pl_ordine" class="form-control form-control-sm" value="1">
+                    </div>
 
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Nota / Consegna operativa</label>
-                            <textarea name="nota" id="mc_nota" class="form-control form-control-sm" rows="3" required placeholder="Es. Mobilizzazione con fisioterapista, medicazione ferita, avvio pratica Codice 56..."></textarea>
+                    <div class="col-sm-4">
+                        <label for="pl_sigla" class="form-label small fw-semibold">Sigla Paziente</label>
+                        <input type="text" name="sigla_paziente" id="pl_sigla" class="form-control form-control-sm" placeholder="Es. R.M. 1954">
+                    </div>
+                    <div class="col-sm-4">
+                        <label for="pl_data_intervento" class="form-label small fw-semibold">
+                            <i class="bi bi-scissors text-danger"></i> Data Intervento
+                        </label>
+                        <input type="date" name="data_intervento" id="pl_data_intervento" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-sm-4">
+                        <label for="pl_priorita" class="form-label small fw-semibold">Priorità</label>
+                        <select name="priorita" id="pl_priorita" class="form-select form-select-sm">
+                            <?php foreach ($prioritaValide as $pVal): ?>
+                                <option value="<?php echo htmlspecialchars($pVal); ?>"><?php echo htmlspecialchars($pVal); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="col-sm-6">
+                        <label for="pl_stato" class="form-label small fw-semibold">Stato Giro Visita</label>
+                        <select name="stato_visita" id="pl_stato" class="form-select form-select-sm">
+                            <?php foreach ($statiVisita as $stKey => $stInfo): ?>
+                                <option value="<?php echo htmlspecialchars($stKey); ?>"><?php echo htmlspecialchars($stKey); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-sm-6 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="attivo" id="pl_attivo" value="1" checked>
+                            <label class="form-check-label small" for="pl_attivo">Posto letto attivo</label>
                         </div>
                     </div>
-                    <div class="modal-footer py-2">
-                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Annulla</button>
-                        <button type="submit" class="btn btn-sm btn-success fw-bold"><i class="bi bi-plus-circle"></i> Salva Consegna</button>
+
+                    <div class="col-12">
+                        <label for="pl_diagnosi" class="form-label small fw-semibold">Diagnosi Sintetica / Inquadramento</label>
+                        <input type="text" name="diagnosi_sintetica" id="pl_diagnosi" class="form-control form-control-sm" placeholder="Es. Frattura pertrocanterica femore dx">
                     </div>
-                </form>
-            </div>
+
+                    <div class="col-12">
+                        <label for="pl_note" class="form-label small fw-semibold">Note di Stato / Giro Visita</label>
+                        <textarea name="note_stato" id="pl_note" rows="2" class="form-control form-control-sm" placeholder="Indicazioni cliniche, preparazione pre-operatoria, dimissione..."></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> Salva</button>
+                </div>
+            </form>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function apriModaleLetto(plJson) {
-            let btnLibera = document.getElementById('btnLiberaLetto');
-            if (!plJson) {
-                document.getElementById('modalLettoTitolo').innerText = "Nuovo Posto Letto / Degente";
-                document.getElementById('ml_posto_id').value = '';
-                document.getElementById('ml_stanza').value = '';
-                document.getElementById('ml_letto').value = '';
-                document.getElementById('ml_ordine').value = '1';
-                document.getElementById('ml_sigla').value = '';
-                document.getElementById('ml_priorita').value = 'Normale';
-                document.getElementById('ml_stato').value = 'In attesa di visita';
-                document.getElementById('ml_diagnosi').value = '';
-                document.getElementById('ml_note').value = '';
-                document.getElementById('ml_attivo').checked = true;
-                btnLibera.style.display = 'none';
-            } else {
-                let pl = typeof plJson === 'string' ? JSON.parse(plJson) : plJson;
-                document.getElementById('modalLettoTitolo').innerText = "Gestione " + ((pl.stanza || '') + ' ' + (pl.letto || '')).trim();
-                document.getElementById('ml_posto_id').value = pl.id || '';
-                document.getElementById('ml_stanza').value = pl.stanza || '';
-                document.getElementById('ml_letto').value = pl.letto || '';
-                document.getElementById('ml_ordine').value = pl.ordine_letto || 1;
-                document.getElementById('ml_sigla').value = pl.sigla_paziente || '';
-                document.getElementById('ml_priorita').value = pl.priorita || 'Normale';
-                document.getElementById('ml_stato').value = pl.stato_visita || 'In attesa di visita';
-                document.getElementById('ml_diagnosi').value = pl.diagnosi_sintetica || '';
-                document.getElementById('ml_note').value = pl.note_stato || '';
-                document.getElementById('ml_attivo').checked = (pl.attivo !== false);
-                btnLibera.style.display = 'inline-block';
-            }
-            let modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalLetto'));
-            modal.show();
+        function preparaNuovoPostoLetto() {
+            document.getElementById('modalPostoLettoLabel').textContent = 'Nuovo Posto Letto / Degente';
+            document.getElementById('pl_id').value = '';
+            document.getElementById('pl_stanza').value = '';
+            document.getElementById('pl_letto').value = '';
+            document.getElementById('pl_ordine').value = '1';
+            document.getElementById('pl_sigla').value = '';
+            document.getElementById('pl_data_intervento').value = '';
+            document.getElementById('pl_priorita').value = 'Normale';
+            document.getElementById('pl_stato').value = 'In attesa di visita';
+            document.getElementById('pl_diagnosi').value = '';
+            document.getElementById('pl_note').value = '';
+            document.getElementById('pl_attivo').checked = true;
         }
 
-        function svuotaCampiLetto() {
-            if (!confirm('Azzerare i dati del paziente e riportare il letto in stato iniziale?')) {
-                return false;
-            }
-            document.getElementById('ml_sigla').value = '';
-            document.getElementById('ml_diagnosi').value = '';
-            document.getElementById('ml_note').value = '';
-            document.getElementById('ml_priorita').value = 'Normale';
-            document.getElementById('ml_stato').value = 'In attesa di visita';
-            return true;
+        function caricaPostoLettoInModale(btn) {
+            document.getElementById('modalPostoLettoLabel').textContent = 'Modifica Posto Letto / Degente';
+            document.getElementById('pl_id').value = btn.getAttribute('data-id') || '';
+            document.getElementById('pl_stanza').value = btn.getAttribute('data-stanza') || '';
+            document.getElementById('pl_letto').value = btn.getAttribute('data-letto') || '';
+            document.getElementById('pl_ordine').value = btn.getAttribute('data-ordine') || '1';
+            document.getElementById('pl_sigla').value = btn.getAttribute('data-sigla') || '';
+            document.getElementById('pl_data_intervento').value = btn.getAttribute('data-data-intervento') || '';
+            document.getElementById('pl_priorita').value = btn.getAttribute('data-priorita') || 'Normale';
+            document.getElementById('pl_stato').value = btn.getAttribute('data-stato') || 'In attesa di visita';
+            document.getElementById('pl_diagnosi').value = btn.getAttribute('data-diagnosi') || '';
+            document.getElementById('pl_note').value = btn.getAttribute('data-note') || '';
+            document.getElementById('pl_attivo').checked = (btn.getAttribute('data-attivo') === '1');
         }
 
-        function apriModaleConsegna(postoId, labelPos) {
-            document.getElementById('modalConsegnaTitolo').innerText = "Nuova Consegna - " + labelPos;
-            document.getElementById('mc_posto_id').value = postoId;
-            document.getElementById('mc_tag').value = 'Mobilizzazione';
-            document.getElementById('mc_assegnato').value = '';
-            document.getElementById('mc_nota').value = '';
-            let modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalConsegna'));
-            modal.show();
-        }
+        <?php if ($posto_evidenziato_id !== ''): ?>
+        document.addEventListener('DOMContentLoaded', function () {
+            var target = document.getElementById('posto-<?php echo htmlspecialchars($posto_evidenziato_id, ENT_QUOTES); ?>');
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+        <?php endif; ?>
     </script>
 </body>
 </html>
