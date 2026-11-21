@@ -318,6 +318,12 @@ function build_dash_url(array $overrides = []) {
     }
     return "dashboard_ricoveri.php?" . http_build_query($params);
 }
+
+$giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
+    'reparto_id' => $reparto_selezionato,
+    'data_giro'  => $data_giro,
+    'filtro'     => 'occupati'
+]);
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -437,11 +443,11 @@ function build_dash_url(array $overrides = []) {
 
         <div class="row g-2 mb-3">
             <div class="col-6 col-md-3 col-xl-2">
-                <a href="<?php echo htmlspecialchars(build_dash_url(['filtro' => 'occupati'])); ?>" class="text-decoration-none text-reset">
+                <a href="<?php echo htmlspecialchars($giroVisitaOccupatiUrl); ?>" class="text-decoration-none text-reset" title="Apri Giro Visita sui letti occupati">
                     <div class="card p-2 h-100 kpi-card" style="border-left-color: #0f172a;">
-                        <div class="kpi-lbl">Occupati / Posti</div>
+                        <div class="kpi-lbl">Occupati / Posti <i class="bi bi-box-arrow-up-right ms-1"></i></div>
                         <div class="kpi-val"><?php echo (int)$kpi['occupati']; ?> <span class="fs-6 fw-normal text-muted">/ <?php echo (int)$kpi['posti_attivi']; ?></span></div>
-                        <div class="small text-muted">Liberi: <strong><?php echo (int)$kpi['liberi']; ?></strong></div>
+                        <div class="small text-muted">Liberi: <strong><?php echo (int)$kpi['liberi']; ?></strong> &bull; Apri Giro</div>
                     </div>
                 </a>
             </div>
