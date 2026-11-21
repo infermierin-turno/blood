@@ -443,9 +443,7 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="planner.php">Planner Mensile</a></li>
-                    <li class="nav-item"><a class="nav-link" href="turni.php">Assegnazione Turni</a></li>
                     <li class="nav-item"><a class="nav-link" href="giro_visita.php">Giro Visita</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="dashboard_ricoveri.php">Dashboard Ricoveri</a></li>
                     <li class="nav-item"><a class="nav-link text-danger" href="logout.php">Logout</a></li>
                 </ul>
             </div>
