@@ -15,6 +15,14 @@ function is_uuid($v) {
     return is_string($v) && (bool)preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $v);
 }
 
+function is_valid_date($d) {
+    if (!is_string($d) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) {
+        return false;
+    }
+    $parti = explode('-', $d);
+    return checkdate((int)$parti[1], (int)$parti[2], (int)$parti[0]);
+}
+
 $ultimo_errore_supabase = '';
 
 function supabase_dash_request($endpoint) {
@@ -112,13 +120,23 @@ if ($is_super_admin || $is_capo_personale) {
     $reparto_selezionato = is_uuid($reparto_id_utente) ? $reparto_id_utente : '';
 }
 
-$data_giro = (isset($_GET['data_giro']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['data_giro']))
+$data_giro = (isset($_GET['data_giro']) && is_valid_date($_GET['data_giro']))
     ? $_GET['data_giro']
     : date('Y-m-d');
 
 $filtro_rapido = isset($_GET['filtro']) ? trim($_GET['filtro']) : 'tutti';
 $ricerca_testo = isset($_GET['q']) ? trim($_GET['q']) : '';
 $vista_layout = (isset($_GET['vista']) && $_GET['vista'] === 'schede') ? 'schede' : 'tabella';
+
+$finestra_giorni = isset($_GET['giorni']) ? intval($_GET['giorni']) : 14;
+if (!in_array($finestra_giorni, [1, 3, 7, 14, 30, 999], true)) {
+    $finestra_giorni = 14;
+}
+
+$filtro_lista_op = isset($_GET['lista_op']) ? trim($_GET['lista_op']) : 'tutti';
+if (!in_array($filtro_lista_op, ['tutti', 'oggi', 'prossimi'], true)) {
+    $filtro_lista_op = 'tutti';
+}
 
 $nome_reparto_corrente = "Reparto non selezionato";
 foreach ($reparti_disponibili as $rep) {
@@ -173,6 +191,14 @@ if (!empty($reparto_selezionato)) {
     }
 }
 
+$dataLimiteOp = ($finestra_giorni === 999)
+    ? '9999-12-31'
+    : date('Y-m-d', strtotime($data_giro . ' +' . ($finestra_giorni - 1) . ' days'));
+
+$listaOperatoria = [];
+$interventiOggiCount = 0;
+$interventiProssimiCount = 0;
+
 $kpi = [
     'posti_attivi'      => count($postiLetto),
     'occupati'          => 0,
@@ -185,12 +211,18 @@ $kpi = [
 ];
 
 foreach ($postiLetto as $pl) {
+    $plId = $pl['id'] ?? '';
+    $stanza = trim($pl['stanza'] ?? '');
+    $letto = trim($pl['letto'] ?? '');
     $sigla = trim($pl['sigla_paziente'] ?? '');
     $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
     $st = $pl['stato_visita'] ?? 'In attesa di visita';
     $prio = $pl['priorita'] ?? 'Normale';
+    $noteStato = trim($pl['note_stato'] ?? '');
+    $dataInt = trim($pl['data_intervento'] ?? '');
+    $hasDataInt = is_valid_date($dataInt);
 
-    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale');
+    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
     if ($isOccupato) {
         $kpi['occupati']++;
     } else {
@@ -206,7 +238,55 @@ foreach ($postiLetto as $pl) {
     if (in_array($st, ['Dimissione in valutazione', 'Dimissione protetta'], true) || $prio === 'Dimissione') {
         $kpi['dimissioni']++;
     }
+
+    if ($hasDataInt && $dataInt >= $data_giro && $dataInt <= $dataLimiteOp) {
+        $isOggi = ($dataInt === $data_giro);
+        if ($isOggi) {
+            $interventiOggiCount++;
+        } else {
+            $interventiProssimiCount++;
+        }
+
+        $includeItem = true;
+        if ($filtro_lista_op === 'oggi' && !$isOggi) {
+            $includeItem = false;
+        } elseif ($filtro_lista_op === 'prossimi' && $isOggi) {
+            $includeItem = false;
+        }
+
+        if ($includeItem) {
+            $labelLettoOp = trim($stanza . ($letto !== '' ? ' / ' . $letto : ''), ' /');
+            if ($labelLettoOp === '') {
+                $labelLettoOp = 'Posto';
+            }
+            $listaOperatoria[] = [
+                'id' => $plId,
+                'stanza' => $stanza,
+                'letto' => $letto,
+                'posto' => $labelLettoOp,
+                'ordine_letto' => intval($pl['ordine_letto'] ?? 999),
+                'sigla_paziente' => $sigla !== '' ? $sigla : 'Sigla n.d.',
+                'diagnosi_sintetica' => $diagnosi,
+                'data_intervento' => $dataInt,
+                'is_oggi' => $isOggi,
+                'stato_visita' => $st,
+                'priorita' => $prio,
+                'note_stato' => $noteStato,
+                'consegne_aperte' => count($consegneApertePerLetto[$plId] ?? [])
+            ];
+        }
+    }
 }
+
+usort($listaOperatoria, function ($a, $b) {
+    if ($a['data_intervento'] !== $b['data_intervento']) {
+        return strcmp($a['data_intervento'], $b['data_intervento']);
+    }
+    if ($a['ordine_letto'] !== $b['ordine_letto']) {
+        return $a['ordine_letto'] <=> $b['ordine_letto'];
+    }
+    return strcmp($a['posto'], $b['posto']);
+});
 
 $postiFiltrati = array_values(array_filter($postiLetto, function($pl) use ($filtro_rapido, $ricerca_testo, $consegneApertePerLetto) {
     $plId = $pl['id'] ?? '';
@@ -214,7 +294,9 @@ $postiFiltrati = array_values(array_filter($postiLetto, function($pl) use ($filt
     $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
     $st = $pl['stato_visita'] ?? 'In attesa di visita';
     $prio = $pl['priorita'] ?? 'Normale';
-    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale');
+    $dataInt = trim($pl['data_intervento'] ?? '');
+    $hasDataInt = is_valid_date($dataInt);
+    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
 
     if ($filtro_rapido === 'occupati' && !$isOccupato) {
         return false;
@@ -240,11 +322,14 @@ $postiFiltrati = array_values(array_filter($postiLetto, function($pl) use ($filt
         foreach ($consegneApertePerLetto[$plId] ?? [] as $ca) {
             $testoConsegne .= ' ' . ($ca['tag_azione'] ?? '') . ' ' . ($ca['nota'] ?? '');
         }
+        $dataIntFmt = $hasDataInt ? date('d/m/Y', strtotime($dataInt)) : '';
         $haystack = mb_strtolower(
             ($pl['stanza'] ?? '') . ' ' .
             ($pl['letto'] ?? '') . ' ' .
             $sigla . ' ' .
             $diagnosi . ' ' .
+            $dataInt . ' ' .
+            $dataIntFmt . ' ' .
             ($pl['note_stato'] ?? '') . ' ' .
             $st . ' ' .
             $prio . ' ' .
@@ -259,12 +344,14 @@ $postiFiltrati = array_values(array_filter($postiLetto, function($pl) use ($filt
 }));
 
 function build_dash_url(array $overrides = []) {
-    global $reparto_selezionato, $data_giro, $filtro_rapido, $ricerca_testo, $vista_layout;
+    global $reparto_selezionato, $data_giro, $filtro_rapido, $ricerca_testo, $vista_layout, $finestra_giorni, $filtro_lista_op;
     $params = [
         'reparto_id' => $reparto_selezionato,
         'data_giro'  => $data_giro,
         'filtro'     => $filtro_rapido,
-        'vista'      => $vista_layout
+        'vista'      => $vista_layout,
+        'giorni'     => $finestra_giorni,
+        'lista_op'   => $filtro_lista_op
     ];
     if ($ricerca_testo !== '') {
         $params['q'] = $ricerca_testo;
@@ -279,7 +366,7 @@ function build_dash_url(array $overrides = []) {
     return "dashboard_ricoveri.php?" . http_build_query($params);
 }
 
-function build_giro_visita_url(array $pl, $statoOverride = null) {
+function build_giro_visita_url(array $pl, $statoOverride = null, $dataOverride = null) {
     global $reparto_selezionato, $data_giro;
     $chiaveRicerca = trim($pl['sigla_paziente'] ?? '');
     if ($chiaveRicerca === '') {
@@ -288,7 +375,7 @@ function build_giro_visita_url(array $pl, $statoOverride = null) {
 
     $params = [
         'reparto_id' => $reparto_selezionato,
-        'data_giro'  => $data_giro
+        'data_giro'  => ($dataOverride !== null && is_valid_date($dataOverride)) ? $dataOverride : $data_giro
     ];
     if (!empty($pl['id'])) {
         $params['posto_id'] = $pl['id'];
@@ -300,7 +387,8 @@ function build_giro_visita_url(array $pl, $statoOverride = null) {
         $params['stato'] = $statoOverride;
     }
 
-    return "giro_visita.php?" . http_build_query($params);
+    $anchor = !empty($pl['id']) ? '#posto-' . rawurlencode($pl['id']) : '';
+    return "giro_visita.php?" . http_build_query($params) . $anchor;
 }
 
 $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
@@ -327,6 +415,7 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
         .row-urgente { background-color: #fff5f5 !important; }
         .row-dimissione { background-color: #eff6ff !important; }
         .row-libero { color: #64748b; }
+        .row-intervento-oggi { background-color: #fff1f2 !important; }
         .table-schematica th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; background-color: #f8fafc; white-space: nowrap; }
         .table-schematica td { vertical-align: middle; font-size: 0.88rem; }
         .badge-letto { font-weight: 700; font-size: 0.82rem; padding: 0.35em 0.55em; }
@@ -376,7 +465,7 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                 <div class="col-lg-5">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <h1 class="h5 mb-0 fw-bold">
-                            <i class="bi bi-grid-1x2-fill text-primary"></i> Sintesi Ricoveri (Sola Lettura)
+                            <i class="bi bi-grid-1x2-fill text-primary"></i> Sintesi Ricoveri &amp; Lista Operatoria
                         </h1>
                         <span class="badge bg-secondary-subtle text-dark border">
                             <i class="bi bi-eye"></i> Read-Only
@@ -393,9 +482,10 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                     <form method="GET" action="dashboard_ricoveri.php" class="row g-2 justify-content-lg-end align-items-center">
                         <input type="hidden" name="filtro" value="<?php echo htmlspecialchars($filtro_rapido); ?>">
                         <input type="hidden" name="vista" value="<?php echo htmlspecialchars($vista_layout); ?>">
+                        <input type="hidden" name="lista_op" value="<?php echo htmlspecialchars($filtro_lista_op); ?>">
 
                         <?php if (($is_super_admin || $is_capo_personale) && !empty($reparti_disponibili)): ?>
-                            <div class="col-sm-5 col-md-4">
+                            <div class="col-sm-5 col-md-3">
                                 <select name="reparto_id" class="form-select form-select-sm" onchange="this.form.submit()">
                                     <?php foreach ($reparti_disponibili as $rep): ?>
                                         <option value="<?php echo htmlspecialchars($rep['id']); ?>" <?php echo ((string)$rep['id'] === (string)$reparto_selezionato) ? 'selected' : ''; ?>>
@@ -410,16 +500,27 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                             <input type="date" name="data_giro" class="form-control form-control-sm" value="<?php echo htmlspecialchars($data_giro); ?>" onchange="this.form.submit()">
                         </div>
 
+                        <div class="col-sm-4 col-md-2">
+                            <select name="giorni" class="form-select form-select-sm" onchange="this.form.submit()" title="Orizzonte lista operatoria">
+                                <option value="1" <?php echo $finestra_giorni === 1 ? 'selected' : ''; ?>>Solo data</option>
+                                <option value="3" <?php echo $finestra_giorni === 3 ? 'selected' : ''; ?>>3 gg</option>
+                                <option value="7" <?php echo $finestra_giorni === 7 ? 'selected' : ''; ?>>7 gg</option>
+                                <option value="14" <?php echo $finestra_giorni === 14 ? 'selected' : ''; ?>>14 gg</option>
+                                <option value="30" <?php echo $finestra_giorni === 30 ? 'selected' : ''; ?>>30 gg</option>
+                                <option value="999" <?php echo $finestra_giorni === 999 ? 'selected' : ''; ?>>Tutti futuri</option>
+                            </select>
+                        </div>
+
                         <div class="col-sm-8 col-md-3">
-                            <input type="text" name="q" class="form-control form-control-sm" placeholder="Cerca letto, sigla, diagnosi..." value="<?php echo htmlspecialchars($ricerca_testo); ?>">
+                            <input type="text" name="q" class="form-control form-control-sm" placeholder="Cerca letto, sigla, data..." value="<?php echo htmlspecialchars($ricerca_testo); ?>">
                         </div>
 
                         <div class="col-auto">
                             <button type="submit" class="btn btn-sm btn-primary" title="Applica filtri"><i class="bi bi-search"></i></button>
-                            <?php if ($ricerca_testo !== '' || $filtro_rapido !== 'tutti'): ?>
-                                <a href="<?php echo htmlspecialchars(build_dash_url(['q' => null, 'filtro' => 'tutti'])); ?>" class="btn btn-sm btn-outline-secondary" title="Reset filtri"><i class="bi bi-x-lg"></i></a>
+                            <?php if ($ricerca_testo !== '' || $filtro_rapido !== 'tutti' || $filtro_lista_op !== 'tutti'): ?>
+                                <a href="<?php echo htmlspecialchars(build_dash_url(['q' => null, 'filtro' => 'tutti', 'lista_op' => 'tutti'])); ?>" class="btn btn-sm btn-outline-secondary" title="Reset filtri"><i class="bi bi-x-lg"></i></a>
                             <?php endif; ?>
-                            <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="Stampa schematica"><i class="bi bi-printer"></i></button>
+                            <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-dark" title="Stampa"><i class="bi bi-printer"></i></button>
                         </div>
                     </form>
                 </div>
@@ -446,20 +547,20 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                 </a>
             </div>
             <div class="col-6 col-md-3 col-xl-2">
-                <a href="<?php echo htmlspecialchars(build_dash_url(['filtro' => 'da_rivalutare'])); ?>" class="text-decoration-none text-reset">
+                <a href="<?php echo htmlspecialchars(build_dash_url(['lista_op' => 'oggi'])); ?>" class="text-decoration-none text-reset">
                     <div class="card p-2 h-100 kpi-card" style="border-left-color: #dc3545;">
-                        <div class="kpi-lbl">Urgenti / Esami / Med.</div>
-                        <div class="kpi-val text-danger"><?php echo (int)$kpi['da_rivalutare']; ?></div>
-                        <div class="small text-muted">Rivalutazione attiva</div>
+                        <div class="kpi-lbl">Interventi Oggi</div>
+                        <div class="kpi-val text-danger"><?php echo (int)$interventiOggiCount; ?></div>
+                        <div class="small text-muted">Data <?php echo htmlspecialchars(date('d/m', strtotime($data_giro))); ?></div>
                     </div>
                 </a>
             </div>
             <div class="col-6 col-md-3 col-xl-2">
-                <a href="<?php echo htmlspecialchars(build_dash_url(['filtro' => 'dimissioni'])); ?>" class="text-decoration-none text-reset">
+                <a href="<?php echo htmlspecialchars(build_dash_url(['lista_op' => 'prossimi'])); ?>" class="text-decoration-none text-reset">
                     <div class="card p-2 h-100 kpi-card" style="border-left-color: #0d6efd;">
-                        <div class="kpi-lbl">Area Dimissioni</div>
-                        <div class="kpi-val text-primary"><?php echo (int)$kpi['dimissioni']; ?></div>
-                        <div class="small text-muted">Valutaz. / Protetta</div>
+                        <div class="kpi-lbl">Prossimi Interventi</div>
+                        <div class="kpi-val text-primary"><?php echo (int)$interventiProssimiCount; ?></div>
+                        <div class="small text-muted">Finestra <?php echo $finestra_giorni === 999 ? 'futura' : (int)$finestra_giorni . ' gg'; ?></div>
                     </div>
                 </a>
             </div>
@@ -479,6 +580,109 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                     <div class="small text-muted">Data <?php echo htmlspecialchars(date('d/m', strtotime($data_giro))); ?></div>
                 </div>
             </div>
+        </div>
+
+        <div class="card p-3 mb-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div>
+                    <h2 class="h6 fw-bold mb-0 d-flex align-items-center gap-2">
+                        <i class="bi bi-scissors text-danger"></i> Lista Operatoria (Oggi e Prossimi Giorni)
+                        <span class="badge bg-dark"><?php echo count($listaOperatoria); ?></span>
+                    </h2>
+                    <div class="small text-muted">
+                        Dal <?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>
+                        <?php if ($finestra_giorni === 999): ?>
+                            (tutte le date future)
+                        <?php elseif ($finestra_giorni === 1): ?>
+                            (solo data selezionata)
+                        <?php else: ?>
+                            al <?php echo htmlspecialchars(date('d/m/Y', strtotime($dataLimiteOp))); ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-1 no-print">
+                    <a href="<?php echo htmlspecialchars(build_dash_url(['lista_op' => 'tutti'])); ?>" class="btn btn-sm <?php echo $filtro_lista_op === 'tutti' ? 'btn-dark' : 'btn-outline-secondary bg-white'; ?>">
+                        Tutti (<?php echo (int)($interventiOggiCount + $interventiProssimiCount); ?>)
+                    </a>
+                    <a href="<?php echo htmlspecialchars(build_dash_url(['lista_op' => 'oggi'])); ?>" class="btn btn-sm <?php echo $filtro_lista_op === 'oggi' ? 'btn-danger' : 'btn-outline-danger bg-white'; ?>">
+                        Oggi (<?php echo (int)$interventiOggiCount; ?>)
+                    </a>
+                    <a href="<?php echo htmlspecialchars(build_dash_url(['lista_op' => 'prossimi'])); ?>" class="btn btn-sm <?php echo $filtro_lista_op === 'prossimi' ? 'btn-primary' : 'btn-outline-primary bg-white'; ?>">
+                        Prossimi (<?php echo (int)$interventiProssimiCount; ?>)
+                    </a>
+                </div>
+            </div>
+
+            <?php if (empty($reparto_selezionato)): ?>
+                <div class="alert alert-info mb-0 py-2 small">Nessun reparto associato all'utenza corrente.</div>
+            <?php elseif (empty($listaOperatoria)): ?>
+                <div class="alert alert-light border text-muted mb-0 py-2 small">
+                    Nessun intervento programmato nell'intervallo selezionato. Puoi impostare la <strong>Data Intervento</strong> da <strong>Giro Visita</strong> aprendo la modifica di un posto letto.
+                </div>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover table-schematica mb-0">
+                        <thead>
+                            <tr>
+                                <th>Data Intervento</th>
+                                <th>Postazione</th>
+                                <th>Paziente</th>
+                                <th>Diagnosi / Indicazione</th>
+                                <th>Stato / Note</th>
+                                <th class="text-end no-print">Scheda</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($listaOperatoria as $op):
+                                $dataIntFmt = date('d/m/Y', strtotime($op['data_intervento']));
+                                $isOggi = !empty($op['is_oggi']);
+                                $linkCardOp = build_giro_visita_url([
+                                    'id' => $op['id'],
+                                    'sigla_paziente' => $op['sigla_paziente'] !== 'Sigla n.d.' ? $op['sigla_paziente'] : '',
+                                    'stanza' => $op['stanza'],
+                                    'letto' => $op['letto']
+                                ], null, $op['data_intervento']);
+                            ?>
+                                <tr class="<?php echo $isOggi ? 'row-intervento-oggi' : ''; ?>">
+                                    <td class="fw-bold text-nowrap">
+                                        <?php echo htmlspecialchars($dataIntFmt); ?>
+                                        <?php if ($isOggi): ?>
+                                            <span class="badge bg-danger ms-1">OGGI</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="text-nowrap">
+                                        <span class="badge bg-dark badge-letto"><?php echo htmlspecialchars($op['posto']); ?></span>
+                                    </td>
+                                    <td class="fw-semibold">
+                                        <?php echo htmlspecialchars($op['sigla_paziente']); ?>
+                                    </td>
+                                    <td>
+                                        <?php echo $op['diagnosi_sintetica'] !== '' ? htmlspecialchars($op['diagnosi_sintetica']) : '<span class="text-muted">—</span>'; ?>
+                                    </td>
+                                    <td class="small">
+                                        <span class="badge bg-secondary-subtle text-dark border"><?php echo htmlspecialchars($op['stato_visita']); ?></span>
+                                        <?php if ($op['priorita'] === 'Urgente'): ?>
+                                            <span class="badge bg-danger">URGENTE</span>
+                                        <?php endif; ?>
+                                        <?php if ($op['note_stato'] !== ''): ?>
+                                            <div class="text-muted mt-1"><?php echo htmlspecialchars($op['note_stato']); ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($op['consegne_aperte'] > 0): ?>
+                                            <span class="badge bg-warning text-dark mt-1"><?php echo (int)$op['consegne_aperte']; ?> consegne aperte</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="text-end text-nowrap no-print">
+                                        <a href="<?php echo htmlspecialchars($linkCardOp); ?>" class="btn btn-sm btn-outline-primary py-0 px-2">
+                                            <i class="bi bi-box-arrow-up-right"></i> Apri Card
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
 
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 no-print">
@@ -530,6 +734,7 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                 <th>Postazione</th>
                                 <th>Paziente</th>
                                 <th>Diagnosi / Inquadramento</th>
+                                <th>Intervento</th>
                                 <th>Stato / Priorità</th>
                                 <th>Note Giro Visita</th>
                                 <th>Consegne Aperte</th>
@@ -546,10 +751,12 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                 }
                                 $sigla = trim($pl['sigla_paziente'] ?? '');
                                 $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
+                                $dataInt = trim($pl['data_intervento'] ?? '');
+                                $hasDataInt = is_valid_date($dataInt);
                                 $stato = $pl['stato_visita'] ?? 'In attesa di visita';
                                 $prio = $pl['priorita'] ?? 'Normale';
                                 $noteStato = trim($pl['note_stato'] ?? '');
-                                $isOccupato = ($sigla !== '' || $diagnosi !== '' || $stato !== 'In attesa di visita' || $prio !== 'Normale');
+                                $isOccupato = ($sigla !== '' || $diagnosi !== '' || $stato !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
 
                                 $badgeInfo = $statiBadge[$stato] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
                                 $urlBadgeStato = build_giro_visita_url($pl, $stato);
@@ -580,6 +787,16 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                         <?php endif; ?>
                                     </td>
                                     <td><?php echo $diagnosi !== '' ? htmlspecialchars($diagnosi) : '<span class="text-muted">—</span>'; ?></td>
+                                    <td class="text-nowrap">
+                                        <?php if ($hasDataInt): ?>
+                                            <?php $dataIntFmt = date('d/m/Y', strtotime($dataInt)); ?>
+                                            <span class="badge <?php echo $dataInt === $data_giro ? 'bg-danger' : 'bg-info text-dark'; ?>">
+                                                <?php echo htmlspecialchars($dataIntFmt); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="text-nowrap">
                                         <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
                                             <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
@@ -629,51 +846,84 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                     }
                     $sigla = trim($pl['sigla_paziente'] ?? '');
                     $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
+                    $dataInt = trim($pl['data_intervento'] ?? '');
+                    $hasDataInt = is_valid_date($dataInt);
                     $stato = $pl['stato_visita'] ?? 'In attesa di visita';
                     $prio = $pl['priorita'] ?? 'Normale';
                     $noteStato = trim($pl['note_stato'] ?? '');
+                    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $stato !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
+
                     $badgeInfo = $statiBadge[$stato] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
                     $urlBadgeStato = build_giro_visita_url($pl, $stato);
-                    $aperteLetto = $consegneApertePerLetto[$plId] ?? [];
+                    $urlBadgeUrgente = build_giro_visita_url($pl, $stato);
+                    $urlBadgeDim = build_giro_visita_url($pl, $stato);
 
-                    $cardClass = 'scheda-ricovero';
+                    $cardPrioClass = '';
                     if ($prio === 'Urgente') {
-                        $cardClass .= ' prio-urgente';
+                        $cardPrioClass = 'prio-urgente';
                     } elseif ($prio === 'Dimissione' || in_array($stato, ['Dimissione in valutazione', 'Dimissione protetta'], true)) {
-                        $cardClass .= ' prio-dimissione';
+                        $cardPrioClass = 'prio-dimissione';
                     }
+                    $aperteLetto = $consegneApertePerLetto[$plId] ?? [];
                 ?>
                     <div class="col-md-6 col-xl-4">
-                        <div class="card p-3 h-100 <?php echo $cardClass; ?>">
+                        <div class="card p-3 h-100 scheda-ricovero <?php echo $cardPrioClass; ?>">
                             <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                                 <div>
                                     <span class="badge bg-dark badge-letto"><?php echo htmlspecialchars($labelLetto); ?></span>
-                                    <span class="fw-bold ms-1"><?php echo $sigla !== '' ? htmlspecialchars($sigla) : '<span class="text-muted fw-normal">Posto libero</span>'; ?></span>
+                                    <?php if ($sigla !== ''): ?>
+                                        <span class="fw-bold ms-1"><?php echo htmlspecialchars($sigla); ?></span>
+                                    <?php elseif ($isOccupato): ?>
+                                        <span class="text-muted fst-italic small ms-1">Sigla n.d.</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-secondary border ms-1">LIBERO</span>
+                                    <?php endif; ?>
                                 </div>
-                                <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
-                                    <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
-                                    <?php echo htmlspecialchars($stato); ?>
-                                    <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
-                                </a>
+                                <div class="text-end">
+                                    <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
+                                        <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
+                                        <?php echo htmlspecialchars($stato); ?>
+                                        <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
+                                    </a>
+                                    <?php if ($prio === 'Urgente'): ?>
+                                        <a href="<?php echo htmlspecialchars($urlBadgeUrgente); ?>" class="badge badge-link bg-danger ms-1" title="Apri postazione urgente in Giro Visita">
+                                            URGENTE
+                                        </a>
+                                    <?php elseif ($prio === 'Dimissione'): ?>
+                                        <a href="<?php echo htmlspecialchars($urlBadgeDim); ?>" class="badge badge-link bg-primary ms-1" title="Apri dimissione in Giro Visita">
+                                            DIMISSIONE
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
                             </div>
+
+                            <?php if ($hasDataInt): ?>
+                                <div class="mb-2">
+                                    <span class="badge <?php echo $dataInt === $data_giro ? 'bg-danger' : 'bg-info text-dark'; ?>">
+                                        <i class="bi bi-scissors"></i> Intervento: <?php echo htmlspecialchars(date('d/m/Y', strtotime($dataInt))); ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
 
                             <?php if ($diagnosi !== ''): ?>
                                 <div class="small fw-semibold mb-1"><?php echo htmlspecialchars($diagnosi); ?></div>
                             <?php endif; ?>
 
                             <?php if ($noteStato !== ''): ?>
-                                <div class="small text-secondary mb-2"><i class="bi bi-chat-left-text"></i> <?php echo htmlspecialchars($noteStato); ?></div>
+                                <div class="small text-muted mb-2"><?php echo htmlspecialchars($noteStato); ?></div>
                             <?php endif; ?>
 
                             <?php if (!empty($aperteLetto)): ?>
                                 <div class="border-top pt-2 mt-auto">
                                     <div class="small fw-bold text-warning-emphasis mb-1">Consegne aperte (<?php echo count($aperteLetto); ?>)</div>
-                                    <?php foreach ($aperteLetto as $ca): ?>
-                                        <div class="small mb-1">
-                                            <span class="badge bg-warning text-dark"><?php echo htmlspecialchars($ca['tag_azione'] ?? 'Azione'); ?></span>
-                                            <?php echo htmlspecialchars($ca['nota'] ?? ''); ?>
-                                        </div>
-                                    <?php endforeach; ?>
+                                    <ul class="list-unstyled mb-0 small">
+                                        <?php foreach ($aperteLetto as $ca): ?>
+                                            <li class="mb-1">
+                                                <span class="badge bg-warning text-dark"><?php echo htmlspecialchars($ca['tag_azione'] ?? 'Azione'); ?></span>
+                                                <?php echo htmlspecialchars($ca['nota'] ?? ''); ?>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -682,11 +932,9 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
             </div>
         <?php endif; ?>
 
-        <div class="card p-3">
-            <h2 class="h6 fw-bold mb-2"><i class="bi bi-box-arrow-right text-success"></i> Dimissioni Registrate (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h2>
-            <?php if (empty($dimissioniGiorno)): ?>
-                <div class="small text-muted">Nessuna dimissione registrata per questa data.</div>
-            <?php else: ?>
+        <?php if (!empty($dimissioniGiorno)): ?>
+            <div class="card p-3">
+                <h2 class="h6 fw-bold mb-2"><i class="bi bi-box-arrow-right text-success"></i> Dimissioni Registrate (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h2>
                 <ul class="list-group list-group-flush small">
                     <?php foreach ($dimissioniGiorno as $dim): ?>
                         <li class="list-group-item px-0 py-1">
@@ -695,8 +943,8 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                         </li>
                     <?php endforeach; ?>
                 </ul>
-            <?php endif; ?>
-        </div>
+            </div>
+        <?php endif; ?>
 
     </div>
 
