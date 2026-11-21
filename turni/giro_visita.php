@@ -387,7 +387,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($reparto_selezionato)) {
                     'data_giro' => $data_giro,
                     'utente_id' => is_uuid($utente_id) ? $utente_id : null,
                     'assegnato_a_id' => null,
-                    'tag_azione' => 'Codice 56 / Riabilitazione',
+                    'tag_azione' => 'Dimissione',
                     'nota' => $notaDimissione,
                     'completata' => false,
                     'completata_da_id' => null,
