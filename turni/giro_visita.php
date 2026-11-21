@@ -612,22 +612,65 @@ if (!empty($reparto_selezionato)) {
 $consegnePerLetto = [];
 $dimissioniGiorno = [];
 $totaleConsegneAperte = 0;
+$totaleConsegneTrascinate = 0;
+
 if (!empty($reparto_selezionato)) {
-    $resCons = supabase_gv_request("giro_visita_consegne?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro) . "&select=*&order=completata.asc,created_at.desc");
-    if (is_array($resCons)) {
-        foreach ($resCons as $c) {
+    $resConsGiorno = supabase_gv_request(
+        "giro_visita_consegne?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro) . "&select=*&order=completata.asc,created_at.desc"
+    );
+    $resConsArretrate = supabase_gv_request(
+        "giro_visita_consegne?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=lt." . rawurlencode($data_giro) . "&completata=eq.false&select=*&order=data_giro.asc,created_at.asc"
+    );
+
+    $consegneCombinate = [];
+    $idsConsegneVisti = [];
+
+    if (is_array($resConsArretrate)) {
+        foreach ($resConsArretrate as $c) {
+            $cId = $c['id'] ?? '';
             $notaTesto = trim($c['nota'] ?? '');
-            $isDimissione = (mb_stripos($notaTesto, 'Dimissione registrata') === 0);
-            if ($isDimissione) {
+            if (mb_stripos($notaTesto, 'Dimissione registrata') === 0) {
+                continue;
+            }
+            if ($cId !== '' && isset($idsConsegneVisti[$cId])) {
+                continue;
+            }
+            if ($cId !== '') {
+                $idsConsegneVisti[$cId] = true;
+            }
+            $c['_arretrata'] = true;
+            $consegneCombinate[] = $c;
+        }
+    }
+
+    if (is_array($resConsGiorno)) {
+        foreach ($resConsGiorno as $c) {
+            $cId = $c['id'] ?? '';
+            $notaTesto = trim($c['nota'] ?? '');
+            if (mb_stripos($notaTesto, 'Dimissione registrata') === 0) {
                 $dimissioniGiorno[] = $c;
                 continue;
             }
-            $plId = $c['posto_letto_id'] ?? '';
-            if ($plId !== '') {
-                $consegnePerLetto[$plId][] = $c;
+            if ($cId !== '' && isset($idsConsegneVisti[$cId])) {
+                continue;
             }
-            if (empty($c['completata'])) {
-                $totaleConsegneAperte++;
+            if ($cId !== '') {
+                $idsConsegneVisti[$cId] = true;
+            }
+            $c['_arretrata'] = false;
+            $consegneCombinate[] = $c;
+        }
+    }
+
+    foreach ($consegneCombinate as $c) {
+        $plId = $c['posto_letto_id'] ?? '';
+        if ($plId !== '') {
+            $consegnePerLetto[$plId][] = $c;
+        }
+        if (empty($c['completata'])) {
+            $totaleConsegneAperte++;
+            if (!empty($c['_arretrata'])) {
+                $totaleConsegneTrascinate++;
             }
         }
     }
@@ -740,6 +783,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
         .card-letto.stato-visitato { border-left-color: #198754; }
         .card-letto.evidenziata { outline: 3px solid #0d6efd; box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.15); }
         .consegna-item { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
+        .consegna-item.consegna-arretrata { background-color: #fffbeb; border-color: #fcd34d; }
         .consegna-item.consegna-fatta { background-color: #f0fdf4; border-color: #bbf7d0; }
         .consegna-testo-fatto { opacity: 0.8; text-decoration: line-through; }
         .pill-turno { font-size: 0.75rem; background-color: #e2e8f0; color: #0f172a; border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
@@ -759,6 +803,7 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                     <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link" href="dashboard_ricoveri.php">Dashboard Ricoveri</a></li>
                     <li class="nav-item"><a class="nav-link" href="planner.php">Planner Mensile</a></li>
+                    <li class="nav-item"><a class="nav-link" href="turni.php">Assegnazione Turni</a></li>
                     <li class="nav-item"><a class="nav-link active" href="giro_visita.php">Giro Visita</a></li>
                     <li class="nav-item"><a class="nav-link text-danger" href="logout.php">Logout</a></li>
                 </ul>
@@ -870,13 +915,17 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
 
         <div class="d-flex flex-wrap gap-1 mb-3">
             <?php
+            $labelConsegneFiltro = 'Consegne aperte (' . (int)$totaleConsegneAperte . ')';
+            if ($totaleConsegneTrascinate > 0) {
+                $labelConsegneFiltro .= ' · ' . (int)$totaleConsegneTrascinate . ' arretrat' . ($totaleConsegneTrascinate === 1 ? 'a' : 'e');
+            }
             $filtriBar = [
                 'tutti'           => 'Tutti',
                 'occupati'        => 'Occupati',
                 'da_visitare'     => 'Da visitare',
                 'da_rivalutare'   => 'Rivalutare / Urgenti',
                 'dimissioni'      => 'Dimissioni',
-                'consegne_aperte' => 'Consegne aperte (' . (int)$totaleConsegneAperte . ')'
+                'consegne_aperte' => $labelConsegneFiltro
             ];
             foreach ($filtriBar as $kF => $lblF):
                 $clsBtn = ($filtro_rapido === $kF) ? 'btn-dark' : 'btn-outline-secondary bg-white';
@@ -1041,6 +1090,9 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                         <?php foreach ($consLetto as $c):
                                             $cId = $c['id'] ?? '';
                                             $isFatta = !empty($c['completata']);
+                                            $isArretrata = !empty($c['_arretrata']) && !$isFatta;
+                                            $dataConsRaw = trim($c['data_giro'] ?? '');
+                                            $dataConsFmt = is_valid_date($dataConsRaw) ? date('d/m', strtotime($dataConsRaw)) : '';
                                             $nomeAutore = nome_utente_da_id($c['utente_id'] ?? '', $mappaUtenti);
                                             $nomeAss = nome_utente_da_id($c['assegnato_a_id'] ?? '', $mappaUtenti);
                                             $nomeComp = nome_utente_da_id($c['completata_da_id'] ?? '', $mappaUtenti);
@@ -1051,11 +1103,22 @@ $postiLettoFiltrati = array_values($postiLettoFiltrati);
                                                     $oraComp = date('H:i', $tsComp);
                                                 }
                                             }
+                                            $itemClass = 'consegna-item';
+                                            if ($isFatta) {
+                                                $itemClass .= ' consegna-fatta';
+                                            } elseif ($isArretrata) {
+                                                $itemClass .= ' consegna-arretrata';
+                                            }
                                         ?>
-                                            <div class="consegna-item <?php echo $isFatta ? 'consegna-fatta' : ''; ?>">
+                                            <div class="<?php echo $itemClass; ?>">
                                                 <div class="d-flex justify-content-between align-items-start gap-2">
                                                     <div class="small">
                                                         <div class="<?php echo $isFatta ? 'consegna-testo-fatto' : ''; ?>">
+                                                            <?php if ($isArretrata && $dataConsFmt !== ''): ?>
+                                                                <span class="badge bg-warning text-dark me-1" title="Consegna non ancora completata dei giorni precedenti">
+                                                                    <i class="bi bi-clock-history"></i> del <?php echo htmlspecialchars($dataConsFmt); ?>
+                                                                </span>
+                                                            <?php endif; ?>
                                                             <span class="badge bg-secondary-subtle text-dark border me-1"><?php echo htmlspecialchars($c['tag_azione'] ?? 'Azione'); ?></span>
                                                             <?php echo htmlspecialchars($c['nota'] ?? ''); ?>
                                                         </div>
