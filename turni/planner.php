@@ -16,6 +16,21 @@ $ruolo_lower = strtolower(str_replace([' ', '-'], '_', $ruolo_raw));
 $is_super_admin = ($_SESSION['is_super_admin'] ?? $_SESSION['utente']['is_super_admin'] ?? false) || in_array($ruolo_lower, ['super_admin', 'admin', 'superadmin']);
 $is_capo_personale = in_array($ruolo_lower, ['capo_personale', 'capopersonale']);
 
+function is_profilo_medico_griglia(array $utente): bool {
+    $campi = [
+        $utente['ruolo'] ?? '',
+        $utente['qualifica'] ?? '',
+        $utente['profilo'] ?? ''
+    ];
+    foreach ($campi as $val) {
+        $norm = strtolower(str_replace(['-', '_'], ' ', trim((string)$val)));
+        if ($norm !== '' && preg_match('/\bmedico\b/', $norm)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // 2. Reparti disponibili
 $reparti_disponibili = [];
 $resReparti = supabase_request("reparti?select=id,nome_reparto&order=nome_reparto.asc");
@@ -77,13 +92,17 @@ if (is_array($resTipologie) && !isset($resTipologie['error'])) {
     }
 }
 
-// 5. Recupero Collaboratori e Filtraggio per Reparto
+// 5. Recupero Collaboratori, Esclusione Profilo Medico e Filtraggio per Reparto
 $mappaUtenti = [];
 $listaCollaboratori = [];
 $resCollab = supabase_request("staging_utenti?select=id,nome,ruolo,qualifica,reparto_id,squadra&order=nome.asc");
 
 if (is_array($resCollab) && !isset($resCollab['error'])) {
     foreach ($resCollab as $c) {
+        if (is_profilo_medico_griglia($c)) {
+            continue;
+        }
+
         $repCollabId = $c['reparto_id'] ?? $c['id_reparto'] ?? $c['reparto'] ?? '';
         if ($reparto_selezionato !== '' && (string)$repCollabId !== (string)$reparto_selezionato) {
             continue;
@@ -135,10 +154,10 @@ if (!empty($idsUtenti)) {
         foreach ($resPian as $p) {
             $uId = $p['utente_id'] ?? '';
             if (!isset($mappaUtenti[$uId]) || ($p['stato'] ?? '') === 'cancellato') continue;
-            
+
             $gInizio = intval(substr($p['data_inizio'], 8, 2));
             $gFine = !empty($p['data_fine']) ? intval(substr($p['data_fine'], 8, 2)) : $gInizio;
-            
+
             for ($g = $gInizio; $g <= $gFine; $g++) {
                 foreach (explode(',', $p['tipo_evento'] ?? '') as $t) {
                     $tC = trim($t);
@@ -184,7 +203,7 @@ $sfasamentoDefault = ['A' => 0, 'B' => 1, 'C' => 2, 'D' => 3, 'E' => 4];
 
 foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
     $idsMembri = $utentiPerSquadra[$sq] ?? [];
-    $primoTurno = null; 
+    $primoTurno = null;
     $giornoPrimo = null;
 
     for ($g = 1; $g <= $giorni_nel_mese; $g++) {
@@ -235,7 +254,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .th-giorno.weekend { background-color: #0f172a !important; color: #94a3b8 !important; }
         .weekend-col { background-color: #f1f5f9 !important; }
         .badge-turno { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px; font-size: 0.65rem; font-weight: 700; border-radius: 4px; }
-        
+
         /* Sezioni di stampa, legenda e firme */
         .print-header-info { display: none; }
         .print-footer-signatures { display: none; }
@@ -346,7 +365,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         <!-- Tabella Planner Excel Style -->
         <div class="card">
             <div class="card-body p-0">
-                
+
                 <!-- Intestazione visibile solo in STAMPA -->
                 <div class="print-header-info">
                     <div>
@@ -419,7 +438,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                     <td class="fw-bold text-dark bg-light <?php echo $isWkSq ? 'weekend-col' : ''; ?>"><?php echo htmlspecialchars($tSq); ?></td>
                                                 <?php } ?>
                                             </tr>
-                            <?php 
+                            <?php
                                         }
                                     }
                             ?>
@@ -436,11 +455,11 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                         ?>
                                             <td class="<?php echo $isWk ? 'weekend-col' : ''; ?>">
                                                 <div class="cell-container">
-                                                    <?php if (!empty($ass)) { 
+                                                    <?php if (!empty($ass)) {
                                                         $colAss = $mappaColoriTurni[$ass] ?? '#6c757d';
                                                     ?>
                                                         <span class="badge-turno" style="background-color: <?php echo $colAss; ?>; color: #fff;"><?php echo htmlspecialchars($ass); ?></span>
-                                                    <?php } elseif (!empty($turni)) { 
+                                                    <?php } elseif (!empty($turni)) {
                                                         $mostra = false;
                                                         foreach ($turni as $tSingolo) {
                                                             $tC = strtoupper(trim($tSingolo));
@@ -450,12 +469,12 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                                                 $colT = $mappaColoriTurni[$tC] ?? '#3b82f6';
                                                     ?>
                                                                 <span class="badge-turno" style="background-color: <?php echo $colT; ?>; color: #fff;"><?php echo htmlspecialchars($tC); ?></span>
-                                                    <?php 
+                                                    <?php
                                                             }
                                                         }
                                                         if (!$mostra) { echo '<span class="text-muted opacity-25">·</span>'; }
-                                                    } else { 
-                                                        echo '<span class="text-muted opacity-25">·</span>'; 
+                                                    } else {
+                                                        echo '<span class="text-muted opacity-25">·</span>';
                                                     } ?>
                                                 </div>
                                             </td>
