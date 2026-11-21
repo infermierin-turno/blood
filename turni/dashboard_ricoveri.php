@@ -169,23 +169,62 @@ $consegneApertePerLetto = [];
 $consegneTotaliPerLetto = [];
 $dimissioniGiorno = [];
 $totaleConsegneAperte = 0;
+$totaleConsegneTrascinate = 0;
 
 if (!empty($reparto_selezionato)) {
-    $resCons = supabase_dash_request(
+    $resConsGiorno = supabase_dash_request(
         "giro_visita_consegne?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=eq." . rawurlencode($data_giro) . "&select=*&order=completata.asc,created_at.desc"
     );
-    foreach ($resCons as $c) {
+    $resConsArretrate = supabase_dash_request(
+        "giro_visita_consegne?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_giro=lt." . rawurlencode($data_giro) . "&completata=eq.false&select=*&order=data_giro.asc,created_at.asc"
+    );
+
+    $consegneCombinate = [];
+    $idsConsegneVisti = [];
+
+    foreach ($resConsArretrate as $c) {
+        $cId = $c['id'] ?? '';
+        $notaTesto = trim($c['nota'] ?? '');
+        if (mb_stripos($notaTesto, 'Dimissione registrata') === 0) {
+            continue;
+        }
+        if ($cId !== '' && isset($idsConsegneVisti[$cId])) {
+            continue;
+        }
+        if ($cId !== '') {
+            $idsConsegneVisti[$cId] = true;
+        }
+        $c['_arretrata'] = true;
+        $consegneCombinate[] = $c;
+    }
+
+    foreach ($resConsGiorno as $c) {
+        $cId = $c['id'] ?? '';
         $notaTesto = trim($c['nota'] ?? '');
         if (mb_stripos($notaTesto, 'Dimissione registrata') === 0) {
             $dimissioniGiorno[] = $c;
             continue;
         }
+        if ($cId !== '' && isset($idsConsegneVisti[$cId])) {
+            continue;
+        }
+        if ($cId !== '') {
+            $idsConsegneVisti[$cId] = true;
+        }
+        $c['_arretrata'] = false;
+        $consegneCombinate[] = $c;
+    }
+
+    foreach ($consegneCombinate as $c) {
         $plId = $c['posto_letto_id'] ?? '';
         if ($plId !== '') {
             $consegneTotaliPerLetto[$plId][] = $c;
             if (empty($c['completata'])) {
                 $consegneApertePerLetto[$plId][] = $c;
                 $totaleConsegneAperte++;
+                if (!empty($c['_arretrata'])) {
+                    $totaleConsegneTrascinate++;
+                }
             }
         }
     }
@@ -567,7 +606,13 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                     <div class="card p-2 h-100 kpi-card" style="border-left-color: #f59e0b;">
                         <div class="kpi-lbl">Consegne Aperte</div>
                         <div class="kpi-val text-warning"><?php echo (int)$kpi['consegne_aperte']; ?></div>
-                        <div class="small text-muted">Da completare</div>
+                        <div class="small text-muted">
+                            <?php if ($totaleConsegneTrascinate > 0): ?>
+                                Incl. <strong><?php echo (int)$totaleConsegneTrascinate; ?></strong> arretrat<?php echo $totaleConsegneTrascinate === 1 ? 'a' : 'e'; ?>
+                            <?php else: ?>
+                                Da completare
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </a>
             </div>
@@ -656,23 +701,27 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                         <?php echo htmlspecialchars($op['sigla_paziente']); ?>
                                     </td>
                                     <td>
-                                        <?php echo $op['diagnosi_sintetica'] !== '' ? htmlspecialchars($op['diagnosi_sintetica']) : '<span class="text-muted">—</span>'; ?>
+                                        <?php if ($op['diagnosi_sintetica'] !== ''): ?>
+                                            <?php echo htmlspecialchars($op['diagnosi_sintetica']); ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
                                     </td>
-                                    <td class="small">
-                                        <span class="badge bg-secondary-subtle text-dark border"><?php echo htmlspecialchars($op['stato_visita']); ?></span>
-                                        <?php if ($op['priorita'] === 'Urgente'): ?>
-                                            <span class="badge bg-danger">URGENTE</span>
+                                    <td>
+                                        <?php $stInfoOp = $statiBadge[$op['stato_visita']] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle']; ?>
+                                        <span class="badge <?php echo $stInfoOp['cls']; ?>">
+                                            <i class="bi <?php echo $stInfoOp['ico']; ?>"></i> <?php echo htmlspecialchars($op['stato_visita']); ?>
+                                        </span>
+                                        <?php if ($op['consegne_aperte'] > 0): ?>
+                                            <span class="badge bg-warning text-dark ms-1"><?php echo (int)$op['consegne_aperte']; ?> cons.</span>
                                         <?php endif; ?>
                                         <?php if ($op['note_stato'] !== ''): ?>
-                                            <div class="text-muted mt-1"><?php echo htmlspecialchars($op['note_stato']); ?></div>
-                                        <?php endif; ?>
-                                        <?php if ($op['consegne_aperte'] > 0): ?>
-                                            <span class="badge bg-warning text-dark mt-1"><?php echo (int)$op['consegne_aperte']; ?> consegne aperte</span>
+                                            <div class="small text-muted mt-1"><?php echo htmlspecialchars($op['note_stato']); ?></div>
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-end text-nowrap no-print">
-                                        <a href="<?php echo htmlspecialchars($linkCardOp); ?>" class="btn btn-sm btn-outline-primary py-0 px-2">
-                                            <i class="bi bi-box-arrow-up-right"></i> Apri Card
+                                        <a href="<?php echo htmlspecialchars($linkCardOp); ?>" class="btn btn-sm btn-outline-primary py-0 px-2" title="Apri in Giro Visita">
+                                            <i class="bi bi-arrow-up-right"></i> Giro
                                         </a>
                                     </td>
                                 </tr>
@@ -683,48 +732,145 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
             <?php endif; ?>
         </div>
 
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 no-print">
-            <div class="d-flex flex-wrap gap-1">
-                <?php
-                $pillFiltri = [
-                    'tutti'           => 'Tutti',
-                    'occupati'        => 'Occupati',
-                    'liberi'          => 'Liberi',
-                    'da_visitare'     => 'Da visitare',
-                    'da_rivalutare'   => 'Urgenti / Esami / Med.',
-                    'dimissioni'      => 'Dimissioni',
-                    'consegne_aperte' => 'Consegne aperte'
-                ];
-                foreach ($pillFiltri as $keyF => $lblF):
-                    $active = ($filtro_rapido === $keyF) ? 'btn-dark' : 'btn-outline-secondary bg-white';
-                ?>
-                    <a href="<?php echo htmlspecialchars(build_dash_url(['filtro' => $keyF])); ?>" class="btn btn-sm <?php echo $active; ?>">
-                        <?php echo htmlspecialchars($lblF); ?>
+        <div class="card p-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div class="d-flex flex-wrap gap-1 no-print">
+                    <?php
+                    $labelConsegneFiltro = 'Consegne (' . (int)$totaleConsegneAperte . ')';
+                    if ($totaleConsegneTrascinate > 0) {
+                        $labelConsegneFiltro .= ' · ' . (int)$totaleConsegneTrascinate . ' arretrat' . ($totaleConsegneTrascinate === 1 ? 'a' : 'e');
+                    }
+                    $filtri = [
+                        'tutti'           => 'Tutti',
+                        'occupati'        => 'Occupati',
+                        'liberi'          => 'Liberi',
+                        'da_visitare'     => 'Da visitare',
+                        'da_rivalutare'   => 'Rivalutare / Urg.',
+                        'dimissioni'      => 'Dimissioni',
+                        'consegne_aperte' => $labelConsegneFiltro
+                    ];
+                    foreach ($filtri as $k => $lbl):
+                        $attivoFiltro = ($filtro_rapido === $k);
+                    ?>
+                        <a href="<?php echo htmlspecialchars(build_dash_url(['filtro' => $k])); ?>" class="btn btn-sm <?php echo $attivoFiltro ? 'btn-dark' : 'btn-outline-secondary bg-white'; ?>">
+                            <?php echo htmlspecialchars($lbl); ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="btn-group btn-group-sm no-print" role="group">
+                    <a href="<?php echo htmlspecialchars(build_dash_url(['vista' => 'tabella'])); ?>" class="btn <?php echo $vista_layout === 'tabella' ? 'btn-primary' : 'btn-outline-primary bg-white'; ?>">
+                        <i class="bi bi-table"></i> Tabella
                     </a>
-                <?php endforeach; ?>
+                    <a href="<?php echo htmlspecialchars(build_dash_url(['vista' => 'schede'])); ?>" class="btn <?php echo $vista_layout === 'schede' ? 'btn-primary' : 'btn-outline-primary bg-white'; ?>">
+                        <i class="bi bi-grid-3x3-gap"></i> Schede
+                    </a>
+                </div>
             </div>
 
-            <div class="btn-group btn-group-sm" role="group">
-                <a href="<?php echo htmlspecialchars(build_dash_url(['vista' => 'tabella'])); ?>" class="btn <?php echo $vista_layout === 'tabella' ? 'btn-primary' : 'btn-outline-primary bg-white'; ?>">
-                    <i class="bi bi-table"></i> Tabella
-                </a>
-                <a href="<?php echo htmlspecialchars(build_dash_url(['vista' => 'schede'])); ?>" class="btn <?php echo $vista_layout === 'schede' ? 'btn-primary' : 'btn-outline-primary bg-white'; ?>">
-                    <i class="bi bi-columns-gap"></i> Schede
-                </a>
-                <a href="giro_visita.php?reparto_id=<?php echo urlencode($reparto_selezionato); ?>&data_giro=<?php echo urlencode($data_giro); ?>" class="btn btn-outline-dark bg-white">
-                    <i class="bi bi-pencil-square"></i> Vai a Giro Visita
-                </a>
-            </div>
-        </div>
+            <?php if (empty($reparto_selezionato)): ?>
+                <div class="alert alert-info mb-0">Nessun reparto configurato per l'utente.</div>
+            <?php elseif (empty($postiFiltrati)): ?>
+                <div class="alert alert-light border text-center text-muted mb-0">Nessun posto letto corrispondente ai filtri selezionati.</div>
+            <?php elseif ($vista_layout === 'schede'): ?>
+                <div class="row g-3">
+                    <?php foreach ($postiFiltrati as $pl):
+                        $plId = $pl['id'] ?? '';
+                        $stanza = trim($pl['stanza'] ?? '');
+                        $letto = trim($pl['letto'] ?? '');
+                        $sigla = trim($pl['sigla_paziente'] ?? '');
+                        $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
+                        $st = $pl['stato_visita'] ?? 'In attesa di visita';
+                        $prio = $pl['priorita'] ?? 'Normale';
+                        $noteStato = trim($pl['note_stato'] ?? '');
+                        $dataInt = trim($pl['data_intervento'] ?? '');
+                        $hasDataInt = is_valid_date($dataInt);
+                        $consAperte = $consegneApertePerLetto[$plId] ?? [];
+                        $arretrateLetto = 0;
+                        foreach ($consAperte as $caCheck) {
+                            if (!empty($caCheck['_arretrata'])) {
+                                $arretrateLetto++;
+                            }
+                        }
 
-        <?php if (empty($reparto_selezionato)): ?>
-            <div class="alert alert-info">Nessun reparto associato all'utenza corrente.</div>
-        <?php elseif (empty($postiFiltrati)): ?>
-            <div class="card p-4 text-center text-muted">
-                Nessun posto letto corrisponde ai filtri selezionati.
-            </div>
-        <?php elseif ($vista_layout === 'tabella'): ?>
-            <div class="card overflow-hidden mb-3">
+                        $labelLetto = trim($stanza . ($letto !== '' ? ' / ' . $letto : ''), ' /');
+                        if ($labelLetto === '') {
+                            $labelLetto = 'Posto';
+                        }
+
+                        $clsScheda = 'scheda-ricovero';
+                        if ($prio === 'Urgente') {
+                            $clsScheda .= ' prio-urgente';
+                        } elseif ($prio === 'Dimissione' || in_array($st, ['Dimissione in valutazione', 'Dimissione protetta'], true)) {
+                            $clsScheda .= ' prio-dimissione';
+                        }
+
+                        $stInfo = $statiBadge[$st] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
+                        $linkScheda = build_giro_visita_url($pl);
+                    ?>
+                        <div class="col-md-6 col-xl-4">
+                            <div class="card p-3 h-100 <?php echo $clsScheda; ?>">
+                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                    <div>
+                                        <span class="badge bg-dark badge-letto"><?php echo htmlspecialchars($labelLetto); ?></span>
+                                        <span class="fw-bold ms-1"><?php echo htmlspecialchars($sigla !== '' ? $sigla : 'Libero'); ?></span>
+                                    </div>
+                                    <span class="badge <?php echo $stInfo['cls']; ?>">
+                                        <i class="bi <?php echo $stInfo['ico']; ?>"></i> <?php echo htmlspecialchars($st); ?>
+                                    </span>
+                                </div>
+
+                                <?php if ($hasDataInt): ?>
+                                    <div class="mb-2">
+                                        <span class="badge <?php echo $dataInt === $data_giro ? 'bg-danger' : 'bg-info text-dark'; ?>">
+                                            <i class="bi bi-scissors"></i> Int.: <?php echo htmlspecialchars(date('d/m/Y', strtotime($dataInt))); ?>
+                                        </span>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php if ($diagnosi !== ''): ?>
+                                    <div class="small fw-semibold mb-1"><?php echo htmlspecialchars($diagnosi); ?></div>
+                                <?php endif; ?>
+
+                                <?php if ($noteStato !== ''): ?>
+                                    <div class="small text-muted mb-2"><?php echo htmlspecialchars($noteStato); ?></div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($consAperte)): ?>
+                                    <div class="border-top pt-2 mt-auto mb-2">
+                                        <div class="small fw-bold text-warning-emphasis mb-1">
+                                            Consegne aperte (<?php echo count($consAperte); ?>)
+                                            <?php if ($arretrateLetto > 0): ?>
+                                                <span class="badge bg-warning text-dark ms-1"><?php echo (int)$arretrateLetto; ?> arretrat<?php echo $arretrateLetto === 1 ? 'a' : 'e'; ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <ul class="list-unstyled small mb-0">
+                                            <?php foreach ($consAperte as $ca):
+                                                $dCaRaw = trim($ca['data_giro'] ?? '');
+                                                $dCaFmt = is_valid_date($dCaRaw) ? date('d/m', strtotime($dCaRaw)) : '';
+                                            ?>
+                                                <li class="mb-1">
+                                                    <?php if (!empty($ca['_arretrata']) && $dCaFmt !== ''): ?>
+                                                        <span class="badge bg-warning text-dark me-1">del <?php echo htmlspecialchars($dCaFmt); ?></span>
+                                                    <?php endif; ?>
+                                                    <span class="badge bg-light text-dark border"><?php echo htmlspecialchars($ca['tag_azione'] ?? 'Azione'); ?></span>
+                                                    <?php echo htmlspecialchars($ca['nota'] ?? ''); ?>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </div>
+                                <?php endif; ?>
+
+                                <div class="mt-auto pt-2 text-end no-print">
+                                    <a href="<?php echo htmlspecialchars($linkScheda); ?>" class="btn btn-sm btn-outline-primary">
+                                        Apri in Giro Visita <i class="bi bi-arrow-right"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php else: ?>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover table-schematica mb-0">
                         <thead>
@@ -733,9 +879,9 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                 <th>Paziente</th>
                                 <th>Diagnosi / Inquadramento</th>
                                 <th>Intervento</th>
-                                <th>Stato / Priorità</th>
-                                <th>Note Giro Visita</th>
+                                <th>Stato Visita</th>
                                 <th>Consegne Aperte</th>
+                                <th class="text-end no-print">Scheda</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -743,206 +889,107 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                 $plId = $pl['id'] ?? '';
                                 $stanza = trim($pl['stanza'] ?? '');
                                 $letto = trim($pl['letto'] ?? '');
+                                $sigla = trim($pl['sigla_paziente'] ?? '');
+                                $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
+                                $st = $pl['stato_visita'] ?? 'In attesa di visita';
+                                $prio = $pl['priorita'] ?? 'Normale';
+                                $noteStato = trim($pl['note_stato'] ?? '');
+                                $dataInt = trim($pl['data_intervento'] ?? '');
+                                $hasDataInt = is_valid_date($dataInt);
+                                $consAperte = $consegneApertePerLetto[$plId] ?? [];
+                                $arretrateLetto = 0;
+                                foreach ($consAperte as $caCheck) {
+                                    if (!empty($caCheck['_arretrata'])) {
+                                        $arretrateLetto++;
+                                    }
+                                }
+
                                 $labelLetto = trim($stanza . ($letto !== '' ? ' / ' . $letto : ''), ' /');
                                 if ($labelLetto === '') {
                                     $labelLetto = 'Posto';
                                 }
-                                $sigla = trim($pl['sigla_paziente'] ?? '');
-                                $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
-                                $dataInt = trim($pl['data_intervento'] ?? '');
-                                $hasDataInt = is_valid_date($dataInt);
-                                $stato = $pl['stato_visita'] ?? 'In attesa di visita';
-                                $prio = $pl['priorita'] ?? 'Normale';
-                                $noteStato = trim($pl['note_stato'] ?? '');
-                                $isOccupato = ($sigla !== '' || $diagnosi !== '' || $stato !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
 
-                                $badgeInfo = $statiBadge[$stato] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
-                                $urlBadgeStato = build_giro_visita_url($pl, $stato);
-                                $urlBadgeUrgente = build_giro_visita_url($pl, $stato);
-                                $urlBadgeDim = build_giro_visita_url($pl, $stato);
-
+                                $isOccupato = ($sigla !== '' || $diagnosi !== '' || $st !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
                                 $rowClass = '';
                                 if ($prio === 'Urgente') {
                                     $rowClass = 'row-urgente';
-                                } elseif ($prio === 'Dimissione' || in_array($stato, ['Dimissione in valutazione', 'Dimissione protetta'], true)) {
+                                } elseif ($prio === 'Dimissione' || in_array($st, ['Dimissione in valutazione', 'Dimissione protetta'], true)) {
                                     $rowClass = 'row-dimissione';
                                 } elseif (!$isOccupato) {
                                     $rowClass = 'row-libero';
                                 }
-                                $aperteLetto = $consegneApertePerLetto[$plId] ?? [];
+
+                                $stInfo = $statiBadge[$st] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
+                                $linkScheda = build_giro_visita_url($pl);
                             ?>
                                 <tr class="<?php echo $rowClass; ?>">
                                     <td class="text-nowrap">
                                         <span class="badge bg-dark badge-letto"><?php echo htmlspecialchars($labelLetto); ?></span>
                                     </td>
                                     <td class="fw-semibold">
-                                        <?php if ($sigla !== ''): ?>
-                                            <?php echo htmlspecialchars($sigla); ?>
-                                        <?php elseif ($isOccupato): ?>
-                                            <span class="text-muted fst-italic">Sigla n.d.</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-light text-secondary border">LIBERO</span>
+                                        <?php echo $sigla !== '' ? htmlspecialchars($sigla) : '<span class="text-muted fw-normal">Libero</span>'; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($diagnosi !== ''): ?>
+                                            <div><?php echo htmlspecialchars($diagnosi); ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($noteStato !== ''): ?>
+                                            <div class="small text-muted"><?php echo htmlspecialchars($noteStato); ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($diagnosi === '' && $noteStato === ''): ?>
+                                            <span class="text-muted">-</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td><?php echo $diagnosi !== '' ? htmlspecialchars($diagnosi) : '<span class="text-muted">—</span>'; ?></td>
                                     <td class="text-nowrap">
                                         <?php if ($hasDataInt): ?>
-                                            <?php $dataIntFmt = date('d/m/Y', strtotime($dataInt)); ?>
                                             <span class="badge <?php echo $dataInt === $data_giro ? 'bg-danger' : 'bg-info text-dark'; ?>">
-                                                <?php echo htmlspecialchars($dataIntFmt); ?>
+                                                <?php echo htmlspecialchars(date('d/m/Y', strtotime($dataInt))); ?>
                                             </span>
                                         <?php else: ?>
-                                            <span class="text-muted">—</span>
+                                            <span class="text-muted">-</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-nowrap">
-                                        <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
-                                            <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
-                                            <?php echo htmlspecialchars($stato); ?>
-                                            <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
-                                        </a>
-                                        <?php if ($prio === 'Urgente'): ?>
-                                            <a href="<?php echo htmlspecialchars($urlBadgeUrgente); ?>" class="badge badge-link bg-danger ms-1" title="Apri postazione urgente in Giro Visita">
-                                                URGENTE
-                                            </a>
-                                        <?php elseif ($prio === 'Dimissione'): ?>
-                                            <a href="<?php echo htmlspecialchars($urlBadgeDim); ?>" class="badge badge-link bg-primary ms-1" title="Apri dimissione in Giro Visita">
-                                                DIMISSIONE
-                                            </a>
+                                        <span class="badge <?php echo $stInfo['cls']; ?>">
+                                            <i class="bi <?php echo $stInfo['ico']; ?>"></i> <?php echo htmlspecialchars($st); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php if (empty($consAperte)): ?>
+                                            <span class="text-muted small">0</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-warning text-dark"><?php echo count($consAperte); ?></span>
+                                            <?php if ($arretrateLetto > 0): ?>
+                                                <span class="badge bg-danger ms-1"><?php echo (int)$arretrateLetto; ?> arretr.</span>
+                                            <?php endif; ?>
+                                            <div class="small mt-1">
+                                                <?php foreach ($consAperte as $ca):
+                                                    $dCaRaw = trim($ca['data_giro'] ?? '');
+                                                    $dCaFmt = is_valid_date($dCaRaw) ? date('d/m', strtotime($dCaRaw)) : '';
+                                                ?>
+                                                    <div>
+                                                        <?php if (!empty($ca['_arretrata']) && $dCaFmt !== ''): ?>
+                                                            <span class="badge bg-warning text-dark">del <?php echo htmlspecialchars($dCaFmt); ?></span>
+                                                        <?php endif; ?>
+                                                        <strong><?php echo htmlspecialchars($ca['tag_azione'] ?? ''); ?>:</strong>
+                                                        <?php echo htmlspecialchars($ca['nota'] ?? ''); ?>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
-                                    <td><?php echo $noteStato !== '' ? htmlspecialchars($noteStato) : '<span class="text-muted">—</span>'; ?></td>
-                                    <td>
-                                        <?php if (empty($aperteLetto)): ?>
-                                            <span class="text-muted small">Nessuna</span>
-                                        <?php else: ?>
-                                            <ul class="list-unstyled mb-0 small">
-                                                <?php foreach ($aperteLetto as $ca): ?>
-                                                    <li class="mb-1">
-                                                        <span class="badge bg-warning text-dark"><?php echo htmlspecialchars($ca['tag_azione'] ?? 'Azione'); ?></span>
-                                                        <?php echo htmlspecialchars($ca['nota'] ?? ''); ?>
-                                                    </li>
-                                                <?php endforeach; ?>
-                                            </ul>
-                                        <?php endif; ?>
+                                    <td class="text-end text-nowrap no-print">
+                                        <a href="<?php echo htmlspecialchars($linkScheda); ?>" class="btn btn-sm btn-outline-primary py-0 px-2" title="Apri in Giro Visita">
+                                            <i class="bi bi-arrow-up-right"></i> Giro
+                                        </a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
-            </div>
-        <?php else: ?>
-            <div class="row g-2 mb-3">
-                <?php foreach ($postiFiltrati as $pl):
-                    $plId = $pl['id'] ?? '';
-                    $stanza = trim($pl['stanza'] ?? '');
-                    $letto = trim($pl['letto'] ?? '');
-                    $labelLetto = trim($stanza . ($letto !== '' ? ' / ' . $letto : ''), ' /');
-                    if ($labelLetto === '') {
-                        $labelLetto = 'Posto';
-                    }
-                    $sigla = trim($pl['sigla_paziente'] ?? '');
-                    $diagnosi = trim($pl['diagnosi_sintetica'] ?? '');
-                    $dataInt = trim($pl['data_intervento'] ?? '');
-                    $hasDataInt = is_valid_date($dataInt);
-                    $stato = $pl['stato_visita'] ?? 'In attesa di visita';
-                    $prio = $pl['priorita'] ?? 'Normale';
-                    $noteStato = trim($pl['note_stato'] ?? '');
-                    $isOccupato = ($sigla !== '' || $diagnosi !== '' || $stato !== 'In attesa di visita' || $prio !== 'Normale' || $hasDataInt);
-
-                    $badgeInfo = $statiBadge[$stato] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
-                    $urlBadgeStato = build_giro_visita_url($pl, $stato);
-                    $urlBadgeUrgente = build_giro_visita_url($pl, $stato);
-                    $urlBadgeDim = build_giro_visita_url($pl, $stato);
-
-                    $cardPrioClass = '';
-                    if ($prio === 'Urgente') {
-                        $cardPrioClass = 'prio-urgente';
-                    } elseif ($prio === 'Dimissione' || in_array($stato, ['Dimissione in valutazione', 'Dimissione protetta'], true)) {
-                        $cardPrioClass = 'prio-dimissione';
-                    }
-                    $aperteLetto = $consegneApertePerLetto[$plId] ?? [];
-                ?>
-                    <div class="col-md-6 col-xl-4">
-                        <div class="card p-3 h-100 scheda-ricovero <?php echo $cardPrioClass; ?>">
-                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                                <div>
-                                    <span class="badge bg-dark badge-letto"><?php echo htmlspecialchars($labelLetto); ?></span>
-                                    <?php if ($sigla !== ''): ?>
-                                        <span class="fw-bold ms-1"><?php echo htmlspecialchars($sigla); ?></span>
-                                    <?php elseif ($isOccupato): ?>
-                                        <span class="text-muted fst-italic small ms-1">Sigla n.d.</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-light text-secondary border ms-1">LIBERO</span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="text-end">
-                                    <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
-                                        <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
-                                        <?php echo htmlspecialchars($stato); ?>
-                                        <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
-                                    </a>
-                                    <?php if ($prio === 'Urgente'): ?>
-                                        <a href="<?php echo htmlspecialchars($urlBadgeUrgente); ?>" class="badge badge-link bg-danger ms-1" title="Apri postazione urgente in Giro Visita">
-                                            URGENTE
-                                        </a>
-                                    <?php elseif ($prio === 'Dimissione'): ?>
-                                        <a href="<?php echo htmlspecialchars($urlBadgeDim); ?>" class="badge badge-link bg-primary ms-1" title="Apri dimissione in Giro Visita">
-                                            DIMISSIONE
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-
-                            <?php if ($hasDataInt): ?>
-                                <div class="mb-2">
-                                    <span class="badge <?php echo $dataInt === $data_giro ? 'bg-danger' : 'bg-info text-dark'; ?>">
-                                        <i class="bi bi-scissors"></i> Intervento: <?php echo htmlspecialchars(date('d/m/Y', strtotime($dataInt))); ?>
-                                    </span>
-                                </div>
-                            <?php endif; ?>
-
-                            <?php if ($diagnosi !== ''): ?>
-                                <div class="small fw-semibold mb-1"><?php echo htmlspecialchars($diagnosi); ?></div>
-                            <?php endif; ?>
-
-                            <?php if ($noteStato !== ''): ?>
-                                <div class="small text-muted mb-2"><?php echo htmlspecialchars($noteStato); ?></div>
-                            <?php endif; ?>
-
-                            <?php if (!empty($aperteLetto)): ?>
-                                <div class="border-top pt-2 mt-auto">
-                                    <div class="small fw-bold text-warning-emphasis mb-1">Consegne aperte (<?php echo count($aperteLetto); ?>)</div>
-                                    <ul class="list-unstyled mb-0 small">
-                                        <?php foreach ($aperteLetto as $ca): ?>
-                                            <li class="mb-1">
-                                                <span class="badge bg-warning text-dark"><?php echo htmlspecialchars($ca['tag_azione'] ?? 'Azione'); ?></span>
-                                                <?php echo htmlspecialchars($ca['nota'] ?? ''); ?>
-                                            </li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-
-        <?php if (!empty($dimissioniGiorno)): ?>
-            <div class="card p-3">
-                <h2 class="h6 fw-bold mb-2"><i class="bi bi-box-arrow-right text-success"></i> Dimissioni Registrate (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h2>
-                <ul class="list-group list-group-flush small">
-                    <?php foreach ($dimissioniGiorno as $dim): ?>
-                        <li class="list-group-item px-0 py-1">
-                            <span class="badge bg-success-subtle text-success-emphasis border me-1"><?php echo htmlspecialchars($dim['tag_azione'] ?? 'Dimissione'); ?></span>
-                            <?php echo htmlspecialchars($dim['nota'] ?? ''); ?>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-        <?php endif; ?>
+            <?php endif; ?>
+        </div>
 
     </div>
 
