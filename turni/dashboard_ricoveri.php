@@ -140,46 +140,6 @@ $statiBadge = [
     'Dimissione protetta'       => ['cls' => 'bg-dark',               'ico' => 'bi-shield-check']
 ];
 
-$mappaUtenti = [];
-if (!empty($reparto_selezionato)) {
-    $resUt = supabase_dash_request("staging_utenti?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&select=id,nome,ruolo,qualifica&order=nome.asc");
-    foreach ($resUt as $u) {
-        if (!empty($u['id'])) {
-            $mappaUtenti[$u['id']] = $u;
-        }
-    }
-}
-
-$personaleInTurno = [];
-if (!empty($reparto_selezionato)) {
-    $inizioGiorno = $data_giro . ' 00:00:00';
-    $fineGiorno = $data_giro . ' 23:59:59';
-    $queryPian = "pianificazione?reparto_id=eq." . rawurlencode($reparto_selezionato) . "&data_inizio=gte." . urlencode($inizioGiorno) . "&data_inizio=lte." . urlencode($fineGiorno) . "&select=utente_id,tipo_evento";
-    $resPian = supabase_dash_request($queryPian);
-    $codiciAssenzaRiposo = ['R', 'RN', 'F', 'FERIE', '104', 'PE', 'PER', 'PERMESSO', 'S'];
-
-    foreach ($resPian as $p) {
-        $uId = $p['utente_id'] ?? '';
-        $codTurno = strtoupper(trim($p['tipo_evento'] ?? ''));
-        if ($uId === '' || $codTurno === '' || in_array($codTurno, $codiciAssenzaRiposo, true)) {
-            continue;
-        }
-        $uInfo = $mappaUtenti[$uId] ?? null;
-        if (!$uInfo) {
-            continue;
-        }
-        if (!isset($personaleInTurno[$uId])) {
-            $personaleInTurno[$uId] = [
-                'nome' => $uInfo['nome'] ?? 'Operatore',
-                'turni' => []
-            ];
-        }
-        if (!in_array($codTurno, $personaleInTurno[$uId]['turni'], true)) {
-            $personaleInTurno[$uId]['turni'][] = $codTurno;
-        }
-    }
-}
-
 $postiLetto = [];
 if (!empty($reparto_selezionato)) {
     $postiLetto = supabase_dash_request(
@@ -319,6 +279,30 @@ function build_dash_url(array $overrides = []) {
     return "dashboard_ricoveri.php?" . http_build_query($params);
 }
 
+function build_giro_visita_url(array $pl, $statoOverride = null) {
+    global $reparto_selezionato, $data_giro;
+    $chiaveRicerca = trim($pl['sigla_paziente'] ?? '');
+    if ($chiaveRicerca === '') {
+        $chiaveRicerca = trim(($pl['stanza'] ?? '') . ' ' . ($pl['letto'] ?? ''));
+    }
+
+    $params = [
+        'reparto_id' => $reparto_selezionato,
+        'data_giro'  => $data_giro
+    ];
+    if (!empty($pl['id'])) {
+        $params['posto_id'] = $pl['id'];
+    }
+    if ($chiaveRicerca !== '') {
+        $params['q'] = $chiaveRicerca;
+    }
+    if ($statoOverride !== null && $statoOverride !== '') {
+        $params['stato'] = $statoOverride;
+    }
+
+    return "giro_visita.php?" . http_build_query($params);
+}
+
 $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
     'reparto_id' => $reparto_selezionato,
     'data_giro'  => $data_giro,
@@ -346,7 +330,8 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
         .table-schematica th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; background-color: #f8fafc; white-space: nowrap; }
         .table-schematica td { vertical-align: middle; font-size: 0.88rem; }
         .badge-letto { font-weight: 700; font-size: 0.82rem; padding: 0.35em 0.55em; }
-        .pill-turno { font-size: 0.72rem; background-color: #e2e8f0; color: #0f172a; border-radius: 999px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 5px; }
+        .badge-link { text-decoration: none; transition: transform 0.1s ease, filter 0.1s ease; display: inline-flex; align-items: center; gap: 4px; }
+        .badge-link:hover { transform: translateY(-1px); filter: brightness(0.95); }
         .scheda-ricovero { border-left: 4px solid #64748b; }
         .scheda-ricovero.prio-urgente { border-left-color: #dc3545; }
         .scheda-ricovero.prio-dimissione { border-left-color: #0d6efd; }
@@ -567,6 +552,10 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                 $isOccupato = ($sigla !== '' || $diagnosi !== '' || $stato !== 'In attesa di visita' || $prio !== 'Normale');
 
                                 $badgeInfo = $statiBadge[$stato] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
+                                $urlBadgeStato = build_giro_visita_url($pl, $stato);
+                                $urlBadgeUrgente = build_giro_visita_url($pl, $stato);
+                                $urlBadgeDim = build_giro_visita_url($pl, $stato);
+
                                 $rowClass = '';
                                 if ($prio === 'Urgente') {
                                     $rowClass = 'row-urgente';
@@ -592,13 +581,19 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                     </td>
                                     <td><?php echo $diagnosi !== '' ? htmlspecialchars($diagnosi) : '<span class="text-muted">—</span>'; ?></td>
                                     <td class="text-nowrap">
-                                        <span class="badge <?php echo $badgeInfo['cls']; ?>">
-                                            <i class="bi <?php echo $badgeInfo['ico']; ?>"></i> <?php echo htmlspecialchars($stato); ?>
-                                        </span>
+                                        <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
+                                            <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
+                                            <?php echo htmlspecialchars($stato); ?>
+                                            <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
+                                        </a>
                                         <?php if ($prio === 'Urgente'): ?>
-                                            <span class="badge bg-danger ms-1">URGENTE</span>
+                                            <a href="<?php echo htmlspecialchars($urlBadgeUrgente); ?>" class="badge badge-link bg-danger ms-1" title="Apri postazione urgente in Giro Visita">
+                                                URGENTE
+                                            </a>
                                         <?php elseif ($prio === 'Dimissione'): ?>
-                                            <span class="badge bg-primary ms-1">DIMISSIONE</span>
+                                            <a href="<?php echo htmlspecialchars($urlBadgeDim); ?>" class="badge badge-link bg-primary ms-1" title="Apri dimissione in Giro Visita">
+                                                DIMISSIONE
+                                            </a>
                                         <?php endif; ?>
                                     </td>
                                     <td><?php echo $noteStato !== '' ? htmlspecialchars($noteStato) : '<span class="text-muted">—</span>'; ?></td>
@@ -638,6 +633,7 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                     $prio = $pl['priorita'] ?? 'Normale';
                     $noteStato = trim($pl['note_stato'] ?? '');
                     $badgeInfo = $statiBadge[$stato] ?? ['cls' => 'bg-secondary', 'ico' => 'bi-info-circle'];
+                    $urlBadgeStato = build_giro_visita_url($pl, $stato);
                     $aperteLetto = $consegneApertePerLetto[$plId] ?? [];
 
                     $cardClass = 'scheda-ricovero';
@@ -654,9 +650,11 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
                                     <span class="badge bg-dark badge-letto"><?php echo htmlspecialchars($labelLetto); ?></span>
                                     <span class="fw-bold ms-1"><?php echo $sigla !== '' ? htmlspecialchars($sigla) : '<span class="text-muted fw-normal">Posto libero</span>'; ?></span>
                                 </div>
-                                <span class="badge <?php echo $badgeInfo['cls']; ?>">
-                                    <i class="bi <?php echo $badgeInfo['ico']; ?>"></i> <?php echo htmlspecialchars($stato); ?>
-                                </span>
+                                <a href="<?php echo htmlspecialchars($urlBadgeStato); ?>" class="badge badge-link <?php echo $badgeInfo['cls']; ?>" title="Apri in Giro Visita su <?php echo htmlspecialchars($labelLetto); ?>">
+                                    <i class="bi <?php echo $badgeInfo['ico']; ?>"></i>
+                                    <?php echo htmlspecialchars($stato); ?>
+                                    <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
+                                </a>
                             </div>
 
                             <?php if ($diagnosi !== ''): ?>
@@ -684,42 +682,20 @@ $giroVisitaOccupatiUrl = "giro_visita.php?" . http_build_query([
             </div>
         <?php endif; ?>
 
-        <div class="row g-3">
-            <div class="col-lg-6">
-                <div class="card p-3 h-100">
-                    <h2 class="h6 fw-bold mb-2"><i class="bi bi-people-fill text-primary"></i> Personale in Turno (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h2>
-                    <?php if (empty($personaleInTurno)): ?>
-                        <div class="small text-muted">Nessun operatore registrato in turno per la data selezionata.</div>
-                    <?php else: ?>
-                        <div class="d-flex flex-wrap gap-1">
-                            <?php foreach ($personaleInTurno as $op): ?>
-                                <span class="pill-turno">
-                                    <strong><?php echo htmlspecialchars($op['nome']); ?></strong>
-                                    <span class="text-muted"><?php echo htmlspecialchars(implode(', ', $op['turni'])); ?></span>
-                                </span>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <div class="col-lg-6">
-                <div class="card p-3 h-100">
-                    <h2 class="h6 fw-bold mb-2"><i class="bi bi-box-arrow-right text-success"></i> Dimissioni Registrate (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h2>
-                    <?php if (empty($dimissioniGiorno)): ?>
-                        <div class="small text-muted">Nessuna dimissione registrata per questa data.</div>
-                    <?php else: ?>
-                        <ul class="list-group list-group-flush small">
-                            <?php foreach ($dimissioniGiorno as $dim): ?>
-                                <li class="list-group-item px-0 py-1">
-                                    <span class="badge bg-success-subtle text-success-emphasis border me-1"><?php echo htmlspecialchars($dim['tag_azione'] ?? 'Dimissione'); ?></span>
-                                    <?php echo htmlspecialchars($dim['nota'] ?? ''); ?>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php endif; ?>
-                </div>
-            </div>
+        <div class="card p-3">
+            <h2 class="h6 fw-bold mb-2"><i class="bi bi-box-arrow-right text-success"></i> Dimissioni Registrate (<?php echo htmlspecialchars(date('d/m/Y', strtotime($data_giro))); ?>)</h2>
+            <?php if (empty($dimissioniGiorno)): ?>
+                <div class="small text-muted">Nessuna dimissione registrata per questa data.</div>
+            <?php else: ?>
+                <ul class="list-group list-group-flush small">
+                    <?php foreach ($dimissioniGiorno as $dim): ?>
+                        <li class="list-group-item px-0 py-1">
+                            <span class="badge bg-success-subtle text-success-emphasis border me-1"><?php echo htmlspecialchars($dim['tag_azione'] ?? 'Dimissione'); ?></span>
+                            <?php echo htmlspecialchars($dim['nota'] ?? ''); ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
         </div>
 
     </div>
