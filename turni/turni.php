@@ -207,9 +207,9 @@ if (!is_array($tipologieTurni) || empty($tipologieTurni)) {
         ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59'],
         ['id' => '7', 'nome_turno' => 'Straordinario Mattina', 'codice_breve' => 'STP', 'colore' => '#0dcaf0', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
         ['id' => '8', 'nome_turno' => 'Straordinario Pomeriggio', 'codice_breve' => 'STM', 'colore' => '#ffc107', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '9', 'nome_turno' => 'Rientro Diurno Mattina', 'codice_breve' => 'RDM', 'colore' => '#20c997', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '10', 'nome_turno' => 'Rientro Diurno Pomeriggio', 'codice_breve' => 'RDP', 'colore' => '#d63384', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '11', 'nome_turno' => 'Riposo Smonto Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00']
+        ['id' => '9', 'nome_turno' => 'Reperibilità Diurno Mattina', 'codice_breve' => 'RDM', 'colore' => '#20c997', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
+        ['id' => '10', 'nome_turno' => 'Reperibilità Diurno Pomeriggio', 'codice_breve' => 'RDP', 'colore' => '#d63384', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
+        ['id' => '11', 'nome_turno' => 'Reperibilità Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00']
     ];
 }
 
