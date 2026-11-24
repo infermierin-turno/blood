@@ -394,7 +394,8 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 font-size: 6.5pt !important;
             }
 
-            /* Stampa Reperibilità: 1 pagina */
+            /* Stampa Reperibilità: formato A4 pieno, leggibile e su 1 pagina */
+            body.print-mode-reperibilita { font-size: 8.5pt !important; }
             body.print-mode-reperibilita .sezione-stampa-turni { display: none !important; }
             body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; width: 100% !important; page-break-inside: avoid; }
             body.print-mode-reperibilita .table-planner {
@@ -404,23 +405,31 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 border-collapse: collapse !important;
             }
             body.print-mode-reperibilita .print-header-info {
-                margin-bottom: 5px !important;
-                padding-bottom: 3px !important;
+                margin-bottom: 8px !important;
+                padding-bottom: 5px !important;
+            }
+            body.print-mode-reperibilita .print-header-info h4 {
+                font-size: 12pt !important;
             }
             body.print-mode-reperibilita .table-planner th,
             body.print-mode-reperibilita .table-planner td {
-                padding: 1px 0.5px !important;
-                font-size: 5.8pt !important;
-                line-height: 1.05 !important;
-                border: 0.75px solid #94a3b8 !important;
+                padding: 2.5px 1px !important;
+                font-size: 7.2pt !important;
+                line-height: 1.15 !important;
+                border: 0.9px solid #64748b !important;
                 overflow: hidden !important;
             }
             body.print-mode-reperibilita .col-collaboratore {
                 position: static !important;
-                width: 100px !important;
-                min-width: 100px !important;
-                max-width: 100px !important;
-                padding-left: 3px !important;
+                width: 135px !important;
+                min-width: 135px !important;
+                max-width: 135px !important;
+                padding-left: 5px !important;
+                padding-right: 4px !important;
+            }
+            body.print-mode-reperibilita .col-collaboratore .fw-bold {
+                font-size: 7.4pt !important;
+                line-height: 1.1 !important;
             }
             body.print-mode-reperibilita .col-collaboratore .text-muted {
                 display: none !important;
@@ -429,35 +438,37 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 position: static !important;
                 width: auto !important;
                 min-width: 0 !important;
+                font-size: 7pt !important;
+                padding: 2px 0 !important;
             }
             body.print-mode-reperibilita .badge-turno {
-                height: 13px !important;
-                width: 20px !important;
-                font-size: 5.2pt !important;
-                border-radius: 2px !important;
+                height: 16px !important;
+                width: 24px !important;
+                font-size: 6.2pt !important;
+                border-radius: 3px !important;
             }
             body.print-mode-reperibilita .print-rep-notes {
                 display: flex !important;
                 justify-content: flex-start !important;
-                gap: 18px !important;
-                margin-top: 4px !important;
-                padding: 3px 6px !important;
-                border: 1px solid #cbd5e1 !important;
+                gap: 26px !important;
+                margin-top: 8px !important;
+                padding: 5px 10px !important;
+                border: 1px solid #94a3b8 !important;
                 background-color: #f8fafc !important;
-                font-size: 6.5pt !important;
+                font-size: 8pt !important;
                 page-break-inside: avoid;
             }
             body.print-mode-reperibilita .print-footer-signatures {
-                margin-top: 5mm !important;
-                font-size: 7.5pt !important;
+                margin-top: 9mm !important;
+                font-size: 8.5pt !important;
             }
             body.print-mode-reperibilita .signature-box {
-                width: 200px !important;
-                padding-top: 2px !important;
+                width: 240px !important;
+                padding-top: 4px !important;
             }
             body.print-mode-reperibilita .signature-box .text-muted {
-                margin-top: 6px !important;
-                font-size: 6.5pt !important;
+                margin-top: 10px !important;
+                font-size: 7.5pt !important;
             }
 
             .print-header-info {
@@ -738,12 +749,12 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
 
                     <div class="print-header-info">
                         <div>
-                            <h4 class="fw-bold mb-1" style="font-size: 10pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
-                            <div style="font-size: 8.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>Esclusi Mattinieri, CPSI e Coordinatori</em></div>
+                            <h4 class="fw-bold mb-1" style="font-size: 11.5pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
+                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>e Traumatologia</em></div>
                         </div>
                         <div class="text-end">
-                            <div class="fw-bold" style="font-size: 10pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
-                            <div style="font-size: 7.5pt;" class="text-muted">Prospetto Reperibilità Mensile</div>
+                            <div class="fw-bold" style="font-size: 11.5pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
+                            <div style="font-size: 8.5pt;" class="text-muted">Prospetto Reperibilità Mensile</div>
                         </div>
                     </div>
 
@@ -765,7 +776,7 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                                     ?>
                                         <th class="th-giorno <?php echo $isWk ? 'weekend' : ''; ?>">
                                             <div><?php echo $g; ?></div>
-                                            <div style="font-size:0.5rem; opacity:0.8;"><?php echo $let; ?></div>
+                                            <div style="font-size:0.55rem; opacity:0.8;"><?php echo $let; ?></div>
                                         </th>
                                     <?php } ?>
                                 </tr>
@@ -849,11 +860,11 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                     <div class="print-footer-signatures">
                         <div class="signature-box">
                             <div class="fw-bold">Il Coordinatore</div>
-                            <div class="text-muted" style="font-size: 7pt; margin-top: 10px;">(Firma)</div>
+                            <div class="text-muted" style="font-size: 7.5pt; margin-top: 10px;">(Firma)</div>
                         </div>
                         <div class="signature-box">
                             <div class="fw-bold">Il Direttore UOC</div>
-                            <div class="text-muted" style="font-size: 7pt; margin-top: 10px;">(Firma e Timbro)</div>
+                            <div class="text-muted" style="font-size: 7.5pt; margin-top: 10px;">(Firma e Timbro)</div>
                         </div>
                     </div>
 
