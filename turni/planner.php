@@ -284,7 +284,7 @@ $collaboratoriReperibilita = array_values(array_filter($listaCollaboratori, func
 
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
 $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
-$larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
+$larghezzaColGiornoStampa = round(90 / max(1, $giorni_nel_mese), 4);
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -317,40 +317,46 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
         @media print {
             @page { size: A4 landscape; margin: 4mm; }
             .print-hide { display: none !important; }
-            body { background: #fff !important; font-size: 7pt !important; color: #000 !important; padding-bottom: 0 !important; margin: 0 !important; }
-            .container-fluid { padding-left: 0 !important; padding-right: 0 !important; width: 100% !important; max-width: 100% !important; }
-            .card { box-shadow: none !important; border: none !important; margin-bottom: 0 !important; }
-            .table-responsive { overflow: visible !important; max-height: none !important; }
+            body { background: #fff !important; font-size: 7pt !important; color: #000 !important; padding-bottom: 0 !important; margin: 0 !important; box-sizing: border-box; }
+            .container-fluid { padding-left: 0 !important; padding-right: 0 !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
+            .card { box-shadow: none !important; border: none !important; margin-bottom: 0 !important; width: 100% !important; max-width: 100% !important; }
+            .card-body { width: 100% !important; max-width: 100% !important; }
+            .table-responsive { overflow: visible !important; max-height: none !important; width: 100% !important; max-width: 100% !important; }
 
-            /* Fit-to-page per Stampa Turni: zero debordamento a destra + compattazione su 2 pagine */
+            /* Stampa Turni: colonna nomi stretta + zero debordamento a destra + 2 pagine */
             body.print-mode-turni .sezione-stampa-reperibilita { display: none !important; }
-            body.print-mode-turni .sezione-stampa-turni { display: block !important; width: 100% !important; }
+            body.print-mode-turni .sezione-stampa-turni { display: block !important; width: 100% !important; max-width: 100% !important; }
             body.print-mode-turni .table-planner {
                 width: 100% !important;
                 max-width: 100% !important;
                 table-layout: fixed !important;
                 border-collapse: collapse !important;
+                box-sizing: border-box !important;
             }
             body.print-mode-turni .table-planner th,
             body.print-mode-turni .table-planner td {
                 padding: 1.5px 0.5px !important;
-                font-size: 5.8pt !important;
+                font-size: 5.4pt !important;
                 line-height: 1.05 !important;
                 border: 0.75px solid #94a3b8 !important;
                 overflow: hidden !important;
-                word-wrap: break-word !important;
+                box-sizing: border-box !important;
             }
             body.print-mode-turni .col-collaboratore {
                 position: static !important;
-                width: 96px !important;
-                min-width: 96px !important;
-                max-width: 96px !important;
-                padding-left: 3px !important;
+                width: 72px !important;
+                min-width: 72px !important;
+                max-width: 72px !important;
+                padding-left: 2px !important;
                 padding-right: 2px !important;
+                text-overflow: ellipsis !important;
             }
             body.print-mode-turni .col-collaboratore .fw-bold {
-                font-size: 5.8pt !important;
+                font-size: 5.2pt !important;
                 line-height: 1.05 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
             }
             body.print-mode-turni .col-collaboratore .text-muted {
                 display: none !important;
@@ -362,9 +368,9 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 padding: 1px 0 !important;
             }
             body.print-mode-turni .badge-turno {
-                width: 18px !important;
+                width: 17px !important;
                 height: 13px !important;
-                font-size: 5pt !important;
+                font-size: 4.9pt !important;
                 border-radius: 2px !important;
                 padding: 0 !important;
             }
@@ -394,42 +400,47 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 font-size: 6.5pt !important;
             }
 
-            /* Stampa Reperibilità: formato A4 pieno, leggibile e su 1 pagina */
+            /* Stampa Reperibilità: formato A4 pieno, colonna nomi stretta, zero debordamento e 1 pagina */
             body.print-mode-reperibilita { font-size: 8.5pt !important; }
             body.print-mode-reperibilita .sezione-stampa-turni { display: none !important; }
-            body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; width: 100% !important; page-break-inside: avoid; }
+            body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; width: 100% !important; max-width: 100% !important; page-break-inside: avoid; }
             body.print-mode-reperibilita .table-planner {
                 width: 100% !important;
                 max-width: 100% !important;
                 table-layout: fixed !important;
                 border-collapse: collapse !important;
+                box-sizing: border-box !important;
             }
             body.print-mode-reperibilita .print-header-info {
-                margin-bottom: 8px !important;
-                padding-bottom: 5px !important;
+                margin-bottom: 7px !important;
+                padding-bottom: 4px !important;
             }
             body.print-mode-reperibilita .print-header-info h4 {
-                font-size: 12pt !important;
+                font-size: 11.5pt !important;
             }
             body.print-mode-reperibilita .table-planner th,
             body.print-mode-reperibilita .table-planner td {
-                padding: 2.5px 1px !important;
-                font-size: 7.2pt !important;
+                padding: 2px 0.5px !important;
+                font-size: 6.8pt !important;
                 line-height: 1.15 !important;
                 border: 0.9px solid #64748b !important;
                 overflow: hidden !important;
+                box-sizing: border-box !important;
             }
             body.print-mode-reperibilita .col-collaboratore {
                 position: static !important;
-                width: 135px !important;
-                min-width: 135px !important;
-                max-width: 135px !important;
-                padding-left: 5px !important;
-                padding-right: 4px !important;
+                width: 78px !important;
+                min-width: 78px !important;
+                max-width: 78px !important;
+                padding-left: 3px !important;
+                padding-right: 2px !important;
             }
             body.print-mode-reperibilita .col-collaboratore .fw-bold {
-                font-size: 7.4pt !important;
+                font-size: 6.5pt !important;
                 line-height: 1.1 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
             }
             body.print-mode-reperibilita .col-collaboratore .text-muted {
                 display: none !important;
@@ -438,13 +449,13 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 position: static !important;
                 width: auto !important;
                 min-width: 0 !important;
-                font-size: 7pt !important;
+                font-size: 6.8pt !important;
                 padding: 2px 0 !important;
             }
             body.print-mode-reperibilita .badge-turno {
                 height: 16px !important;
-                width: 24px !important;
-                font-size: 6.2pt !important;
+                width: 23px !important;
+                font-size: 6pt !important;
                 border-radius: 3px !important;
             }
             body.print-mode-reperibilita .print-rep-notes {
@@ -459,7 +470,7 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                 page-break-inside: avoid;
             }
             body.print-mode-reperibilita .print-footer-signatures {
-                margin-top: 9mm !important;
+                margin-top: 8mm !important;
                 font-size: 8.5pt !important;
             }
             body.print-mode-reperibilita .signature-box {
@@ -750,7 +761,7 @@ $larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
                     <div class="print-header-info">
                         <div>
                             <h4 class="fw-bold mb-1" style="font-size: 11.5pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
-                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>e Traumatologia</em></div>
+                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>Esclusi Mattinieri, CPSI e Coordinatori</em></div>
                         </div>
                         <div class="text-end">
                             <div class="fw-bold" style="font-size: 11.5pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
