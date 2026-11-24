@@ -917,7 +917,7 @@ foreach ($squadreGruppiGriglia as $sqKey => $membriSq) {
     }
 }
 
-// Classifica Sabato Pomeriggio esclusivamente per gli OSS (codici P o STM di sabato)
+// Classifica Sabato Pomeriggio esclusivamente per gli OSS (codici P o STP di sabato)
 $classificaSabatiOSS = [];
 $totaleSabatiPomeriggioOSS = 0;
 $sabatiNelMese = [];
@@ -941,9 +941,9 @@ foreach ($listaCollaboratori as $collab) {
         $evSab = $mappaTurniGriglia[$uIdOss][$gSab] ?? [];
         foreach ($evSab as $evS) {
             $codS = strtoupper(trim($evS['tipo_evento'] ?? ''));
-            if (($evS['fonte'] ?? '') !== 'assenze' && in_array($codS, ['P', 'STM'], true)) {
+            if (($evS['fonte'] ?? '') !== 'assenze' && in_array($codS, ['P', 'STP'], true)) {
                 $conteggioSabati++;
-                $dateSabati[] = sprintf('%02d/%02d', $gSab, $mese_selezionato);
+                $dateSabati[] = sprintf('%02d/%02d (%s)', $gSab, $mese_selezionato, $codS);
                 break;
             }
         }
@@ -1097,7 +1097,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 </div>
                 <div class="small text-muted">
                     Sabati nel mese: <strong><?php echo count($sabatiNelMese); ?></strong> |
-                    Totale turni P/STM OSS: <strong><?php echo $totaleSabatiPomeriggioOSS; ?></strong> |
+                    Totale turni P/STP OSS: <strong><?php echo $totaleSabatiPomeriggioOSS; ?></strong> |
                     Media per OSS: <strong><?php echo $mediaSabatiOSS; ?></strong>
                 </div>
             </div>
@@ -1117,7 +1117,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <?php } ?>
                 </div>
                 <div class="small text-muted mt-2" style="font-size: 0.7rem;">
-                    Ordinato dal minore al maggiore numero di sabato pomeriggio (<strong>P</strong> / <strong>STM</strong>) per agevolare la compensazione equa nei turni successivi.
+                    Ordinato dal minore al maggiore numero di sabato pomeriggio (<strong>P</strong> / <strong>STP</strong>) per agevolare la compensazione equa nei turni successivi.
                 </div>
             <?php } ?>
         </div>
