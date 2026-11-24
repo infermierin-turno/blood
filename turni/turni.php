@@ -439,6 +439,20 @@ function isOperatoreOSS($operatore) {
     return false;
 }
 
+function isOperatoreInfermiere($operatore) {
+    if (isOperatoreOSS($operatore)) {
+        return false;
+    }
+    $testoRuolo = strtolower(trim(($operatore['ruolo'] ?? '') . ' ' . ($operatore['qualifica'] ?? '')));
+    if ($testoRuolo === '') {
+        return false;
+    }
+    if (strpos($testoRuolo, 'infermier') !== false || preg_match('/\binf\b/i', $testoRuolo) || preg_match('/\bcps\b/i', $testoRuolo)) {
+        return true;
+    }
+    return false;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf_token = $_POST['csrf'] ?? '';
     if (!hash_equals($_SESSION['csrf'], $csrf_token)) {
@@ -968,6 +982,58 @@ usort($classificaSabatiOSS, function($a, $b) {
 $numeroOSS = count($classificaSabatiOSS);
 $mediaSabatiOSS = $numeroOSS > 0 ? round($totaleSabatiPomeriggioOSS / $numeroOSS, 2) : 0;
 
+// Classifica RN / RDM / RDP esclusivamente per gli Infermieri, distinta per Squadra
+$classificaInfermieriPerSquadra = [];
+$codiciReperibilitaInf = ['RN', 'RDM', 'RDP'];
+
+foreach ($listaCollaboratori as $collab) {
+    if (!isOperatoreInfermiere($collab)) {
+        continue;
+    }
+    $uIdInf = $collab['id'];
+    $sqInf = trim($collab['squadra'] ?? 'Senza Squadra');
+    $cntRN = 0;
+    $cntRDM = 0;
+    $cntRDP = 0;
+
+    for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+        $evG = $mappaTurniGriglia[$uIdInf][$g] ?? [];
+        foreach ($evG as $evItem) {
+            if (($evItem['fonte'] ?? '') === 'assenze') {
+                continue;
+            }
+            $codItem = strtoupper(trim($evItem['tipo_evento'] ?? ''));
+            if ($codItem === 'RN') {
+                $cntRN++;
+            } elseif ($codItem === 'RDM') {
+                $cntRDM++;
+            } elseif ($codItem === 'RDP') {
+                $cntRDP++;
+            }
+        }
+    }
+
+    $totaleInf = $cntRN + $cntRDM + $cntRDP;
+    $classificaInfermieriPerSquadra[$sqInf][] = [
+        'nome' => $collab['nome'] ?? 'Infermiere',
+        'squadra' => $sqInf,
+        'rn' => $cntRN,
+        'rdm' => $cntRDM,
+        'rdp' => $cntRDP,
+        'totale' => $totaleInf
+    ];
+}
+
+foreach ($classificaInfermieriPerSquadra as $sqKeyInf => &$listaInfSq) {
+    usort($listaInfSq, function($a, $b) {
+        if ($a['totale'] !== $b['totale']) {
+            return $a['totale'] <=> $b['totale'];
+        }
+        return strcasecmp($a['nome'], $b['nome']);
+    });
+}
+unset($listaInfSq);
+
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
 $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 ?>
@@ -1118,6 +1184,56 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 </div>
                 <div class="small text-muted mt-2" style="font-size: 0.7rem;">
                     Ordinato dal minore al maggiore numero di sabato pomeriggio (<strong>P</strong> / <strong>STP</strong>) per agevolare la compensazione equa nei turni successivi.
+                </div>
+            <?php } ?>
+        </div>
+
+        <div class="card shadow-sm mb-4 p-3 border-start border-4 border-primary">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                <div class="fw-bold small text-dark">
+                    <i class="bi bi-bar-chart-steps text-primary me-1"></i>
+                    Nota Equità RN / RDM / RDP per Squadra — Solo Infermieri (<?php echo htmlspecialchars($nomeMeseCorrente . ' ' . $anno_selezionato); ?>)
+                </div>
+                <div class="small text-muted">
+                    Conteggio turni: <strong>RN</strong>, <strong>RDM</strong>, <strong>RDP</strong> (ordinato dal minore al maggiore per squadra)
+                </div>
+            </div>
+            <?php if (empty($classificaInfermieriPerSquadra)) { ?>
+                <div class="small text-muted">Nessun operatore con ruolo/qualifica Infermiere presente nella selezione corrente.</div>
+            <?php } else { ?>
+                <div class="row g-3">
+                    <?php foreach ($classificaInfermieriPerSquadra as $sqNomeInf => $membriInfSq) {
+                        $sommaSqInf = array_sum(array_column($membriInfSq, 'totale'));
+                        $cntMembriSq = count($membriInfSq);
+                        $mediaSqInf = $cntMembriSq > 0 ? round($sommaSqInf / $cntMembriSq, 2) : 0;
+                    ?>
+                        <div class="col-md-6 col-xl-4">
+                            <div class="border rounded p-2 bg-light h-100">
+                                <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
+                                    <span class="fw-bold small text-dark"><i class="bi bi-people-fill text-primary me-1"></i>Squadra: <?php echo htmlspecialchars($sqNomeInf); ?></span>
+                                    <span class="badge bg-secondary" style="font-size: 0.68rem;">Tot: <?php echo $sommaSqInf; ?> | Media: <?php echo $mediaSqInf; ?></span>
+                                </div>
+                                <div class="d-flex flex-column gap-1">
+                                    <?php foreach ($membriInfSq as $idxInf => $infRow) {
+                                        $totRow = $infRow['totale'];
+                                        $bClassInf = ($totRow > $mediaSqInf) ? 'bg-warning text-dark' : (($totRow < $mediaSqInf) ? 'bg-success text-white' : 'bg-primary text-white');
+                                    ?>
+                                        <div class="d-flex justify-content-between align-items-center bg-white border rounded px-2 py-1" style="font-size: 0.72rem;">
+                                            <div class="text-truncate me-2">
+                                                <strong>#<?php echo ($idxInf + 1); ?></strong> <?php echo htmlspecialchars($infRow['nome']); ?>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                                                <span class="badge bg-dark" style="font-size: 0.65rem;">RN: <?php echo $infRow['rn']; ?></span>
+                                                <span class="badge bg-info text-dark" style="font-size: 0.65rem;">RDM: <?php echo $infRow['rdm']; ?></span>
+                                                <span class="badge bg-secondary" style="font-size: 0.65rem;">RDP: <?php echo $infRow['rdp']; ?></span>
+                                                <span class="badge <?php echo $bClassInf; ?>" style="font-size: 0.68rem;">Tot: <?php echo $totRow; ?></span>
+                                            </div>
+                                        </div>
+                                    <?php } ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php } ?>
                 </div>
             <?php } ?>
         </div>
