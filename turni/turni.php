@@ -209,7 +209,8 @@ if (!is_array($tipologieTurni) || empty($tipologieTurni)) {
         ['id' => '8', 'nome_turno' => 'Straordinario Pomeriggio', 'codice_breve' => 'STM', 'colore' => '#ffc107', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
         ['id' => '9', 'nome_turno' => 'Reperibilità Diurno Mattina', 'codice_breve' => 'RDM', 'colore' => '#20c997', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
         ['id' => '10', 'nome_turno' => 'Reperibilità Diurno Pomeriggio', 'codice_breve' => 'RDP', 'colore' => '#d63384', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '11', 'nome_turno' => 'Reperibilità Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00']
+        ['id' => '11', 'nome_turno' => 'Reperibilità Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
+        ['id' => '12', 'nome_turno' => 'Cambio Turno', 'codice_breve' => 'CT', 'colore' => '#0dcaf0', 'ora_inizio' => '08:00:00', 'ora_fine' => '14:00:00']
     ];
 }
 
@@ -231,6 +232,11 @@ foreach ($tipologieTurni as $t) {
 if (!isset($mappaColoriTurni['F'])) {
     $mappaColoriTurni['F'] = '#20c997';
     $validCodiciTurno[] = 'F';
+}
+if (!isset($mappaColoriTurni['CT'])) {
+    $mappaColoriTurni['CT'] = '#0dcaf0';
+    $validCodiciTurno[] = 'CT';
+    $mappaOrariTurni['CT'] = ['inizio' => '08:00:00', 'fine' => '14:00:00'];
 }
 
 function verificaVincoliTurno($utente_id, $data_str, $nuovo_codice, $turno_escludere_id = null) {
