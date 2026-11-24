@@ -761,7 +761,7 @@ $larghezzaColGiornoStampa = round(90 / max(1, $giorni_nel_mese), 4);
                     <div class="print-header-info">
                         <div>
                             <h4 class="fw-bold mb-1" style="font-size: 11.5pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
-                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>Esclusi Mattinieri, CPSI e Coordinatori</em></div>
+                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>e Traumatologia</em></div>
                         </div>
                         <div class="text-end">
                             <div class="fw-bold" style="font-size: 11.5pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
