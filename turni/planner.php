@@ -284,6 +284,7 @@ $collaboratoriReperibilita = array_values(array_filter($listaCollaboratori, func
 
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
 $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
+$larghezzaColGiornoStampa = round(100 / max(1, $giorni_nel_mese), 4);
 ?>
 <!DOCTYPE html>
 <html lang="it">
@@ -303,6 +304,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .th-giorno.weekend { background-color: #0f172a !important; color: #94a3b8 !important; }
         .weekend-col { background-color: #f1f5f9 !important; }
         .badge-turno { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px; font-size: 0.65rem; font-weight: 700; border-radius: 4px; }
+        .cell-container { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 1px; flex-wrap: nowrap; }
 
         .sezione-stampa-reperibilita { display: none; }
 
@@ -313,40 +315,125 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .print-rep-notes { display: none; }
 
         @media print {
-            @page { size: A4 landscape; margin: 5mm; }
+            @page { size: A4 landscape; margin: 4mm; }
             .print-hide { display: none !important; }
-            body { background: #fff !important; font-size: 8pt !important; color: #000 !important; padding-bottom: 0 !important; }
-            .container-fluid { padding-left: 2mm !important; padding-right: 2mm !important; }
+            body { background: #fff !important; font-size: 7pt !important; color: #000 !important; padding-bottom: 0 !important; margin: 0 !important; }
+            .container-fluid { padding-left: 0 !important; padding-right: 0 !important; width: 100% !important; max-width: 100% !important; }
             .card { box-shadow: none !important; border: none !important; margin-bottom: 0 !important; }
-            .table-planner th, .table-planner td { padding: 2px 1px !important; font-size: 6.5pt !important; border: 1px solid #94a3b8 !important; }
-            .col-collaboratore { position: static !important; width: 120px !important; }
+            .table-responsive { overflow: visible !important; max-height: none !important; }
 
+            /* Fit-to-page per Stampa Turni: zero debordamento a destra + compattazione su 2 pagine */
             body.print-mode-turni .sezione-stampa-reperibilita { display: none !important; }
-            body.print-mode-turni .sezione-stampa-turni { display: block !important; }
+            body.print-mode-turni .sezione-stampa-turni { display: block !important; width: 100% !important; }
+            body.print-mode-turni .table-planner {
+                width: 100% !important;
+                max-width: 100% !important;
+                table-layout: fixed !important;
+                border-collapse: collapse !important;
+            }
+            body.print-mode-turni .table-planner th,
+            body.print-mode-turni .table-planner td {
+                padding: 1.5px 0.5px !important;
+                font-size: 5.8pt !important;
+                line-height: 1.05 !important;
+                border: 0.75px solid #94a3b8 !important;
+                overflow: hidden !important;
+                word-wrap: break-word !important;
+            }
+            body.print-mode-turni .col-collaboratore {
+                position: static !important;
+                width: 96px !important;
+                min-width: 96px !important;
+                max-width: 96px !important;
+                padding-left: 3px !important;
+                padding-right: 2px !important;
+            }
+            body.print-mode-turni .col-collaboratore .fw-bold {
+                font-size: 5.8pt !important;
+                line-height: 1.05 !important;
+            }
+            body.print-mode-turni .col-collaboratore .text-muted {
+                display: none !important;
+            }
+            body.print-mode-turni .th-giorno {
+                position: static !important;
+                width: auto !important;
+                min-width: 0 !important;
+                padding: 1px 0 !important;
+            }
+            body.print-mode-turni .badge-turno {
+                width: 18px !important;
+                height: 13px !important;
+                font-size: 5pt !important;
+                border-radius: 2px !important;
+                padding: 0 !important;
+            }
+            body.print-mode-turni .print-header-info {
+                margin-bottom: 4px !important;
+                padding-bottom: 3px !important;
+            }
+            body.print-mode-turni .print-legend {
+                margin-top: 3mm !important;
+                font-size: 6pt !important;
+            }
+            body.print-mode-turni .print-legend-grid {
+                grid-template-columns: repeat(6, 1fr) !important;
+                gap: 2px 6px !important;
+                padding: 3px 5px !important;
+            }
+            body.print-mode-turni .print-footer-signatures {
+                margin-top: 4mm !important;
+                font-size: 7.5pt !important;
+            }
+            body.print-mode-turni .signature-box {
+                width: 210px !important;
+                padding-top: 3px !important;
+            }
+            body.print-mode-turni .signature-box .text-muted {
+                margin-top: 6px !important;
+                font-size: 6.5pt !important;
+            }
 
+            /* Stampa Reperibilità: 1 pagina */
             body.print-mode-reperibilita .sezione-stampa-turni { display: none !important; }
-            body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; page-break-inside: avoid; }
-
+            body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; width: 100% !important; page-break-inside: avoid; }
+            body.print-mode-reperibilita .table-planner {
+                width: 100% !important;
+                max-width: 100% !important;
+                table-layout: fixed !important;
+                border-collapse: collapse !important;
+            }
             body.print-mode-reperibilita .print-header-info {
                 margin-bottom: 5px !important;
                 padding-bottom: 3px !important;
             }
             body.print-mode-reperibilita .table-planner th,
             body.print-mode-reperibilita .table-planner td {
-                padding: 1px 1px !important;
-                font-size: 6pt !important;
+                padding: 1px 0.5px !important;
+                font-size: 5.8pt !important;
                 line-height: 1.05 !important;
+                border: 0.75px solid #94a3b8 !important;
+                overflow: hidden !important;
             }
             body.print-mode-reperibilita .col-collaboratore {
-                width: 115px !important;
+                position: static !important;
+                width: 100px !important;
+                min-width: 100px !important;
+                max-width: 100px !important;
+                padding-left: 3px !important;
             }
             body.print-mode-reperibilita .col-collaboratore .text-muted {
                 display: none !important;
             }
+            body.print-mode-reperibilita .th-giorno {
+                position: static !important;
+                width: auto !important;
+                min-width: 0 !important;
+            }
             body.print-mode-reperibilita .badge-turno {
                 height: 13px !important;
-                width: 22px !important;
-                font-size: 5.5pt !important;
+                width: 20px !important;
+                font-size: 5.2pt !important;
                 border-radius: 2px !important;
             }
             body.print-mode-reperibilita .print-rep-notes {
@@ -493,17 +580,23 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <!-- Intestazione visibile solo in STAMPA -->
                     <div class="print-header-info">
                         <div>
-                            <h4 class="fw-bold mb-1" style="font-size: 11pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
-                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></div>
+                            <h4 class="fw-bold mb-1" style="font-size: 10pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
+                            <div style="font-size: 8.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong></div>
                         </div>
                         <div class="text-end">
-                            <div class="fw-bold" style="font-size: 11pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
-                            <div style="font-size: 8.5pt;" class="text-muted">Pianificazione Turni Mensile</div>
+                            <div class="fw-bold" style="font-size: 10pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
+                            <div style="font-size: 7.5pt;" class="text-muted">Pianificazione Turni Mensile</div>
                         </div>
                     </div>
 
                     <div class="table-responsive">
                         <table class="table table-bordered table-planner mb-0">
+                            <colgroup>
+                                <col style="width: 170px;">
+                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { ?>
+                                    <col style="width: <?php echo $larghezzaColGiornoStampa; ?>%;">
+                                <?php } ?>
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th class="col-collaboratore">Nominativo</th>
@@ -612,7 +705,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
                     <!-- Legenda Completa di TUTTE le 16 Tipologie di Turno visibile solo in STAMPA -->
                     <div class="print-legend">
-                        <div class="fw-bold mb-1" style="font-size: 8pt; text-transform: uppercase;">Legenda Tipologie Turni ed Eccezioni:</div>
+                        <div class="fw-bold mb-1" style="font-size: 7pt; text-transform: uppercase;">Legenda Tipologie Turni ed Eccezioni:</div>
                         <div class="print-legend-grid">
                             <?php foreach ($mappaNomiTurni as $codiceLeg => $nomeLeg) { ?>
                                 <div class="legend-item">
@@ -626,11 +719,11 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <div class="print-footer-signatures">
                         <div class="signature-box">
                             <div class="fw-bold">Il Coordinatore</div>
-                            <div class="text-muted" style="font-size: 7.5pt; margin-top: 15px;">(Firma)</div>
+                            <div class="text-muted" style="font-size: 7pt; margin-top: 10px;">(Firma)</div>
                         </div>
                         <div class="signature-box">
                             <div class="fw-bold">Il Direttore UOC</div>
-                            <div class="text-muted" style="font-size: 7.5pt; margin-top: 15px;">(Firma e Timbro)</div>
+                            <div class="text-muted" style="font-size: 7pt; margin-top: 10px;">(Firma e Timbro)</div>
                         </div>
                     </div>
 
@@ -656,6 +749,12 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
                     <div class="table-responsive">
                         <table class="table table-bordered table-planner mb-0">
+                            <colgroup>
+                                <col style="width: 170px;">
+                                <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) { ?>
+                                    <col style="width: <?php echo $larghezzaColGiornoStampa; ?>%;">
+                                <?php } ?>
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th class="col-collaboratore">Nominativo</th>
@@ -750,11 +849,11 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <div class="print-footer-signatures">
                         <div class="signature-box">
                             <div class="fw-bold">Il Coordinatore</div>
-                            <div class="text-muted" style="font-size: 7.5pt; margin-top: 15px;">(Firma)</div>
+                            <div class="text-muted" style="font-size: 7pt; margin-top: 10px;">(Firma)</div>
                         </div>
                         <div class="signature-box">
                             <div class="fw-bold">Il Direttore UOC</div>
-                            <div class="text-muted" style="font-size: 7.5pt; margin-top: 15px;">(Firma e Timbro)</div>
+                            <div class="text-muted" style="font-size: 7pt; margin-top: 10px;">(Firma e Timbro)</div>
                         </div>
                     </div>
 
