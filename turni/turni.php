@@ -199,18 +199,18 @@ $tipologieTurni = supabase_turni_request($queryTipologie);
 
 if (!is_array($tipologieTurni) || empty($tipologieTurni)) {
     $tipologieTurni = [
-        ['id' => '1', 'nome_turno' => 'Mattina', 'codice_breve' => 'M', 'colore' => '#0d6efd', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '2', 'nome_turno' => 'Pomeriggio', 'codice_breve' => 'P', 'colore' => '#ffc107', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '3', 'nome_turno' => 'Notte', 'codice_breve' => 'N', 'colore' => '#6610f2', 'ora_inizio' => '21:00:00', 'ora_fine' => '07:00:00'],
-        ['id' => '4', 'nome_turno' => 'Smonto', 'codice_breve' => 'S', 'colore' => '#fd7e14', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '5', 'nome_turno' => 'Riposo', 'codice_breve' => 'R', 'colore' => '#198754', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59'],
-        ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997', 'ora_inizio' => '00:00:00', 'ora_fine' => '23:59:59'],
-        ['id' => '7', 'nome_turno' => 'Straordinario Mattina', 'codice_breve' => 'STP', 'colore' => '#0dcaf0', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '8', 'nome_turno' => 'Straordinario Pomeriggio', 'codice_breve' => 'STM', 'colore' => '#ffc107', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '9', 'nome_turno' => 'Reperibilità Diurno Mattina', 'codice_breve' => 'RDM', 'colore' => '#20c997', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '10', 'nome_turno' => 'Reperibilità Diurno Pomeriggio', 'codice_breve' => 'RDP', 'colore' => '#d63384', 'ora_inizio' => '14:00:00', 'ora_fine' => '21:00:00'],
-        ['id' => '11', 'nome_turno' => 'Reperibilità Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'ora_inizio' => '07:00:00', 'ora_fine' => '14:00:00'],
-        ['id' => '12', 'nome_turno' => 'Cambio Turno', 'codice_breve' => 'CT', 'colore' => '#0dcaf0', 'ora_inizio' => '08:00:00', 'ora_fine' => '14:00:00']
+        ['id' => '1', 'nome_turno' => 'Mattina', 'codice_breve' => 'M', 'colore' => '#0d6efd', 'orario_inizio' => '07:00:00', 'orario_fine' => '14:00:00'],
+        ['id' => '2', 'nome_turno' => 'Pomeriggio', 'codice_breve' => 'P', 'colore' => '#ffc107', 'orario_inizio' => '14:00:00', 'orario_fine' => '21:00:00'],
+        ['id' => '3', 'nome_turno' => 'Notte', 'codice_breve' => 'N', 'colore' => '#6610f2', 'orario_inizio' => '21:00:00', 'orario_fine' => '07:00:00'],
+        ['id' => '4', 'nome_turno' => 'Smonto', 'codice_breve' => 'S', 'colore' => '#fd7e14', 'orario_inizio' => '07:00:00', 'orario_fine' => '14:00:00'],
+        ['id' => '5', 'nome_turno' => 'Riposo', 'codice_breve' => 'R', 'colore' => '#198754', 'orario_inizio' => '00:00:00', 'orario_fine' => '23:59:59'],
+        ['id' => '6', 'nome_turno' => 'Ferie', 'codice_breve' => 'F', 'colore' => '#20c997', 'orario_inizio' => '00:00:00', 'orario_fine' => '23:59:59'],
+        ['id' => '7', 'nome_turno' => 'Straordinario Mattina', 'codice_breve' => 'STP', 'colore' => '#0dcaf0', 'orario_inizio' => '07:00:00', 'orario_fine' => '14:00:00'],
+        ['id' => '8', 'nome_turno' => 'Straordinario Pomeriggio', 'codice_breve' => 'STM', 'colore' => '#ffc107', 'orario_inizio' => '14:00:00', 'orario_fine' => '21:00:00'],
+        ['id' => '9', 'nome_turno' => 'Reperibilità Diurno Mattina', 'codice_breve' => 'RDM', 'colore' => '#20c997', 'orario_inizio' => '07:00:00', 'orario_fine' => '14:00:00'],
+        ['id' => '10', 'nome_turno' => 'Reperibilità Diurno Pomeriggio', 'codice_breve' => 'RDP', 'colore' => '#d63384', 'orario_inizio' => '14:00:00', 'orario_fine' => '21:00:00'],
+        ['id' => '11', 'nome_turno' => 'Reperibilità Notte', 'codice_breve' => 'RN', 'colore' => '#6f42c1', 'orario_inizio' => '07:00:00', 'orario_fine' => '14:00:00'],
+        ['id' => '12', 'nome_turno' => 'Cambio Turno', 'codice_breve' => 'CT', 'colore' => '#0dcaf0', 'orario_inizio' => '08:00:00', 'orario_fine' => '14:00:00']
     ];
 }
 
@@ -224,8 +224,8 @@ foreach ($tipologieTurni as $t) {
         $mappaColoriTurni[$codice] = $coloreHex;
         $validCodiciTurno[] = $codice;
         $mappaOrariTurni[$codice] = [
-            'inizio' => $t['ora_inizio'] ?? '08:00:00',
-            'fine' => $t['ora_fine'] ?? '14:00:00'
+            'inizio' => $t['orario_inizio'] ?? $t['ora_inizio'] ?? '08:00:00',
+            'fine' => $t['orario_fine'] ?? $t['ora_fine'] ?? '14:00:00'
         ];
     }
 }
@@ -739,6 +739,15 @@ if (is_array($assenzeMeseData)) {
     }
 }
 
+// Mappa del primo collaboratore per ciascuna squadra (in base all'ordinamento attuale della tabella)
+$primoCollaboratoreSquadra = [];
+foreach ($listaCollaboratori as $collab) {
+    $sqKey = trim($collab['squadra'] ?? 'Senza Squadra');
+    if (!isset($primoCollaboratoreSquadra[$sqKey])) {
+        $primoCollaboratoreSquadra[$sqKey] = $collab['id'];
+    }
+}
+
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
 $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 ?>
@@ -763,7 +772,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .cella-interattiva:hover { background-color: #e2e8f0 !important; }
 
         .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
-        .tr-sezione-squadra td { background-color: #e2e8f0 !important; font-weight: bold; text-align: left !important; padding: 6px 10px !important; font-size: 0.8rem; color: #334155; border-top: 2px solid #cbd5e1 !important; }
+        .tr-sezione-squadra td { background-color: #e2e8f0 !important; font-weight: bold; text-align: center !important; padding: 4px 2px !important; font-size: 0.72rem; color: #334155; border-top: 2px solid #cbd5e1 !important; border-bottom: 1px solid #cbd5e1 !important; }
+        .tr-sezione-squadra td.col-squadra-sticky { position: sticky; left: 0; z-index: 2; text-align: left !important; padding-left: 8px !important; font-size: 0.78rem; border-right: 2px solid #cbd5e1 !important; }
 
         .badge-container { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2px; }
 
@@ -918,11 +928,33 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
                                     if ($ultimaSquadra !== $squadraCollab) {
                                         $ultimaSquadra = $squadraCollab;
+                                        $primoUidSquadra = $primoCollaboratoreSquadra[$squadraCollab] ?? null;
                                 ?>
                                     <tr class="tr-sezione-squadra">
-                                        <td colspan="<?php echo $giorni_nel_mese + 1; ?>">
+                                        <td class="col-squadra-sticky">
                                             <i class="bi bi-people-fill me-1"></i> Squadra: <?php echo htmlspecialchars($squadraCollab); ?>
                                         </td>
+                                        <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                                            $eventiPrimo = ($primoUidSquadra !== null) ? ($mappaTurniGriglia[$primoUidSquadra][$g] ?? []) : [];
+                                        ?>
+                                            <td>
+                                                <div class="badge-container">
+                                                    <?php if (!empty($eventiPrimo)) {
+                                                        foreach ($eventiPrimo as $ev) {
+                                                            $codEv = strtoupper(trim($ev['tipo_evento'] ?? ''));
+                                                            $coloreBg = $mappaColoriTurni[$codEv] ?? '#6c757d';
+                                                            $isInAttesa = (strcasecmp($ev['stato'] ?? '', 'Approvato') !== 0);
+                                                    ?>
+                                                        <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo htmlspecialchars($coloreBg); ?>;" title="<?php echo htmlspecialchars($codEv); ?>">
+                                                            <?php echo htmlspecialchars($codEv); ?>
+                                                        </span>
+                                                    <?php
+                                                        }
+                                                    }
+                                                    ?>
+                                                </div>
+                                            </td>
+                                        <?php } ?>
                                     </tr>
                                 <?php } ?>
                                     <tr>
