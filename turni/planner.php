@@ -31,6 +31,25 @@ function is_profilo_medico_griglia(array $utente): bool {
     return false;
 }
 
+function is_escluso_stampa_reperibilita(array $utente): bool {
+    if (($utente['squadra_norm'] ?? '') === 'MATTINIERO') {
+        return true;
+    }
+    $testo = strtolower(trim(
+        ($utente['ruolo'] ?? '') . ' ' .
+        ($utente['qualifica'] ?? '') . ' ' .
+        ($utente['profilo'] ?? '') . ' ' .
+        ($utente['squadra'] ?? '')
+    ));
+    if ($testo === '') {
+        return false;
+    }
+    if (preg_match('/\bcpsi\b/i', $testo) || strpos($testo, 'coordinat') !== false || strpos($testo, 'mattin') !== false) {
+        return true;
+    }
+    return false;
+}
+
 // 2. Reparti disponibili
 $reparti_disponibili = [];
 $resReparti = supabase_request("reparti?select=id,nome_reparto&order=nome_reparto.asc");
@@ -257,10 +276,10 @@ foreach (['A', 'B', 'C', 'D', 'E'] as $sq) {
     }
 }
 
-// 9. Elenco Collaboratori per Stampa Reperibilità (esclude i Mattinieri)
-$codiciReperibilita = ['RN', 'RDM', 'RDP', 'RD', 'REP'];
+// 9. Elenco Collaboratori per Stampa Reperibilità (esclude Mattinieri, CPSI e Coordinatori)
+$codiciReperibilita = ['RN', 'RDM', 'RDP'];
 $collaboratoriReperibilita = array_values(array_filter($listaCollaboratori, function($c) {
-    return ($c['squadra_norm'] ?? '') !== 'MATTINIERO';
+    return !is_escluso_stampa_reperibilita($c);
 }));
 
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
@@ -291,12 +310,14 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .print-header-info { display: none; }
         .print-footer-signatures { display: none; }
         .print-legend { display: none; }
+        .print-rep-notes { display: none; }
 
         @media print {
-            @page { size: A4 landscape; margin: 6mm; }
+            @page { size: A4 landscape; margin: 5mm; }
             .print-hide { display: none !important; }
-            body { background: #fff !important; font-size: 8pt !important; color: #000 !important; }
-            .card { box-shadow: none !important; border: none !important; }
+            body { background: #fff !important; font-size: 8pt !important; color: #000 !important; padding-bottom: 0 !important; }
+            .container-fluid { padding-left: 2mm !important; padding-right: 2mm !important; }
+            .card { box-shadow: none !important; border: none !important; margin-bottom: 0 !important; }
             .table-planner th, .table-planner td { padding: 2px 1px !important; font-size: 6.5pt !important; border: 1px solid #94a3b8 !important; }
             .col-collaboratore { position: static !important; width: 120px !important; }
 
@@ -304,7 +325,53 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             body.print-mode-turni .sezione-stampa-turni { display: block !important; }
 
             body.print-mode-reperibilita .sezione-stampa-turni { display: none !important; }
-            body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; }
+            body.print-mode-reperibilita .sezione-stampa-reperibilita { display: block !important; page-break-inside: avoid; }
+
+            body.print-mode-reperibilita .print-header-info {
+                margin-bottom: 5px !important;
+                padding-bottom: 3px !important;
+            }
+            body.print-mode-reperibilita .table-planner th,
+            body.print-mode-reperibilita .table-planner td {
+                padding: 1px 1px !important;
+                font-size: 6pt !important;
+                line-height: 1.05 !important;
+            }
+            body.print-mode-reperibilita .col-collaboratore {
+                width: 115px !important;
+            }
+            body.print-mode-reperibilita .col-collaboratore .text-muted {
+                display: none !important;
+            }
+            body.print-mode-reperibilita .badge-turno {
+                height: 13px !important;
+                width: 22px !important;
+                font-size: 5.5pt !important;
+                border-radius: 2px !important;
+            }
+            body.print-mode-reperibilita .print-rep-notes {
+                display: flex !important;
+                justify-content: flex-start !important;
+                gap: 18px !important;
+                margin-top: 4px !important;
+                padding: 3px 6px !important;
+                border: 1px solid #cbd5e1 !important;
+                background-color: #f8fafc !important;
+                font-size: 6.5pt !important;
+                page-break-inside: avoid;
+            }
+            body.print-mode-reperibilita .print-footer-signatures {
+                margin-top: 5mm !important;
+                font-size: 7.5pt !important;
+            }
+            body.print-mode-reperibilita .signature-box {
+                width: 200px !important;
+                padding-top: 2px !important;
+            }
+            body.print-mode-reperibilita .signature-box .text-muted {
+                margin-top: 6px !important;
+                font-size: 6.5pt !important;
+            }
 
             .print-header-info {
                 display: flex !important;
@@ -411,7 +478,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                     <button type="button" onclick="stampaPlanner('turni');" class="btn btn-secondary btn-sm fw-bold">
                         <i class="bi bi-printer"></i> Stampa Turni
                     </button>
-                    <button type="button" onclick="stampaPlanner('reperibilita');" class="btn btn-primary btn-sm fw-bold" title="Stampa reperibilità escludendo i Mattinieri">
+                    <button type="button" onclick="stampaPlanner('reperibilita');" class="btn btn-primary btn-sm fw-bold" title="Stampa reperibilità escludendo Mattinieri, CPSI e Coordinatori">
                         <i class="bi bi-telephone-outbound"></i> Stampa Reperibilità
                     </button>
                 </div>
@@ -571,19 +638,19 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
             </div>
         </div>
 
-        <!-- Tabella Stampa Separata REPERIBILITA (Esclusi Mattinieri) -->
+        <!-- Tabella Stampa Separata REPERIBILITA (Esclusi Mattinieri, CPSI e Coordinatori) -->
         <div class="sezione-stampa-reperibilita">
             <div class="card">
                 <div class="card-body p-0">
 
                     <div class="print-header-info">
                         <div>
-                            <h4 class="fw-bold mb-1" style="font-size: 11pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
-                            <div style="font-size: 9.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>Esclusi Mattinieri</em></div>
+                            <h4 class="fw-bold mb-1" style="font-size: 10pt;"><?php echo htmlspecialchars($nome_struttura_corrente); ?></h4>
+                            <div style="font-size: 8.5pt;">Reparto: <strong><?php echo htmlspecialchars($nome_reparto_selezionato); ?></strong> — <em>Esclusi Mattinieri, CPSI e Coordinatori</em></div>
                         </div>
                         <div class="text-end">
-                            <div class="fw-bold" style="font-size: 11pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
-                            <div style="font-size: 8.5pt;" class="text-muted">Prospetto Reperibilità Mensile</div>
+                            <div class="fw-bold" style="font-size: 10pt; text-transform: uppercase;"><?php echo "$nomeMeseCorrente $anno_selezionato"; ?></div>
+                            <div style="font-size: 7.5pt;" class="text-muted">Prospetto Reperibilità Mensile</div>
                         </div>
                     </div>
 
@@ -591,7 +658,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         <table class="table table-bordered table-planner mb-0">
                             <thead>
                                 <tr>
-                                    <th class="col-collaboratore">Nominativo (No Mattinieri)</th>
+                                    <th class="col-collaboratore">Nominativo</th>
                                     <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
                                         $w = date('N', mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato));
                                         $let = ['1'=>'L','2'=>'M','3'=>'M','4'=>'G','5'=>'V','6'=>'S','7'=>'D'][$w];
@@ -599,14 +666,14 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                     ?>
                                         <th class="th-giorno <?php echo $isWk ? 'weekend' : ''; ?>">
                                             <div><?php echo $g; ?></div>
-                                            <div style="font-size:0.55rem; opacity:0.8;"><?php echo $let; ?></div>
+                                            <div style="font-size:0.5rem; opacity:0.8;"><?php echo $let; ?></div>
                                         </th>
                                     <?php } ?>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($collaboratoriReperibilita)) { ?>
-                                    <tr><td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-4 text-muted">Nessun operatore non-mattiniere trovato per questo reparto.</td></tr>
+                                    <tr><td colspan="<?php echo $giorni_nel_mese + 1; ?>" class="text-center py-3 text-muted">Nessun operatore idoneo trovato per la stampa reperibilità.</td></tr>
                                 <?php } else {
                                     $squadraRepCorrente = null;
                                     foreach ($collaboratoriReperibilita as $collabRep) {
@@ -622,7 +689,7 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 ?>
                                                 <tr class="table-secondary">
                                                     <td class="col-collaboratore fw-bold text-uppercase text-dark bg-light">
-                                                        <i class="bi bi-grid-3x3 text-primary me-1"></i> TURNO <?php echo $sqNormaR; ?>
+                                                        TURNO <?php echo $sqNormaR; ?>
                                                     </td>
                                                     <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
                                                         $tSqR = $turniSquadraPerGiorno[$sqNormaR][$g] ?? '-';
@@ -671,6 +738,13 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                                 <?php } ?>
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- Note Reperibilità in Stampa -->
+                    <div class="print-rep-notes">
+                        <div><strong>RN</strong>: NOTTE</div>
+                        <div><strong>RDM</strong>: REP. MATTINA</div>
+                        <div><strong>RDP</strong>: REP. POMERIGGIO</div>
                     </div>
 
                     <div class="print-footer-signatures">
