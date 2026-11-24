@@ -425,6 +425,20 @@ function èSquadraTurnistaValida($nomeSquadra) {
     return true;
 }
 
+function isOperatoreOSS($operatore) {
+    $testoRuolo = strtolower(trim(($operatore['ruolo'] ?? '') . ' ' . ($operatore['qualifica'] ?? '')));
+    if ($testoRuolo === '') {
+        return false;
+    }
+    if (preg_match('/\boss\b/i', $testoRuolo)) {
+        return true;
+    }
+    if (strpos($testoRuolo, 'socio sanitario') !== false || strpos($testoRuolo, 'operatore socio') !== false) {
+        return true;
+    }
+    return false;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf_token = $_POST['csrf'] ?? '';
     if (!hash_equals($_SESSION['csrf'], $csrf_token)) {
@@ -903,6 +917,57 @@ foreach ($squadreGruppiGriglia as $sqKey => $membriSq) {
     }
 }
 
+// Classifica Sabato Pomeriggio esclusivamente per gli OSS (codici P o STM di sabato)
+$classificaSabatiOSS = [];
+$totaleSabatiPomeriggioOSS = 0;
+$sabatiNelMese = [];
+
+for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+    $tsG = mktime(0, 0, 0, $mese_selezionato, $g, $anno_selezionato);
+    if (intval(date('N', $tsG)) === 6) {
+        $sabatiNelMese[] = $g;
+    }
+}
+
+foreach ($listaCollaboratori as $collab) {
+    if (!isOperatoreOSS($collab)) {
+        continue;
+    }
+    $uIdOss = $collab['id'];
+    $conteggioSabati = 0;
+    $dateSabati = [];
+
+    foreach ($sabatiNelMese as $gSab) {
+        $evSab = $mappaTurniGriglia[$uIdOss][$gSab] ?? [];
+        foreach ($evSab as $evS) {
+            $codS = strtoupper(trim($evS['tipo_evento'] ?? ''));
+            if (($evS['fonte'] ?? '') !== 'assenze' && in_array($codS, ['P', 'STM'], true)) {
+                $conteggioSabati++;
+                $dateSabati[] = sprintf('%02d/%02d', $gSab, $mese_selezionato);
+                break;
+            }
+        }
+    }
+
+    $totaleSabatiPomeriggioOSS += $conteggioSabati;
+    $classificaSabatiOSS[] = [
+        'nome' => $collab['nome'] ?? 'OSS',
+        'squadra' => $collab['squadra'] ?? 'Senza Squadra',
+        'sabati_pomeriggio' => $conteggioSabati,
+        'date_sabati' => $dateSabati
+    ];
+}
+
+usort($classificaSabatiOSS, function($a, $b) {
+    if ($a['sabati_pomeriggio'] !== $b['sabati_pomeriggio']) {
+        return $a['sabati_pomeriggio'] <=> $b['sabati_pomeriggio'];
+    }
+    return strcasecmp($a['nome'], $b['nome']);
+});
+
+$numeroOSS = count($classificaSabatiOSS);
+$mediaSabatiOSS = $numeroOSS > 0 ? round($totaleSabatiPomeriggioOSS / $numeroOSS, 2) : 0;
+
 $mesiNomi = [1=>'Gennaio', 2=>'Febbraio', 3=>'Marzo', 4=>'Aprile', 5=>'Maggio', 6=>'Giugno', 7=>'Luglio', 8=>'Agosto', 9=>'Settembre', 10=>'Ottobre', 11=>'Novembre', 12=>'Dicembre'];
 $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 ?>
@@ -1023,6 +1088,39 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php } ?>
+
+        <div class="card shadow-sm mb-4 p-3 border-start border-4 border-info">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+                <div class="fw-bold small text-dark">
+                    <i class="bi bi-trophy-fill text-warning me-1"></i>
+                    Nota Equità Sabato Pomeriggio — Solo OSS (<?php echo htmlspecialchars($nomeMeseCorrente . ' ' . $anno_selezionato); ?>)
+                </div>
+                <div class="small text-muted">
+                    Sabati nel mese: <strong><?php echo count($sabatiNelMese); ?></strong> |
+                    Totale turni P/STM OSS: <strong><?php echo $totaleSabatiPomeriggioOSS; ?></strong> |
+                    Media per OSS: <strong><?php echo $mediaSabatiOSS; ?></strong>
+                </div>
+            </div>
+            <?php if (empty($classificaSabatiOSS)) { ?>
+                <div class="small text-muted">Nessun operatore con qualifica/ruolo OSS presente nella selezione corrente.</div>
+            <?php } else { ?>
+                <div class="d-flex flex-wrap gap-2">
+                    <?php foreach ($classificaSabatiOSS as $posIdx => $ossItem) {
+                        $numSab = $ossItem['sabati_pomeriggio'];
+                        $badgeClasse = ($numSab > $mediaSabatiOSS) ? 'bg-warning text-dark' : (($numSab < $mediaSabatiOSS) ? 'bg-success text-white' : 'bg-primary text-white');
+                        $detDate = !empty($ossItem['date_sabati']) ? ' (' . implode(', ', $ossItem['date_sabati']) . ')' : '';
+                    ?>
+                        <span class="badge <?php echo $badgeClasse; ?> p-2" style="font-size: 0.72rem;" title="Squadra: <?php echo htmlspecialchars($ossItem['squadra']); ?>">
+                            #<?php echo ($posIdx + 1); ?> <?php echo htmlspecialchars($ossItem['nome']); ?>:
+                            <strong><?php echo $numSab; ?></strong> sab. pom.<?php echo htmlspecialchars($detDate); ?>
+                        </span>
+                    <?php } ?>
+                </div>
+                <div class="small text-muted mt-2" style="font-size: 0.7rem;">
+                    Ordinato dal minore al maggiore numero di sabato pomeriggio (<strong>P</strong> / <strong>STM</strong>) per agevolare la compensazione equa nei turni successivi.
+                </div>
+            <?php } ?>
+        </div>
 
         <div class="card shadow-sm mb-4 p-3">
             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
