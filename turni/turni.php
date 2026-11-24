@@ -340,9 +340,8 @@ if (!empty($urlUtenti)) {
             if (in_array($rC_low, ['super_admin', 'admin', 'superadmin', 'capo_personale', 'capopersonale'])) {
                 continue;
             }
-            if (empty($c['squadra'])) {
-                $c['squadra'] = 'Senza Squadra';
-            }
+            $sqRaw = trim($c['squadra'] ?? '');
+            $c['squadra'] = ($sqRaw === '') ? 'Senza Squadra' : $sqRaw;
             $mappaUtenti[$c['id']] = $c;
         }
     }
@@ -416,6 +415,16 @@ $redirectQueryTurni = http_build_query([
     'filtro_squadra' => $filtro_squadra
 ]);
 
+$cicloTurniBase = ['M', 'P', 'N', 'S', 'R'];
+
+function èSquadraTurnistaValida($nomeSquadra) {
+    $s = trim((string)$nomeSquadra);
+    if ($s === '' || strcasecmp($s, 'Senza Squadra') === 0 || strcasecmp($s, 'Mattinieri') === 0) {
+        return false;
+    }
+    return true;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf_token = $_POST['csrf'] ?? '';
     if (!hash_equals($_SESSION['csrf'], $csrf_token)) {
@@ -430,6 +439,121 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $azione = $_POST['azione'] ?? '';
     $nota_input = trim($_POST['nota_turno'] ?? '');
+
+    if ($azione === 'crea_turno_squadre_turnisti') {
+        $turniAttuali = [];
+        if (!empty($idsUtentiReparto)) {
+            $idsEsc = implode(',', array_map('rawurlencode', $idsUtentiReparto));
+            $qTurni = "pianificazione?select=id,utente_id,data_inizio,tipo_evento&data_inizio=gte." . $primo_giorno_tab . "&data_inizio=lt." . $primo_giorno_prossimo_tab . "&utente_id=in.($idsEsc)";
+            $resT = supabase_turni_request($qTurni);
+            if (is_array($resT)) {
+                foreach ($resT as $rt) {
+                    $uIdT = $rt['utente_id'];
+                    $gNumT = intval(date('d', strtotime($rt['data_inizio'])));
+                    $turniAttuali[$uIdT][$gNumT][] = $rt;
+                }
+            }
+        }
+
+        $squadreGruppi = [];
+        foreach ($listaCollaboratori as $collab) {
+            $sqName = trim($collab['squadra'] ?? 'Senza Squadra');
+            if (!èSquadraTurnistaValida($sqName)) {
+                continue;
+            }
+            $squadreGruppi[$sqName][] = $collab;
+        }
+
+        $turniInseritiCount = 0;
+        $squadreElaborate = 0;
+
+        foreach ($squadreGruppi as $sqName => $membriSquadra) {
+            if (empty($membriSquadra)) {
+                continue;
+            }
+
+            $primoMembro = $membriSquadra[0];
+            $primoUid = $primoMembro['id'];
+
+            $turnoPartenza = null;
+            $giornoPartenza = 1;
+
+            for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                $evPrimo = $turniAttuali[$primoUid][$g] ?? [];
+                foreach ($evPrimo as $evItem) {
+                    $codItem = strtoupper(trim($evItem['tipo_evento'] ?? ''));
+                    if (in_array($codItem, $cicloTurniBase, true)) {
+                        $turnoPartenza = $codItem;
+                        $giornoPartenza = $g;
+                        break 2;
+                    }
+                }
+            }
+
+            if ($turnoPartenza === null) {
+                continue;
+            }
+
+            $squadreElaborate++;
+            $idxPartenza = array_search($turnoPartenza, $cicloTurniBase, true);
+            $idxGiorno1 = ($idxPartenza - (($giornoPartenza - 1) % count($cicloTurniBase)) + count($cicloTurniBase)) % count($cicloTurniBase);
+
+            for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+                $idxTurnoG = ($idxGiorno1 + ($g - 1)) % count($cicloTurniBase);
+                $codTurnoG = $cicloTurniBase[$idxTurnoG];
+                $dataCellStr = sprintf('%04d-%02d-%02d', $anno_selezionato, $mese_selezionato, $g);
+
+                foreach ($membriSquadra as $membro) {
+                    $uIdM = $membro['id'];
+                    $esistentiG = $turniAttuali[$uIdM][$g] ?? [];
+
+                    $haGiaTurnoCiclo = false;
+                    $haQualsiasiEvento = !empty($esistentiG);
+                    foreach ($esistentiG as $eg) {
+                        $cEg = strtoupper(trim($eg['tipo_evento'] ?? ''));
+                        if (in_array($cEg, $cicloTurniBase, true)) {
+                            $haGiaTurnoCiclo = true;
+                            break;
+                        }
+                    }
+
+                    if ($haQualsiasiEvento || $haGiaTurnoCiclo) {
+                        continue;
+                    }
+
+                    $repIdM = $membro['reparto_id'] ?? $reparto_id_utente;
+                    $orgIdM = $membro['organizzazione_id'] ?? $org_id_utente;
+
+                    $datiPost = [
+                        'organizzazione_id' => !empty($orgIdM) ? $orgIdM : null,
+                        'reparto_id' => !empty($repIdM) ? $repIdM : null,
+                        'utente_id' => $uIdM,
+                        'data_inizio' => $dataCellStr . ' 00:00:00+00',
+                        'data_fine' => $dataCellStr . ' 23:59:59+00',
+                        'tipo_evento' => $codTurnoG,
+                        'stato' => 'Approvato',
+                        'note' => 'Ciclo automatico squadra ' . $sqName
+                    ];
+
+                    $resInsert = supabase_turni_request("pianificazione", 'POST', $datiPost);
+                    if ($resInsert !== false) {
+                        $turniInseritiCount++;
+                    }
+                }
+            }
+        }
+
+        if ($squadreElaborate > 0) {
+            $_SESSION['flash_messaggio'] = "Ciclo generato su {$squadreElaborate} squadre turniste ({$turniInseritiCount} turni inseriti). I mattinieri / fuori squadra non sono stati modificati.";
+            $_SESSION['flash_tipo'] = "success";
+        } else {
+            $_SESSION['flash_messaggio'] = "Nessun primo turno del ciclo (M, P, N, S, R) trovato sul primo dipendente delle squadre turniste per avviare la sequenza.";
+            $_SESSION['flash_tipo'] = "warning";
+        }
+
+        header("Location: turni.php?" . $redirectQueryTurni);
+        exit;
+    }
 
     if ($azione === 'cancella_turni_tranne_ferie') {
         if (!empty($idsUtentiReparto)) {
@@ -739,12 +863,43 @@ if (is_array($assenzeMeseData)) {
     }
 }
 
-// Mappa del primo collaboratore per ciascuna squadra (in base all'ordinamento attuale della tabella)
-$primoCollaboratoreSquadra = [];
+// Calcolo ciclo riga Squadra basato sul primo dipendente subito sotto la squadra (ignora ferie/assenze)
+$squadreGruppiGriglia = [];
 foreach ($listaCollaboratori as $collab) {
     $sqKey = trim($collab['squadra'] ?? 'Senza Squadra');
-    if (!isset($primoCollaboratoreSquadra[$sqKey])) {
-        $primoCollaboratoreSquadra[$sqKey] = $collab['id'];
+    $squadreGruppiGriglia[$sqKey][] = $collab;
+}
+
+$turnoSquadraGiorno = [];
+foreach ($squadreGruppiGriglia as $sqKey => $membriSq) {
+    if (!èSquadraTurnistaValida($sqKey) || empty($membriSq)) {
+        continue;
+    }
+
+    $primoUidSq = $membriSq[0]['id'];
+    $turnoTrovato = null;
+    $giornoTrovato = 1;
+
+    for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+        $evPrimo = $mappaTurniGriglia[$primoUidSq][$g] ?? [];
+        foreach ($evPrimo as $evItem) {
+            $codItem = strtoupper(trim($evItem['tipo_evento'] ?? ''));
+            if (($evItem['fonte'] ?? '') !== 'assenze' && in_array($codItem, $cicloTurniBase, true)) {
+                $turnoTrovato = $codItem;
+                $giornoTrovato = $g;
+                break 2;
+            }
+        }
+    }
+
+    if ($turnoTrovato !== null) {
+        $idxTrovato = array_search($turnoTrovato, $cicloTurniBase, true);
+        $idxG1 = ($idxTrovato - (($giornoTrovato - 1) % count($cicloTurniBase)) + count($cicloTurniBase)) % count($cicloTurniBase);
+
+        for ($g = 1; $g <= $giorni_nel_mese; $g++) {
+            $idxG = ($idxG1 + ($g - 1)) % count($cicloTurniBase);
+            $turnoSquadraGiorno[$sqKey][$g] = $cicloTurniBase[$idxG];
+        }
     }
 }
 
@@ -774,6 +929,8 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
         .col-operatore-sticky { position: sticky; left: 0; background-color: #ffffff; z-index: 2; text-align: left !important; min-width: 175px; max-width: 175px; width: 175px; font-weight: 600; font-size: 0.75rem; padding-left: 8px !important; border-right: 2px solid #cbd5e1 !important; }
         .tr-sezione-squadra td { background-color: #e2e8f0 !important; font-weight: bold; text-align: center !important; padding: 4px 2px !important; font-size: 0.72rem; color: #334155; border-top: 2px solid #cbd5e1 !important; border-bottom: 1px solid #cbd5e1 !important; }
         .tr-sezione-squadra td.col-squadra-sticky { position: sticky; left: 0; z-index: 2; text-align: left !important; padding-left: 8px !important; font-size: 0.78rem; border-right: 2px solid #cbd5e1 !important; }
+
+        .testo-turno-squadra { font-weight: 700; color: #1e293b; font-size: 0.72rem; }
 
         .badge-container { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 2px; }
 
@@ -881,8 +1038,16 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
                         </span>
                     <?php } ?>
                 </div>
-                <div>
+                <div class="d-flex gap-2 flex-wrap">
                     <?php if ($is_coordinatore || $is_super_admin || $is_capo_personale) { ?>
+                        <form method="POST" action="turni.php?<?php echo htmlspecialchars($redirectQueryTurni); ?>" class="d-inline m-0">
+                            <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['csrf']); ?>">
+                            <input type="hidden" name="azione" value="crea_turno_squadre_turnisti">
+                            <button type="submit" class="btn btn-sm btn-success fw-bold" title="Genera il ciclo turnisti per le squadre assegnate partendo dal primo turno inserito al primo dipendente di ciascuna squadra">
+                                <i class="bi bi-arrow-repeat"></i> Crea Turno
+                            </button>
+                        </form>
+
                         <button type="button" class="btn btn-sm btn-outline-danger fw-bold" data-bs-toggle="modal" data-bs-target="#modalPulisciTurni">
                             <i class="bi bi-trash3"></i> Pulisci Mese (Tranne Ferie/104)
                         </button>
@@ -928,31 +1093,16 @@ $nomeMeseCorrente = $mesiNomi[$mese_selezionato] ?? '';
 
                                     if ($ultimaSquadra !== $squadraCollab) {
                                         $ultimaSquadra = $squadraCollab;
-                                        $primoUidSquadra = $primoCollaboratoreSquadra[$squadraCollab] ?? null;
                                 ?>
                                     <tr class="tr-sezione-squadra">
                                         <td class="col-squadra-sticky">
                                             <i class="bi bi-people-fill me-1"></i> Squadra: <?php echo htmlspecialchars($squadraCollab); ?>
                                         </td>
                                         <?php for ($g = 1; $g <= $giorni_nel_mese; $g++) {
-                                            $eventiPrimo = ($primoUidSquadra !== null) ? ($mappaTurniGriglia[$primoUidSquadra][$g] ?? []) : [];
+                                            $turnoSq = $turnoSquadraGiorno[$squadraCollab][$g] ?? '';
                                         ?>
                                             <td>
-                                                <div class="badge-container">
-                                                    <?php if (!empty($eventiPrimo)) {
-                                                        foreach ($eventiPrimo as $ev) {
-                                                            $codEv = strtoupper(trim($ev['tipo_evento'] ?? ''));
-                                                            $coloreBg = $mappaColoriTurni[$codEv] ?? '#6c757d';
-                                                            $isInAttesa = (strcasecmp($ev['stato'] ?? '', 'Approvato') !== 0);
-                                                    ?>
-                                                        <span class="badge-turno <?php echo $isInAttesa ? 'badge-in-attesa' : ''; ?>" style="background-color: <?php echo htmlspecialchars($coloreBg); ?>;" title="<?php echo htmlspecialchars($codEv); ?>">
-                                                            <?php echo htmlspecialchars($codEv); ?>
-                                                        </span>
-                                                    <?php
-                                                        }
-                                                    }
-                                                    ?>
-                                                </div>
+                                                <span class="testo-turno-squadra"><?php echo htmlspecialchars($turnoSq); ?></span>
                                             </td>
                                         <?php } ?>
                                     </tr>
